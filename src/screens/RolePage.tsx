@@ -606,38 +606,37 @@ function RoleView({ role }: { role: Role }) {
     const hasAskChips = !notScored && (m.askEvidence?.length ?? 0) > 0
 
     const metaNode = (hasResumeSwitch || hasAskChips) ? (
-      <div className="space-y-2 pt-1">
-        {hasAskChips && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {m.askEvidence!.map(ev => (
-              <span
-                key={ev.askId}
-                title={ev.found ? 'Client ask: evidence found on record' : 'Client ask: not found on record'}
-                className={cn(
-                  'inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-xs whitespace-nowrap',
-                  ev.found
-                    ? 'border-border bg-background text-foreground'
-                    : 'border-dashed border-warning bg-warning/[0.06] text-[#b45309]',
-                )}
-              >
-                {ev.found ? `✓ ${ev.label}` : `? ${ev.label} · not found`}
-              </span>
-            ))}
-          </div>
-        )}
+      <>
+        {hasAskChips && m.askEvidence!.map(ev => (
+          <span
+            key={ev.askId}
+            title={ev.found ? 'Client ask: evidence found on record' : 'Client ask: not found on record'}
+            className={cn(
+              'inline-flex h-6 items-center gap-1 rounded-md border px-2 text-xs whitespace-nowrap',
+              ev.found
+                ? 'border-border bg-background text-foreground'
+                : 'border-dashed border-warning bg-warning/[0.06] text-[#b45309]',
+            )}
+          >
+            {ev.found ? `✓ ${ev.label}` : `? ${ev.label} · not found`}
+          </span>
+        ))}
         {hasResumeSwitch && (
-          <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          <span
+            onClick={e => e.stopPropagation()}
+            className="inline-flex h-6 items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-2 text-[11px] text-muted-foreground whitespace-nowrap"
+          >
             <span>Scored on <span className="font-medium text-foreground">{currentResume.label}</span> resume ·</span>
             <button
               type="button"
               onClick={() => app.rescoreOnResume(m.id, otherResume.id)}
-              className="font-medium text-foreground underline-offset-4 hover:underline"
+              className="font-medium text-foreground underline-offset-4 hover:underline cursor-pointer"
             >
               Use {otherResume.label} resume
             </button>
-          </div>
+          </span>
         )}
-      </div>
+      </>
     ) : undefined
 
     return (

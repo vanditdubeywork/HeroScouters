@@ -683,18 +683,20 @@ export function RecommendationBlock({
   greenFlags = [],
   redFlags = [],
   onAskAssumed,
+  extraChips,
 }: {
   requirementsMet?: RequirementMetItem[]
   greenFlags?: string[]
   redFlags?: string[]
   onAskAssumed?: (label: string) => void
+  extraChips?: React.ReactNode
 }) {
   const [expanded, setExpanded] = useState(false)
   const total = requirementsMet.length
   const metCount = requirementsMet.filter(r => r.result === 'met' || r.result === 'predicted').length
   const assumedCount = requirementsMet.filter(r => r.result === 'assumed').length
 
-  if (!total && !greenFlags.length && !redFlags.length) return null
+  if (!total && !greenFlags.length && !redFlags.length && !extraChips) return null
 
   return (
     <div className="space-y-2">
@@ -704,7 +706,7 @@ export function RecommendationBlock({
             type="button"
             onClick={e => { e.stopPropagation(); setExpanded(x => !x) }}
             aria-expanded={expanded}
-            className="inline-flex h-6 items-center gap-1 rounded-md border border-gray-900 bg-secondary px-2 font-mono text-[11px] font-medium text-foreground transition-colors hover:border-foreground"
+            className="inline-flex h-6 items-center gap-1 rounded-md border border-gray-900 bg-secondary px-2 font-mono text-[11px] font-medium text-foreground transition-colors hover:border-foreground cursor-pointer"
           >
             <ChevronRight className={cn('size-3 transition-transform', expanded && 'rotate-90')} />
             <span className="tnum">{metCount}/{total} requirements</span>
@@ -713,18 +715,20 @@ export function RecommendationBlock({
         )}
 
         {greenFlags.slice(0, 3).map((g, i) => (
-          <span key={`g-${i}`} className="inline-flex h-6 items-center gap-1 rounded-md border border-success/35 bg-success/[0.06] px-2 text-xs text-foreground">
+          <span key={`g-${i}`} title={g} className="inline-flex h-6 items-center gap-1.5 rounded-md border border-success/35 bg-success/[0.06] px-2.5 text-xs text-foreground">
             <Check className="size-3 shrink-0 text-success" />
-            <span className="truncate max-w-[260px]">{g}</span>
+            <span className="truncate max-w-[380px]">{g}</span>
           </span>
         ))}
 
         {redFlags.slice(0, 3).map((r, i) => (
-          <span key={`r-${i}`} className="inline-flex h-6 items-center gap-1 rounded-md border border-warning/45 bg-warning/[0.06] px-2 text-xs text-foreground">
+          <span key={`r-${i}`} title={r} className="inline-flex h-6 items-center gap-1.5 rounded-md border border-warning/45 bg-warning/[0.06] px-2.5 text-xs text-foreground">
             <AlertTriangle className="size-3 shrink-0 text-warning" />
-            <span className="truncate max-w-[260px]">{r}</span>
+            <span className="truncate max-w-[420px]">{r}</span>
           </span>
         ))}
+
+        {extraChips}
       </div>
 
       {expanded && total > 0 && (

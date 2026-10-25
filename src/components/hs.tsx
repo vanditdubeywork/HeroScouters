@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import {
   Check, Diamond, HelpCircle, AlertTriangle, X, ChevronLeft, ChevronRight, ExternalLink, Loader2,
-  AlertCircle, Info, RefreshCw, ChevronDown, ArrowUp, ArrowDown, CircleCheck, ListPlus, Eye,
+  AlertCircle, Info, RefreshCw, ChevronDown, ArrowUp, ArrowDown, CircleCheck, ListPlus, Eye, Shield,
 } from 'lucide-react'
 import { Avatar, Button, Checkbox, Kbd, Menu, Skeleton, cn, type MenuItem } from './ui'
 import { useApp } from '../store/AppStore'
@@ -518,20 +518,32 @@ export function MatchRow({
   const shortlisted = status === 'shortlisted'
   const openPreview = onPreview ?? onClick
 
-  // Clean 4-column key facts (single-line value per column, zero clutter)
-  const facts: { label: string; value: string }[] = candidate
+  // 5-Column Divided SaaS Key-Facts Bar (zero dead horizontal space)
+  const facts: { label: string; value: React.ReactNode }[] = candidate
     ? [
         { label: 'Experience', value: `${candidate.years !== null ? `${candidate.years} yrs` : 'Not captured'} · ${candidate.category}` },
-        { label: 'Location', value: `${candidate.metro ?? 'Not captured'}${candidate.workModes ? ` · ${candidate.workModes[0]}` : ''}` },
-        { label: 'Work auth', value: workAuthShort(candidate.workAuth) ?? 'Not captured' },
+        { label: 'Location & Mode', value: `${candidate.metro ?? 'Not captured'}${candidate.workModes ? ` · ${candidate.workModes[0]}` : ''}` },
+        { label: 'Work Auth', value: workAuthShort(candidate.workAuth) ?? 'Not captured' },
         { label: 'Compensation', value: candidate.pay ?? 'Not captured' },
+        {
+          label: 'Skills & ◇ AI',
+          value: (
+            <span className="inline-flex items-center gap-1 truncate">
+              <span>{candidate.skills.slice(0, 2).join(', ') || candidate.subcategory}</span>
+              {candidate.predicted[0] && (
+                <span className="font-mono text-[10.5px] text-info">· ◇ {candidate.predicted[0].name}</span>
+              )}
+            </span>
+          ),
+        },
       ]
     : role
       ? [
           { label: 'Category', value: `${role.category} · ${role.subcategory}` },
-          { label: 'Location', value: `${role.location} · ${role.workMode}` },
+          { label: 'Location & Mode', value: `${role.location} · ${role.workMode}` },
           { label: 'Requirement', value: `${role.minYears}+ yrs · ${role.sponsorship === 'No' ? 'No sponsor' : 'Sponsors'}` },
           { label: 'Compensation', value: role.pay },
+          { label: 'Pipeline', value: `${role.passCount} pass · ${role.shortlisted} shortlisted` },
         ]
       : []
 
@@ -539,7 +551,11 @@ export function MatchRow({
   const rec: Recommendation = recommendation ?? (band === 'Strong' ? 'Strong' : band === 'Good' ? 'Mild' : 'Not recommended')
   const hasV4Breakdown = (requirementsMet && requirementsMet.length > 0) || (greenFlags && greenFlags.length > 0) || (redFlags && redFlags.length > 0)
 
-  // When the 4-column facts strip is shown, omit evidence chips that merely repeat years, location/mode, or work auth
+  const reqTotal = requirementsMet?.length ?? 0
+  const reqMet = requirementsMet ? requirementsMet.filter(r => r.result === 'met' || r.result === 'predicted').length : 0
+  const reqAssumed = requirementsMet ? requirementsMet.filter(r => r.result === 'assumed').length : 0
+
+  // When the 5-column facts strip is shown, omit evidence chips that merely repeat years, location/mode, or work auth
   const visibleChips = facts.length > 0
     ? chips.filter(ch => {
         if (ch.kind !== 'evidence') return true
@@ -556,8 +572,8 @@ export function MatchRow({
         selected ? 'border-gray-1100 bg-secondary' : focused ? 'border-gray-1100 shadow-custom-hover' : shortlisted ? 'border-emerald-500/40' : 'border-border hover:border-gray-600',
       )}
     >
-      <div className="grid grid-cols-1 gap-1 lg:grid-cols-4">
-        {/* ==================== 3/4 LEFT SECTION: Clean Profile & Match Summary ==================== */}
+      <div className="grid grid-cols-1 gap-1 lg:grid-cols-[1fr_244px]">
+        {/* ==================== LEFT MAIN SECTION: High-Signal Profile & Match Synthesis ==================== */}
         <div
           role={openPreview ? 'button' : undefined}
           tabIndex={openPreview ? 0 : undefined}
@@ -569,14 +585,14 @@ export function MatchRow({
             }
           }}
           className={cn(
-            'relative flex flex-col justify-between gap-3.5 rounded-xl border border-border bg-card px-5 py-4 text-left transition-colors lg:col-span-3',
+            'relative flex flex-col justify-between gap-2.5 rounded-xl border border-border bg-card px-4 py-3.5 text-left transition-colors',
             openPreview && 'cursor-pointer hover:border-gray-600 hover:bg-secondary/35',
           )}
         >
           {shortlisted && <span aria-hidden className="absolute top-3 bottom-3 left-0 w-[3px] rounded-r-full bg-success" />}
 
-          {/* Row 1: Identity + Recommendation Pill (no numeric score on screen) */}
-          <div className="flex items-center justify-between gap-3">
+          {/* Row 1: Identity + Domain Badges + Availability + Recommendation Pill */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               {onToggleSelect && (
                 <span className={cn('transition-opacity', selected ? 'opacity-100' : 'opacity-75 group-hover/match:opacity-100 focus-within:opacity-100 [.any-selected_&]:opacity-100')}
@@ -587,8 +603,18 @@ export function MatchRow({
               {!notScored && <span className="font-mono text-xs font-medium text-gray-1000 tnum">#{rank}</span>}
               {initials && <Avatar initials={initials} size={36} />}
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <span className="truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">{title}</span>
+                  {candidate?.searchStatus && (
+                    <span className="inline-flex h-[18px] items-center rounded-xs border border-border bg-secondary px-1.5 font-mono text-[9.5px] text-gray-1100">
+                      {candidate.searchStatus}
+                    </span>
+                  )}
+                  {candidate?.domains?.slice(0, 2).map(d => (
+                    <span key={d} className="hidden h-[18px] items-center rounded-xs border border-border bg-background px-1.5 text-[10px] text-muted-foreground sm:inline-flex">
+                      {d}
+                    </span>
+                  ))}
                   {tag}
                   {status === 'requalified' && (
                     <span className="inline-flex h-5 items-center gap-1 rounded-md border border-iris/40 bg-iris/[0.07] px-1.5 text-[11px] font-medium text-iris">
@@ -603,16 +629,24 @@ export function MatchRow({
                 </div>
               </div>
             </div>
-            {notScored
-              ? <span className={cn('eyebrow rounded-md border border-dashed px-1.5 py-0.5 text-[10px]', skipped ? 'border-gray-700 text-muted-foreground' : 'border-gray-800 text-gray-1100')}>Not scored</span>
-              : <RecommendationPill recommendation={rec} suggested={suggested} />}
+
+            <div className="flex items-center gap-2">
+              {candidate?.availability && (
+                <span className="hidden rounded-md border border-border bg-secondary/50 px-2 py-0.5 font-mono text-[10px] text-muted-foreground xl:inline-block">
+                  {candidate.availability}
+                </span>
+              )}
+              {notScored
+                ? <span className={cn('eyebrow rounded-md border border-dashed px-1.5 py-0.5 text-[10px]', skipped ? 'border-gray-700 text-muted-foreground' : 'border-gray-800 text-gray-1100')}>Not scored</span>
+                : <RecommendationPill recommendation={rec} suggested={suggested} />}
+            </div>
           </div>
 
-          {/* Row 2: 4-Column Structured Profile Facts */}
+          {/* Row 2: 5-Column Divided Key-Facts Strip */}
           {facts.length > 0 && (
-            <div className="grid grid-cols-2 gap-4 border-y border-border/80 py-2.5 sm:grid-cols-4">
+            <div className="grid grid-cols-2 divide-x divide-border rounded-xl border border-border bg-secondary/35 sm:grid-cols-5">
               {facts.map(f => (
-                <div key={f.label} className="min-w-0">
+                <div key={f.label} className="min-w-0 px-3 py-2">
                   <div className="eyebrow text-[9px] text-gray-1000">{f.label}</div>
                   <div className="mt-0.5 truncate text-xs font-medium text-foreground">{f.value}</div>
                 </div>
@@ -620,90 +654,160 @@ export function MatchRow({
             </div>
           )}
 
-          {/* Row 3: Plain-English Reason + v0.4 Requirements Met / Flags Block */}
-          {!notScored && (
+          {/* Row 3: Plain-English Reason + Unified Requirements / Flags / Meta Strip */}
+          {!notScored ? (
             <div className="space-y-2">
-              <p className="text-[13px] leading-snug text-gray-1100">“{reason}”</p>
+              <p className="border-l-2 border-gray-800 pl-3 text-[13px] leading-snug text-gray-1100">“{reason}”</p>
               {hasV4Breakdown ? (
                 <RecommendationBlock
                   requirementsMet={requirementsMet}
                   greenFlags={greenFlags}
                   redFlags={redFlags}
                   onAskAssumed={onAddToAsk ? label => onAddToAsk({ kind: 'assumed', label }) : undefined}
+                  extraChips={meta}
                 />
               ) : (
-                visibleChips.length > 0 && <ChipRow chips={visibleChips} onAddToAsk={onAddToAsk} />
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {visibleChips.length > 0 && <ChipRow chips={visibleChips} onAddToAsk={onAddToAsk} />}
+                  {meta}
+                </div>
               )}
             </div>
+          ) : (
+            meta && <div className="flex flex-wrap items-center gap-1.5" onClick={e => e.stopPropagation()}>{meta}</div>
           )}
-          {meta && <div onClick={e => e.stopPropagation()}>{meta}</div>}
         </div>
 
-        {/* ==================== 1/4 RIGHT SECTION: 3 Big Centered Action Buttons ==================== */}
+        {/* ==================== RIGHT TRIAGE & READINESS RAIL (244px): Zero Dead Space ==================== */}
         <div
-          className="flex flex-col items-center justify-center gap-2 rounded-xl border border-border bg-card p-4 lg:col-span-1"
+          className="flex flex-col justify-between gap-2.5 rounded-xl border border-border bg-card p-3"
           onClick={e => e.stopPropagation()}
         >
-          {/* 1. Colored Shortlist Button */}
-          {onShortlist && (
-            shortlisted ? (
+          {/* Top Readiness & Completeness Mini-Card */}
+          <div className="rounded-lg border border-border bg-secondary/40 px-2.5 py-2">
+            <div className="flex items-center justify-between gap-2 text-[11px]">
+              <span className="eyebrow text-[9.5px] text-gray-1000">
+                {reqTotal > 0 ? 'Requirements' : 'Profile health'}
+              </span>
+              <span className="font-mono font-semibold text-foreground tnum">
+                {reqTotal > 0
+                  ? `${reqMet}/${reqTotal} met${reqAssumed > 0 ? ` · ${reqAssumed} assumed` : ''}`
+                  : candidate
+                    ? `${candidate.completeness}% complete`
+                    : 'Verified'}
+              </span>
+            </div>
+            {/* Segmented visual coverage bar */}
+            {reqTotal > 0 ? (
+              <div className="mt-1.5 flex h-1.5 w-full gap-0.5 overflow-hidden rounded-full bg-background p-0.5">
+                {requirementsMet!.map(item => (
+                  <span
+                    key={item.reqId}
+                    title={`${item.label}: ${item.result}`}
+                    className={cn(
+                      'h-full flex-1 rounded-full',
+                      item.result === 'met' ? 'bg-emerald-500' : item.result === 'predicted' ? 'bg-info' : item.result === 'assumed' ? 'bg-warning' : 'bg-gray-700',
+                    )}
+                  />
+                ))}
+              </div>
+            ) : candidate ? (
+              <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-background">
+                <div className="h-full rounded-full bg-foreground" style={{ width: `${candidate.completeness}%` }} />
+              </div>
+            ) : null}
+            {candidate && reqTotal > 0 && (
+              <div className="mt-1.5 flex items-center justify-between font-mono text-[10px] text-muted-foreground tnum">
+                <span>Profile {candidate.completeness}%</span>
+                <span>{candidate.updated}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Middle Primary Decision Stack (Full-Width Buttons with Keyboard Badges) */}
+          <div className="space-y-1.5">
+            {onShortlist && (
+              shortlisted ? (
+                <button
+                  type="button"
+                  title="Click to undo shortlist"
+                  onClick={onUndo}
+                  className="flex h-8 w-full items-center justify-between rounded-lg border border-emerald-400/70 bg-emerald-500/20 px-3 text-xs font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/30 cursor-pointer"
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    <Check className="size-3.5 shrink-0 stroke-[2.5]" />
+                    <span>Shortlisted</span>
+                  </span>
+                  <span className="font-mono text-[10px] opacity-80">Undo</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onShortlist}
+                  disabled={!!actionsDisabled?.shortlist}
+                  title={actionsDisabled?.shortlist}
+                  className="flex h-8 w-full items-center justify-between rounded-lg border border-emerald-500/50 bg-emerald-500/15 px-3 text-xs font-semibold text-emerald-400 transition-colors hover:border-emerald-400 hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    <Check className="size-3.5 shrink-0 stroke-[2.5]" />
+                    <span>{approveText}</span>
+                  </span>
+                  <Kbd>S</Kbd>
+                </button>
+              )
+            )}
+
+            {shortlisted && onMask ? (
               <button
                 type="button"
-                title="Click to undo shortlist"
-                onClick={onUndo}
-                className="flex h-9 w-full max-w-[190px] items-center justify-center gap-2 rounded-xl border border-emerald-400/70 bg-emerald-500/20 px-4 text-xs font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/30"
+                onClick={onMask}
+                className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-foreground bg-foreground px-3 text-xs font-semibold text-background transition-opacity hover:opacity-90 cursor-pointer"
               >
-                <Check className="size-4 shrink-0 stroke-[2.5]" />
-                <span>Shortlisted</span>
+                <Shield className="size-3.5 shrink-0" />
+                <span>Mask link →</span>
               </button>
-            ) : (
+            ) : onReject && (
               <button
                 type="button"
-                onClick={onShortlist}
-                disabled={!!actionsDisabled?.shortlist}
-                title={actionsDisabled?.shortlist}
-                className="flex h-9 w-full max-w-[190px] items-center justify-center gap-2 rounded-xl border border-emerald-500/50 bg-emerald-500/15 px-4 text-xs font-semibold text-emerald-400 transition-colors hover:border-emerald-400 hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={onReject}
+                aria-label={actionsDisabled?.reject ? `${rejectLabel} — ${actionsDisabled.reject}` : rejectLabel}
+                disabled={!!actionsDisabled?.reject}
+                title={actionsDisabled?.reject}
+                className="flex h-8 w-full items-center justify-between rounded-lg border border-[#e5484d]/50 bg-[#e5484d]/15 px-3 text-xs font-semibold text-[#ff6b6e] transition-colors hover:border-[#e5484d] hover:bg-[#e5484d]/25 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
               >
-                <Check className="size-4 shrink-0 stroke-[2.5]" />
-                <span>{approveText}</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <X className="size-3.5 shrink-0 stroke-[2.5]" />
+                  <span>{rejectLabel}</span>
+                </span>
+                <Kbd>E</Kbd>
               </button>
-            )
-          )}
+            )}
+          </div>
 
-          {/* 2. Next-Step Mask Action (when shortlisted) OR Colored Reject Button */}
-          {shortlisted && onMask ? (
-            <button
-              type="button"
-              onClick={onMask}
-              className="flex h-9 w-full max-w-[190px] items-center justify-center gap-2 rounded-xl border border-foreground bg-foreground px-4 text-xs font-semibold text-background transition-opacity hover:opacity-90"
-            >
-              <span>Mask link →</span>
-            </button>
-          ) : onReject && (
-            <button
-              type="button"
-              onClick={onReject}
-              aria-label={actionsDisabled?.reject ? `${rejectLabel} — ${actionsDisabled.reject}` : rejectLabel}
-              disabled={!!actionsDisabled?.reject}
-              title={actionsDisabled?.reject}
-              className="flex h-9 w-full max-w-[190px] items-center justify-center gap-2 rounded-xl border border-[#e5484d]/50 bg-[#e5484d]/15 px-4 text-xs font-semibold text-[#ff6b6e] transition-colors hover:border-[#e5484d] hover:bg-[#e5484d]/25 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <X className="size-4 shrink-0 stroke-[2.5]" />
-              <span>{rejectLabel}</span>
-            </button>
-          )}
-
-          {/* 3. Preview Button */}
-          {openPreview && (
-            <button
-              type="button"
-              onClick={openPreview}
-              className="flex h-9 w-full max-w-[190px] items-center justify-center gap-2 rounded-xl border border-border bg-secondary px-4 text-xs font-medium text-foreground transition-colors hover:border-gray-700 hover:bg-gray-400"
-            >
-              <Eye className="size-4 shrink-0 text-gray-1100" />
-              <span>{onPreview ? 'Preview' : 'Open role'}</span>
-            </button>
-          )}
+          {/* Bottom Secondary Actions Row (Preview + Mask side-by-side) */}
+          <div className={cn('grid gap-1.5', openPreview && onMask && !shortlisted ? 'grid-cols-2' : 'grid-cols-1')}>
+            {openPreview && (
+              <button
+                type="button"
+                onClick={openPreview}
+                className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 text-xs font-medium text-foreground transition-colors hover:border-gray-700 hover:bg-gray-400 cursor-pointer"
+              >
+                <Eye className="size-3.5 shrink-0 text-gray-1100" />
+                <span>{onPreview ? 'Preview' : 'Open'}</span>
+              </button>
+            )}
+            {onMask && !shortlisted && (
+              <button
+                type="button"
+                onClick={onMask}
+                title="Select resume & mask for this role"
+                className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 text-xs font-medium text-foreground transition-colors hover:border-gray-700 hover:bg-gray-400 cursor-pointer"
+              >
+                <Shield className="size-3.5 shrink-0 text-gray-1100" />
+                <span>Mask</span>
+              </button>
+            )}
+          </div>
           {footer}
         </div>
       </div>

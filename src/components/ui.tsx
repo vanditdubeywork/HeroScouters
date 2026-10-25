@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, Check } from 'lucide-react'
 
 /* ==========================================================================
@@ -320,21 +321,61 @@ export function PageHeader({ title, meta, actions, children }: { title: React.Re
 export interface MenuItem { label: React.ReactNode; onSelect?: () => void; icon?: React.ReactNode; destructive?: boolean; danger?: boolean; hint?: string; separator?: boolean; disabled?: boolean }
 export function Menu({ trigger, items, align = 'end', width = 220 }: { trigger: React.ReactNode | ((p: { open: boolean; toggle: () => void }) => React.ReactNode); items: MenuItem[]; align?: 'start' | 'end'; width?: number }) {
   const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number }>({ top: 0, left: 0 })
   const ref = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  const updatePos = () => {
+    const el = ref.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const left = align === 'end'
+      ? Math.max(8, Math.min(window.innerWidth - width - 8, r.right - width))
+      : Math.max(8, Math.min(window.innerWidth - width - 8, r.left))
+    const estH = Math.min(320, items.length * 34 + 16)
+    if (r.bottom + estH > window.innerHeight - 12 && r.top > estH) {
+      setPos({ bottom: window.innerHeight - r.top + 6, left })
+    } else {
+      setPos({ top: r.bottom + 6, left })
+    }
+  }
+
   useEffect(() => {
     if (!open) return
-    const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
+    updatePos()
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (!ref.current?.contains(t) && !panelRef.current?.contains(t)) setOpen(false)
+    }
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
     document.addEventListener('mousedown', onDoc)
     document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
-  }, [open])
-  const toggle = () => setOpen(o => !o)
+    window.addEventListener('scroll', updatePos, true)
+    window.addEventListener('resize', updatePos)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', updatePos, true)
+      window.removeEventListener('resize', updatePos)
+    }
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggle = () => {
+    if (!open) updatePos()
+    setOpen(o => !o)
+  }
+
   return (
     <div ref={ref} className="relative inline-flex">
       {typeof trigger === 'function' ? trigger({ open, toggle }) : <span className="inline-flex" onClick={toggle}>{trigger}</span>}
-      {open && (
-        <div role="menu" style={{ width }} className={cn('anim-pop absolute top-full z-50 mt-1.5 rounded-xl border border-border bg-popover p-1 shadow-[0_8px_30px_-6px_rgba(0,0,0,0.12),0_2px_6px_rgba(0,0,0,0.04)]', align === 'end' ? 'right-0' : 'left-0')}>
+      {open && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={panelRef}
+          role="menu"
+          style={{ width, top: pos.top, bottom: pos.bottom, left: pos.left }}
+          onClick={e => e.stopPropagation()}
+          className="anim-pop fixed z-[90] rounded-xl border border-border bg-popover p-1 shadow-[0_12px_36px_-6px_rgba(0,0,0,0.45),0_4px_12px_rgba(0,0,0,0.2)]"
+        >
           {items.map((it, i) => it.separator
             ? <div key={i} className="my-1 h-px bg-border" />
             : (
@@ -348,31 +389,75 @@ export function Menu({ trigger, items, align = 'end', width = 220 }: { trigger: 
                 {it.hint && <span className="font-mono text-[10px] text-muted-foreground">{it.hint}</span>}
               </button>
             ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
 }
 
-/** Popover (generic) */
+/** Popover (generic — portaled to document.body so parent overflow-hidden / scroll containers never clip it) */
 export function Popover({ trigger, children, align = 'start', width = 320 }: { trigger: (p: { open: boolean; toggle: () => void }) => React.ReactNode; children: (close: () => void) => React.ReactNode; align?: 'start' | 'end'; width?: number }) {
   const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number }>({ top: 0, left: 0 })
   const ref = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  const updatePos = () => {
+    const el = ref.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const left = align === 'end'
+      ? Math.max(8, Math.min(window.innerWidth - width - 8, r.right - width))
+      : Math.max(8, Math.min(window.innerWidth - width - 8, r.left))
+    const estH = 340
+    if (r.bottom + estH > window.innerHeight - 12 && r.top > estH) {
+      setPos({ bottom: window.innerHeight - r.top + 6, left })
+    } else {
+      setPos({ top: r.bottom + 6, left })
+    }
+  }
+
   useEffect(() => {
     if (!open) return
-    const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
+    updatePos()
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (!ref.current?.contains(t) && !panelRef.current?.contains(t)) setOpen(false)
+    }
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
     document.addEventListener('mousedown', onDoc)
     document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
-  }, [open])
+    window.addEventListener('scroll', updatePos, true)
+    window.addEventListener('resize', updatePos)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', updatePos, true)
+      window.removeEventListener('resize', updatePos)
+    }
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggle = () => {
+    if (!open) updatePos()
+    setOpen(o => !o)
+  }
+
   return (
     <div ref={ref} className="relative inline-flex">
-      {trigger({ open, toggle: () => setOpen(o => !o) })}
-      {open && (
-        <div style={{ width }} className={cn('anim-pop absolute top-full z-50 mt-1.5 rounded-2xl border border-border bg-background p-1 shadow-[0_8px_30px_-6px_rgba(0,0,0,0.12)]', align === 'end' ? 'right-0' : 'left-0')}>
-          {children(() => setOpen(false))}
-        </div>
+      {trigger({ open, toggle })}
+      {open && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={panelRef}
+          style={{ width, top: pos.top, bottom: pos.bottom, left: pos.left }}
+          onClick={e => e.stopPropagation()}
+          className="anim-pop fixed z-[90] rounded-2xl border border-border bg-background p-1 shadow-[0_12px_36px_-6px_rgba(0,0,0,0.45),0_4px_12px_rgba(0,0,0,0.2)]"
+        >
+          <div className="rounded-xl border border-border bg-card">
+            {children(() => setOpen(false))}
+          </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

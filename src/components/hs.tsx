@@ -155,6 +155,7 @@ function parseColStyle(w?: string): React.CSSProperties | undefined {
 export function DataTable<T extends { id: string }>({
   columns, rows, onRowClick, selectable, selected, onSelectedChange, loading, empty, rowActions, rowClassName, dense,
   columnMenu, isSelectable, quietCheckbox, caption, toolbar, stickyActions = true,
+  defaultPageSize = 10, pageSizeOptions = [5, 10, 25, 50, 100], totalPoolCount, footerNote, maxHeight = 'max-h-[430px]', paginated = true,
 }: {
   columns: Column<T>[]; rows: T[]; onRowClick?: (r: T) => void
   selectable?: boolean; selected?: string[]; onSelectedChange?: (ids: string[]) => void
@@ -168,8 +169,17 @@ export function DataTable<T extends { id: string }>({
   caption?: string
   toolbar?: React.ReactNode
   stickyActions?: boolean
+  /** v0.4 · Locked table viewport height + pagination & page-size ("show results in one go") */
+  defaultPageSize?: number
+  pageSizeOptions?: number[]
+  totalPoolCount?: number
+  footerNote?: React.ReactNode
+  maxHeight?: string
+  paginated?: boolean
 }) {
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null)
+  const [pageSize, setPageSize] = useState<number>(defaultPageSize)
+  const [page, setPage] = useState<number>(1)
   const anchor = useRef<string | null>(null)
   const sorted = React.useMemo(() => {
     if (!sort) return rows
@@ -177,6 +187,18 @@ export function DataTable<T extends { id: string }>({
     if (!col?.sortValue) return rows
     return [...rows].sort((a, b) => (col.sortValue!(a) > col.sortValue!(b) ? 1 : -1) * sort.dir)
   }, [rows, sort, columns])
+
+  const totalRows = sorted.length
+  const totalPages = paginated ? Math.max(1, Math.ceil(totalRows / pageSize)) : 1
+  const clampedPage = Math.min(Math.max(1, page), totalPages)
+  useEffect(() => {
+    setPage(1)
+  }, [rows.length, pageSize])
+
+  const startIdx = paginated ? (clampedPage - 1) * pageSize : 0
+  const endIdx = paginated ? Math.min(totalRows, startIdx + pageSize) : totalRows
+  const visibleRows = paginated ? sorted.slice(startIdx, endIdx) : sorted
+
   const sel = selected ?? []
   const selectableRows = isSelectable ? sorted.filter(isSelectable) : sorted
   const allSel = selectableRows.length > 0 && selectableRows.every(r => sel.includes(r.id))
@@ -203,148 +225,250 @@ export function DataTable<T extends { id: string }>({
           {toolbar}
         </div>
       )}
-      <div
-        tabIndex={0}
-        role="region"
-        aria-label={caption ?? 'Data table'}
-        className="no-scrollbar overflow-x-auto rounded-xl border border-border bg-card outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40"
-      >
-        <table role="table" className="w-full border-collapse text-left text-sm">
-          <thead className="sticky top-0 z-10 bg-gray-100">
-            <tr role="row" className="h-9 divide-x divide-border border-b border-border bg-gray-100/95 backdrop-blur-xs">
-              {selectable && (
-                <th className="w-8 px-2.5 py-2 align-middle">
-                  <Checkbox aria-label={`Select all ${selectableRows.length} shown`} checked={allSel} onChange={v => onSelectedChange?.(v ? selectableRows.map(r => r.id) : [])} />
-                </th>
-              )}
-              {columns.map(c => (
-                <th
-                  key={c.key}
-                  role="columnheader"
-                  style={parseColStyle(c.width)}
-                  aria-sort={sort?.key === c.key ? (sort.dir === 1 ? 'ascending' : 'descending') : undefined}
-                  className={cn('eyebrow px-3 py-2 text-[10px] font-medium whitespace-nowrap text-gray-1000 select-none', c.align === 'right' && 'text-right')}
-                >
-                  {columnMenu ? (
-                    <Menu align="start" width={200}
-                      trigger={({ toggle }) => (
-                        <button type="button" onClick={toggle} className={cn('inline-flex items-center gap-1.5 uppercase transition-colors hover:text-foreground [&>svg]:size-3', sort?.key === c.key && 'text-foreground')}>
-                          {c.icon}
-                          {c.header}
-                          {sort?.key === c.key ? (sort.dir === 1 ? <ArrowUp className="size-3 text-foreground" /> : <ArrowDown className="size-3 text-foreground" />) : <ChevronDown className="size-3 text-gray-800" />}
-                        </button>
-                      )}
-                      items={columnMenu(c, { asc: () => setSort({ key: c.key, dir: 1 }), desc: () => setSort({ key: c.key, dir: -1 }) })}
-                    />
-                  ) : c.sortable ? (
-                    <button
-                      type="button"
-                      className={cn('inline-flex items-center gap-1.5 uppercase transition-colors hover:text-foreground [&>svg]:size-3', sort?.key === c.key && 'text-foreground')}
-                      onClick={() => setSort(s => s?.key === c.key ? { key: c.key, dir: s.dir === 1 ? -1 : 1 } : { key: c.key, dir: 1 })}
-                    >
-                      {c.icon}
-                      {c.header}
-                      {sort?.key === c.key
-                        ? (sort.dir === 1 ? <ArrowUp className="size-3 text-foreground" /> : <ArrowDown className="size-3 text-foreground" />)
-                        : <span className="font-sans text-[9px] tracking-normal text-gray-800">↕</span>}
-                    </button>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 [&>svg]:size-3">
-                      {c.icon}
-                      {c.header}
-                    </span>
-                  )}
-                </th>
-              ))}
-              {rowActions && (
-                <th
-                  role="columnheader"
-                  className={cn(
-                    'eyebrow w-[1%] px-3 py-2 text-right text-[10px] font-medium whitespace-nowrap text-gray-1000 select-none',
-                    stickyActions && 'sticky right-0 z-10 bg-gray-100/95 shadow-[-1px_0_0_0_var(--border)] backdrop-blur-xs',
-                  )}
-                >
-                  Actions
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {loading ? (
-              Array.from({ length: 6 }).map((_, i) => (
-                <tr key={i} className="h-12 divide-x divide-border">
-                  {selectable && <td className="px-2.5 py-2.5"><Skeleton className="size-4 rounded-xl" /></td>}
-                  {columns.map((c, j) => (
-                    <td key={c.key} className="px-3 py-2.5">
-                      <Skeleton className={cn('h-3.5', j === 0 ? 'w-3/4' : 'w-1/2')} />
-                    </td>
-                  ))}
-                  {rowActions && <td className="px-3 py-2.5" />}
-                </tr>
-              ))
-            ) : sorted.length === 0 ? (
-              <tr>
-                <td colSpan={columns.length + (selectable ? 1 : 0) + (rowActions ? 1 : 0)} className="p-0">
-                  {empty}
-                </td>
-              </tr>
-            ) : (
-              sorted.map(r => {
-                const isSel = sel.includes(r.id)
-                const canSel = !isSelectable || isSelectable(r)
-                return (
-                  <tr
-                    key={r.id}
-                    role="row"
-                    data-row-id={r.id}
-                    tabIndex={onRowClick ? 0 : undefined}
-                    onClick={() => onRowClick?.(r)}
-                    onKeyDown={e => { if (e.key === 'Enter' && onRowClick) onRowClick(r) }}
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
+        {/* Locked-height internal scroll container with sticky header */}
+        <div
+          tabIndex={0}
+          role="region"
+          aria-label={caption ?? 'Data table'}
+          className={cn(
+            'overflow-auto bg-card outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40',
+            !loading && sorted.length > 0 && maxHeight,
+          )}
+        >
+          <table role="table" className="w-full border-separate border-spacing-0 text-left text-sm">
+            <thead className="sticky top-0 z-20 bg-gray-100">
+              <tr role="row" className="h-9 divide-x divide-border bg-gray-100/95 backdrop-blur-xs [&>th]:border-b [&>th]:border-border">
+                {selectable && (
+                  <th className="w-8 px-2.5 py-2 align-middle">
+                    <Checkbox aria-label={`Select all ${selectableRows.length} shown`} checked={allSel} onChange={v => onSelectedChange?.(v ? selectableRows.map(r => r.id) : [])} />
+                  </th>
+                )}
+                {columns.map(c => (
+                  <th
+                    key={c.key}
+                    role="columnheader"
+                    style={parseColStyle(c.width)}
+                    aria-sort={sort?.key === c.key ? (sort.dir === 1 ? 'ascending' : 'descending') : undefined}
+                    className={cn('eyebrow px-3 py-2 text-[10px] font-medium whitespace-nowrap text-gray-1000 select-none', c.align === 'right' && 'text-right')}
+                  >
+                    {columnMenu ? (
+                      <Menu align="start" width={200}
+                        trigger={({ toggle }) => (
+                          <button type="button" onClick={toggle} className={cn('inline-flex items-center gap-1.5 uppercase transition-colors hover:text-foreground [&>svg]:size-3', sort?.key === c.key && 'text-foreground')}>
+                            {c.icon}
+                            {c.header}
+                            {sort?.key === c.key ? (sort.dir === 1 ? <ArrowUp className="size-3 text-foreground" /> : <ArrowDown className="size-3 text-foreground" />) : <ChevronDown className="size-3 text-gray-800" />}
+                          </button>
+                        )}
+                        items={columnMenu(c, { asc: () => setSort({ key: c.key, dir: 1 }), desc: () => setSort({ key: c.key, dir: -1 }) })}
+                      />
+                    ) : c.sortable ? (
+                      <button
+                        type="button"
+                        className={cn('inline-flex items-center gap-1.5 uppercase transition-colors hover:text-foreground [&>svg]:size-3', sort?.key === c.key && 'text-foreground')}
+                        onClick={() => setSort(s => s?.key === c.key ? { key: c.key, dir: s.dir === 1 ? -1 : 1 } : { key: c.key, dir: 1 })}
+                      >
+                        {c.icon}
+                        {c.header}
+                        {sort?.key === c.key
+                          ? (sort.dir === 1 ? <ArrowUp className="size-3 text-foreground" /> : <ArrowDown className="size-3 text-foreground" />)
+                          : <span className="font-sans text-[9px] tracking-normal text-gray-800">↕</span>}
+                      </button>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 [&>svg]:size-3">
+                        {c.icon}
+                        {c.header}
+                      </span>
+                    )}
+                  </th>
+                ))}
+                {rowActions && (
+                  <th
+                    role="columnheader"
                     className={cn(
-                      'group/row divide-x divide-border transition-colors outline-none focus-visible:bg-secondary/80',
-                      dense ? 'h-11' : 'h-14',
-                      onRowClick && 'cursor-pointer hover:bg-secondary/50',
-                      isSel && 'bg-secondary/75',
-                      rowClassName?.(r),
+                      'eyebrow w-[1%] px-3 py-2 text-right text-[10px] font-medium whitespace-nowrap text-gray-1000 select-none',
+                      stickyActions && 'sticky right-0 z-20 bg-gray-100/95 shadow-[-1px_0_0_0_var(--border)] backdrop-blur-xs',
                     )}
                   >
-                    {selectable && (
-                      <td className={cn('w-8 px-2.5 py-2 align-middle', quietCheckbox && !anySel && 'opacity-70 transition-opacity group-hover/row:opacity-100 focus-within:opacity-100')}
-                        onClickCapture={e => { if (e.shiftKey && canSel) { e.stopPropagation(); e.preventDefault(); toggleRow(r.id, !isSel, true) } }}
-                        onClick={e => e.stopPropagation()}>
-                        {canSel && <Checkbox aria-label="Select row" checked={isSel} onChange={v => toggleRow(r.id, v, false)} />}
-                      </td>
-                    )}
-                    {columns.map(c => (
-                      <td
-                        key={c.key}
-                        role="cell"
-                        style={parseColStyle(c.width)}
-                        className={cn('px-3 align-middle', dense ? 'py-2' : 'py-2.5', c.align === 'right' && 'text-right')}
-                      >
-                        {c.render(r)}
+                    Actions
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody className="[&>tr:not(:last-child)>td]:border-b [&>tr:not(:last-child)>td]:border-border">
+              {loading ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={i} className="h-12 divide-x divide-border">
+                    {selectable && <td className="px-2.5 py-2.5"><Skeleton className="size-4 rounded-xl" /></td>}
+                    {columns.map((c, j) => (
+                      <td key={c.key} className="px-3 py-2.5">
+                        <Skeleton className={cn('h-3.5', j === 0 ? 'w-3/4' : 'w-1/2')} />
                       </td>
                     ))}
-                    {rowActions && (
-                      <td
-                        className={cn(
-                          'w-[1%] px-3 py-2 text-right align-middle whitespace-nowrap transition-colors',
-                          stickyActions && 'sticky right-0 z-[5] bg-card/95 shadow-[-1px_0_0_0_var(--border)] backdrop-blur-xs group-hover/row:bg-secondary/90',
-                          isSel && stickyActions && 'bg-secondary/95',
-                        )}
-                        onClick={e => e.stopPropagation()}
-                      >
-                        <div className="inline-flex items-center justify-end gap-1.5 opacity-90 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100">
-                          {rowActions(r)}
-                        </div>
-                      </td>
-                    )}
+                    {rowActions && <td className="px-3 py-2.5" />}
                   </tr>
-                )
-              })
-            )}
-          </tbody>
-        </table>
+                ))
+              ) : visibleRows.length === 0 ? (
+                <tr>
+                  <td colSpan={columns.length + (selectable ? 1 : 0) + (rowActions ? 1 : 0)} className="p-0">
+                    {empty}
+                  </td>
+                </tr>
+              ) : (
+                visibleRows.map(r => {
+                  const isSel = sel.includes(r.id)
+                  const canSel = !isSelectable || isSelectable(r)
+                  return (
+                    <tr
+                      key={r.id}
+                      role="row"
+                      data-row-id={r.id}
+                      tabIndex={onRowClick ? 0 : undefined}
+                      onClick={() => onRowClick?.(r)}
+                      onKeyDown={e => { if (e.key === 'Enter' && onRowClick) onRowClick(r) }}
+                      className={cn(
+                        'group/row divide-x divide-border transition-colors outline-none focus-visible:bg-secondary/80',
+                        dense ? 'h-11' : 'h-14',
+                        onRowClick && 'cursor-pointer hover:bg-secondary/50',
+                        isSel && 'bg-secondary/75',
+                        rowClassName?.(r),
+                      )}
+                    >
+                      {selectable && (
+                        <td className={cn('w-8 px-2.5 py-2 align-middle', quietCheckbox && !anySel && 'opacity-70 transition-opacity group-hover/row:opacity-100 focus-within:opacity-100')}
+                          onClickCapture={e => { if (e.shiftKey && canSel) { e.stopPropagation(); e.preventDefault(); toggleRow(r.id, !isSel, true) } }}
+                          onClick={e => e.stopPropagation()}>
+                          {canSel && <Checkbox aria-label="Select row" checked={isSel} onChange={v => toggleRow(r.id, v, false)} />}
+                        </td>
+                      )}
+                      {columns.map(c => (
+                        <td
+                          key={c.key}
+                          role="cell"
+                          style={parseColStyle(c.width)}
+                          className={cn('px-3 align-middle', dense ? 'py-2' : 'py-2.5', c.align === 'right' && 'text-right')}
+                        >
+                          {c.render(r)}
+                        </td>
+                      ))}
+                      {rowActions && (
+                        <td
+                          className={cn(
+                            'w-[1%] px-3 py-2 text-right align-middle whitespace-nowrap transition-colors',
+                            stickyActions && 'sticky right-0 z-[5] bg-card/95 shadow-[-1px_0_0_0_var(--border)] backdrop-blur-xs group-hover/row:bg-secondary/90',
+                            isSel && stickyActions && 'bg-secondary/95',
+                          )}
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <div className="inline-flex items-center justify-end gap-1.5 opacity-90 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100">
+                            {rowActions(r)}
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Bottom SaaS Page-Size ("Show in one go") & Pagination Footer Bar */}
+        {!loading && totalRows > 0 && paginated && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-gray-100/90 px-4 py-2.5 text-xs">
+            {/* Left: Range readout + Show results in one go selector */}
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-muted-foreground">
+                Showing <span className="font-mono font-semibold text-foreground tnum">{startIdx + 1}–{endIdx}</span> of{' '}
+                <span className="font-mono font-semibold text-foreground tnum">{totalRows}</span>
+                {totalPoolCount !== undefined && totalPoolCount > totalRows && (
+                  <span>
+                    {' '}
+                    (from <span className="font-mono text-foreground tnum">{totalPoolCount}</span> in pool)
+                  </span>
+                )}
+              </span>
+
+              <span className="text-border">|</span>
+
+              <div className="inline-flex items-center gap-1.5">
+                <span className="text-[11px] text-muted-foreground">Show in one go:</span>
+                <div role="group" aria-label="Results per page" className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
+                  {pageSizeOptions.map(sz => {
+                    const active = pageSize === sz
+                    return (
+                      <button
+                        key={sz}
+                        type="button"
+                        onClick={() => { setPageSize(sz); setPage(1) }}
+                        className={cn(
+                          'h-6 rounded-md px-2 font-mono text-[11px] transition-colors tnum cursor-pointer',
+                          active
+                            ? 'border border-border bg-card font-semibold text-foreground shadow-2xs'
+                            : 'text-muted-foreground hover:text-foreground',
+                        )}
+                      >
+                        {sz}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {footerNote && (
+                <>
+                  <span className="hidden text-border xl:inline">|</span>
+                  <span className="hidden text-[11px] text-muted-foreground xl:inline">{footerNote}</span>
+                </>
+              )}
+            </div>
+
+            {/* Right: Page indicator & Pagination controls */}
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[11px] text-muted-foreground tnum">
+                Page <span className="text-foreground">{clampedPage}</span> of <span className="text-foreground">{totalPages}</span>
+              </span>
+              <div className="inline-flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={clampedPage <= 1}
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  className="inline-flex h-7 items-center gap-1 rounded-lg border border-border bg-card px-2 text-xs font-medium text-foreground transition-colors hover:bg-secondary disabled:pointer-events-none disabled:opacity-40 cursor-pointer"
+                >
+                  <ChevronLeft className="size-3.5" />
+                  <span>Prev</span>
+                </button>
+                {Array.from({ length: totalPages }, (_, idx) => idx + 1).map(p => (
+                  <button
+                    key={p}
+                    type="button"
+                    aria-label={`Page ${p}`}
+                    aria-current={p === clampedPage ? 'page' : undefined}
+                    onClick={() => setPage(p)}
+                    className={cn(
+                      'inline-flex h-7 min-w-7 items-center justify-center rounded-lg border px-2 font-mono text-xs transition-colors tnum cursor-pointer',
+                      p === clampedPage
+                        ? 'border-foreground bg-foreground font-semibold text-background'
+                        : 'border-border bg-card text-muted-foreground hover:bg-secondary hover:text-foreground',
+                    )}
+                  >
+                    {p}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  disabled={clampedPage >= totalPages}
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  className="inline-flex h-7 items-center gap-1 rounded-lg border border-border bg-card px-2 text-xs font-medium text-foreground transition-colors hover:bg-secondary disabled:pointer-events-none disabled:opacity-40 cursor-pointer"
+                >
+                  <span>Next</span>
+                  <ChevronRight className="size-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   )

@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  Plus, SlidersHorizontal, Copy, ChevronDown, ChevronRight, ChevronUp, Download, Search, FileText, Users, X, Check,
+  Plus, SlidersHorizontal, Copy, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Search, FileText, Users, X, Check,
   EyeOff, Eye, Smartphone, MapPin, Clock, Star, ShieldCheck, DollarSign, Calendar, Sparkles, ExternalLink, Briefcase, Info,
   RotateCcw, ArrowRight, ArrowUp, ArrowDown, ArrowUpRight, Layers, Filter, CheckCircle2, Loader2, Terminal,
   Code2, CreditCard, TrendingUp, PhoneCall, HelpCircle, Compass, Bot, Wand2, PanelRightOpen, Shield,
@@ -751,6 +752,10 @@ export function CandidatesList() {
     if (wf === 'more') {
       setScreenMode('manual')
       setCats(['Marketing']); setSubs([]); setMore({ ...MORE_DEFAULT, metro: 'NYC' }); setMoreOpen(true)
+      setTimeout(() => {
+        const buttons = Array.from(barRef.current?.querySelectorAll('button') ?? [])
+        buttons.find(b => b.textContent?.includes('Category'))?.click()
+      }, 80)
     }
     if (wf === 'bulk') {
       setScreenMode('manual')
@@ -763,6 +768,17 @@ export function CandidatesList() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wf])
+
+  useEffect(() => {
+    if (screenMode === 'manual' && (searchParams.get('openFilter') === 'category' || wf === 'more')) {
+      const t = setTimeout(() => {
+        const buttons = Array.from(barRef.current?.querySelectorAll('button') ?? [])
+        const btn = buttons.find(b => b.textContent?.includes('Category'))
+        if (btn && btn.getAttribute('aria-expanded') !== 'true') btn.click()
+      }, 60)
+      return () => clearTimeout(t)
+    }
+  }, [screenMode, searchParams, wf])
 
   const pool = wf === 'empty' ? [] : app.candidates
   const poolSize = POOL_SIZE + Math.max(0, app.candidates.length - SEED_CANDIDATES.length)
@@ -1335,6 +1351,7 @@ export function CandidatesList() {
       {layout === 'split' && !isLoading && rows.length > 0 ? (
         <CandidateSplitView
           rows={rows}
+          totalPoolCount={count}
           active={activeCandidate}
           onSelectActive={c => setActiveId(c.id)}
           selected={selected}
@@ -1358,6 +1375,10 @@ export function CandidatesList() {
             onSelectedChange={ids => { setSelected(ids); setAllMatching(false) }}
             columnMenu={columnMenu}
             onRowClick={c => setPreview(c.id)}
+            defaultPageSize={10}
+            totalPoolCount={count}
+            maxHeight="max-h-[430px]"
+            footerNote="P3: Missing fields pass as Assumed"
             rowActions={c => compactForSplitWorkspace ? (
               <>
                 <Button variant="outline" size="sm" icon={<Shield />} title="Select resume & mask for a role" onClick={() => setBulkMaskCandIds([c.id])}>Mask</Button>
@@ -1377,18 +1398,6 @@ export function CandidatesList() {
                 action={<Button variant="outline" onClick={clearAll}>Clear filters</Button>} />
             }
           />
-        </div>
-      )}
-
-      {!isLoading && rows.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-          <p>
-            Showing <span className="font-mono text-foreground tnum">{rows.length}</span> sample rows of <span className="font-mono text-foreground tnum">{count}</span> in pool · {layout === 'split' ? 'click any row on the left to inspect structured details' : 'click any row or press Space to open the right-hand preview sidebar · click candidate name for full profile'}
-          </p>
-          <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
-            <HelpCircle className="size-3" />
-            <span>P3 Guardrail: Missing fields pass as Assumed</span>
-          </span>
         </div>
       )}
     </div>
@@ -2093,10 +2102,10 @@ export function CandidatesList() {
            ====================================================================== */
         <div className="space-y-6">
           {/* Unified Double-Bezel Command & Filter Console (Sheets FilterBar + Quick Presets + Expandable 11-Dimension Grid) */}
-          <section className="rounded-2xl border border-border bg-gray-100 p-1">
-            <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+          <section className="relative z-20 rounded-2xl border border-border bg-gray-100 p-1">
+            <div className="divide-y divide-border rounded-xl border border-border bg-card">
               {/* Row 1: Single-Line Unified Command Bar (Search · Quick Presets · 11-Dim Drawer Toggle · View Switcher · Export) */}
-              <div className="flex h-12 flex-wrap items-center justify-between gap-2 bg-gray-100/90 px-4">
+              <div className="flex h-12 flex-wrap items-center justify-between gap-2 rounded-t-xl bg-gray-100/90 px-4">
                 <div className="flex min-w-0 items-center gap-2">
                   <div className="relative w-56">
                     <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -2495,7 +2504,7 @@ export function CandidatesList() {
               )}
 
               {/* Bottom Status & Active Filter Summary Strip */}
-              <div className="flex flex-wrap items-center justify-between gap-2 bg-secondary/40 px-4 py-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-b-xl bg-secondary/40 px-4 py-2.5">
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <span aria-live="polite" className="font-mono font-semibold text-foreground tnum">
                     {count} candidate{count === 1 ? '' : 's'} match
@@ -2582,26 +2591,59 @@ export function CandidatesList() {
    Local helpers
    ========================================================================== */
 
-/** Controlled popover so wireframe states can show it open. */
+/** Controlled popover so wireframe states can show it open (portaled to document.body to prevent clipping). */
 function ControlledPop({ open, onOpenChange, trigger, children, align = 'start', width = 320 }: {
   open: boolean; onOpenChange: (v: boolean) => void; trigger: React.ReactNode; children: React.ReactNode; align?: 'start' | 'end'; width?: number
 }) {
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number }>({ top: 0, left: 0 })
   const ref = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  const updatePos = () => {
+    const el = ref.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const left = align === 'end'
+      ? Math.max(8, Math.min(window.innerWidth - width - 8, r.right - width))
+      : Math.max(8, Math.min(window.innerWidth - width - 8, r.left))
+    setPos({ top: r.bottom + 6, left })
+  }
+
   useEffect(() => {
     if (!open) return
-    const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) onOpenChange(false) }
+    updatePos()
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (!ref.current?.contains(t) && !panelRef.current?.contains(t)) onOpenChange(false)
+    }
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onOpenChange(false) }
     document.addEventListener('mousedown', onDoc)
     document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
-  }, [open, onOpenChange])
+    window.addEventListener('scroll', updatePos, true)
+    window.addEventListener('resize', updatePos)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', updatePos, true)
+      window.removeEventListener('resize', updatePos)
+    }
+  }, [open, onOpenChange]) // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div ref={ref} className="relative inline-flex">
       {trigger}
-      {open && (
-        <div style={{ width }} className={cn('anim-pop absolute top-full z-50 mt-1.5 max-w-[calc(100vw-2rem)] rounded-2xl border border-border bg-background p-1 shadow-[0_8px_30px_-6px_rgba(0,0,0,0.12)]', align === 'end' ? 'right-0' : 'left-0')}>
-          {children}
-        </div>
+      {open && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={panelRef}
+          style={{ width, top: pos.top, bottom: pos.bottom, left: pos.left }}
+          onClick={e => e.stopPropagation()}
+          className="anim-pop fixed z-[90] max-w-[calc(100vw-2rem)] rounded-2xl border border-border bg-background p-1 shadow-[0_12px_36px_-6px_rgba(0,0,0,0.45),0_4px_12px_rgba(0,0,0,0.2)]"
+        >
+          <div className="rounded-xl border border-border bg-card">
+            {children}
+          </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
@@ -2709,9 +2751,10 @@ function PhoneFrame({ rows, count, onOpen, onCopy, cats, onToggleCat }: {
 
 /* ---------- Master–Detail Split Grid Table + Structured Details Pane ---------- */
 function CandidateSplitView({
-  rows, active, onSelectActive, selected, onSelectedChange, onOpenProfile, onOpenSlideOver, onFindRoles, onMask,
+  rows, totalPoolCount, active, onSelectActive, selected, onSelectedChange, onOpenProfile, onOpenSlideOver, onFindRoles, onMask,
 }: {
   rows: Candidate[]
+  totalPoolCount?: number
   active: Candidate | null
   onSelectActive: (c: Candidate) => void
   selected: string[]
@@ -2721,35 +2764,49 @@ function CandidateSplitView({
   onFindRoles: (id: string) => void
   onMask: (id: string) => void
 }) {
+  const [pageSize, setPageSize] = useState<number>(10)
+  const [page, setPage] = useState<number>(1)
+  const totalRows = rows.length
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize))
+  const clampedPage = Math.min(Math.max(1, page), totalPages)
+  useEffect(() => {
+    setPage(1)
+  }, [rows.length, pageSize])
+
+  const startIdx = (clampedPage - 1) * pageSize
+  const endIdx = Math.min(totalRows, startIdx + pageSize)
+  const visibleRows = rows.slice(startIdx, endIdx)
   const allSel = rows.length > 0 && selected.length === rows.length
 
   return (
     <section className="rounded-2xl border border-border bg-gray-100 p-1">
-      <div className="grid grid-cols-1 divide-y divide-border overflow-hidden rounded-xl border border-border bg-card lg:grid-cols-[1.06fr_1fr] lg:divide-x lg:divide-y-0">
-        {/* ==================== LEFT PANE: Grid Table with Rows & Columns Divided by Lines ==================== */}
-        <div className="min-w-0">
-          <table className="w-full table-fixed border-collapse text-left text-xs">
-            <thead>
-              <tr className="h-10 divide-x divide-border border-b border-border bg-gray-100/90 text-gray-1000">
-                <th className="w-9 px-2.5 py-2 align-middle">
-                  <Checkbox
-                    aria-label="Select all candidates"
-                    checked={allSel}
-                    onChange={v => onSelectedChange(v ? rows.map(r => r.id) : [])}
-                  />
-                </th>
-                <th className="px-3.5 py-2 font-medium">
-                  <span className="inline-flex items-center gap-2 text-xs text-gray-1100">
-                    <Briefcase className="size-3.5 text-gray-900" />
-                    <span>Candidate</span>
-                  </span>
-                </th>
-                <th className="w-[104px] px-3 py-2 font-medium text-gray-1100">Category</th>
-                <th className="w-[88px] px-3 py-2 font-medium text-gray-1100">Updated</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {rows.map(c => {
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
+        <div className="grid grid-cols-1 divide-y divide-border lg:grid-cols-[1.06fr_1fr] lg:divide-x lg:divide-y-0">
+          {/* ==================== LEFT PANE: Locked-Height Scrollable Table ==================== */}
+          <div className="min-w-0">
+            <div tabIndex={0} role="region" aria-label="Candidates split list" className="max-h-[460px] overflow-y-auto outline-none">
+              <table className="w-full table-fixed border-separate border-spacing-0 text-left text-xs">
+                <thead className="sticky top-0 z-20 bg-gray-100">
+                  <tr className="h-10 divide-x divide-border bg-gray-100/95 text-gray-1000 [&>th]:border-b [&>th]:border-border">
+                    <th className="w-9 px-2.5 py-2 align-middle">
+                      <Checkbox
+                        aria-label="Select all candidates"
+                        checked={allSel}
+                        onChange={v => onSelectedChange(v ? rows.map(r => r.id) : [])}
+                      />
+                    </th>
+                    <th className="px-3.5 py-2 font-medium">
+                      <span className="inline-flex items-center gap-2 text-xs text-gray-1100">
+                        <Briefcase className="size-3.5 text-gray-900" />
+                        <span>Candidate</span>
+                      </span>
+                    </th>
+                    <th className="w-[104px] px-3 py-2 font-medium text-gray-1100">Category</th>
+                    <th className="w-[88px] px-3 py-2 font-medium text-gray-1100">Updated</th>
+                  </tr>
+                </thead>
+                <tbody className="[&>tr:not(:last-child)>td]:border-b [&>tr:not(:last-child)>td]:border-border">
+                  {visibleRows.map(c => {
                 const isActive = active?.id === c.id
                 const isSel = selected.includes(c.id)
                 const authShort = workAuthShort(c.workAuth)
@@ -2808,13 +2865,14 @@ function CandidateSplitView({
                   </tr>
                 )
               })}
-            </tbody>
-          </table>
-        </div>
+                </tbody>
+              </table>
+            </div>
+          </div>
 
-        {/* ==================== RIGHT PANE: Structured Candidate Details (Overview Grid + About + History) ==================== */}
-        {active && (
-          <div className="flex min-w-0 flex-col bg-background/40">
+          {/* ==================== RIGHT PANE: Structured Candidate Details (Overview Grid + About + History) ==================== */}
+          {active && (
+            <div className="flex max-h-[460px] min-w-0 flex-col overflow-y-auto bg-background/40">
             {/* Top Bar: Details Header */}
             <div className="flex h-10 items-center justify-between border-b border-border bg-gray-100/90 px-4">
               <span className="inline-flex items-center gap-2 text-xs font-medium text-gray-1100">
@@ -2972,6 +3030,85 @@ function CandidateSplitView({
             </div>
           </div>
         )}
+        </div>
+
+        {/* Bottom SaaS Page-Size ("Show in one go") & Pagination Footer Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-gray-100/90 px-4 py-2.5 text-xs">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-muted-foreground">
+              Showing <span className="font-mono font-semibold text-foreground tnum">{startIdx + 1}–{endIdx}</span> of{' '}
+              <span className="font-mono font-semibold text-foreground tnum">{totalRows}</span>
+              {totalPoolCount !== undefined && totalPoolCount > totalRows && (
+                <span>
+                  {' '}
+                  (from <span className="font-mono text-foreground tnum">{totalPoolCount}</span> in pool)
+                </span>
+              )}
+            </span>
+            <span className="text-border">|</span>
+            <div className="inline-flex items-center gap-1.5">
+              <span className="text-[11px] text-muted-foreground">Show in one go:</span>
+              <div role="group" aria-label="Results per page" className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
+                {[5, 10, 25, 50, 100].map(sz => (
+                  <button
+                    key={sz}
+                    type="button"
+                    onClick={() => { setPageSize(sz); setPage(1) }}
+                    className={cn(
+                      'h-6 rounded-md px-2 font-mono text-[11px] transition-colors tnum cursor-pointer',
+                      pageSize === sz
+                        ? 'border border-border bg-card font-semibold text-foreground shadow-2xs'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {sz}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[11px] text-muted-foreground tnum">
+              Page <span className="text-foreground">{clampedPage}</span> of <span className="text-foreground">{totalPages}</span>
+            </span>
+            <div className="inline-flex items-center gap-1">
+              <button
+                type="button"
+                disabled={clampedPage <= 1}
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                className="inline-flex h-7 items-center gap-1 rounded-lg border border-border bg-card px-2 text-xs font-medium text-foreground transition-colors hover:bg-secondary disabled:pointer-events-none disabled:opacity-40 cursor-pointer"
+              >
+                <ChevronLeft className="size-3.5" />
+                <span>Prev</span>
+              </button>
+              {Array.from({ length: totalPages }, (_, idx) => idx + 1).map(p => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPage(p)}
+                  className={cn(
+                    'inline-flex h-7 min-w-7 items-center justify-center rounded-lg border px-2 font-mono text-xs transition-colors tnum cursor-pointer',
+                    p === clampedPage
+                      ? 'border-foreground bg-foreground font-semibold text-background'
+                      : 'border-border bg-card text-muted-foreground hover:bg-secondary hover:text-foreground',
+                  )}
+                >
+                  {p}
+                </button>
+              ))}
+              <button
+                type="button"
+                disabled={clampedPage >= totalPages}
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                className="inline-flex h-7 items-center gap-1 rounded-lg border border-border bg-card px-2 text-xs font-medium text-foreground transition-colors hover:bg-secondary disabled:pointer-events-none disabled:opacity-40 cursor-pointer"
+              >
+                <span>Next</span>
+                <ChevronRight className="size-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   )

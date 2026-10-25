@@ -1,18 +1,23 @@
 import React, { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, Briefcase, CircleCheck, Copy, Lock, Mail, MoreHorizontal, Pause, Pencil, Plus, RefreshCw, Search, SearchX, Send, Sparkles, Table2 } from 'lucide-react'
+import {
+  AlertTriangle, Briefcase, Building2, CircleCheck, Copy, Eye, Layers, ListChecks,
+  Lock, Mail, MoreHorizontal, Pause, Pencil, Plus, RefreshCw, SearchX, Send,
+  Shield, Sparkles, Table2,
+} from 'lucide-react'
 import { ScrollPage, useTopBar } from '../shell/AppShell'
 import {
   Button, CompanyTypeTag, EmptyState, ExampleMark, Input, Menu, PageHeader, PillTabs, Select, cn,
 } from '../components/ui'
 import { Banner, DataTable, FilterChip, type Column } from '../components/hs'
-import { SelectionBar, useListSelection } from '../components/v3'
+import { ColumnsMenu, SelectionBar, useColumnPrefs, useListSelection } from '../components/v3'
+import { BulkMaskForRoleDialog } from '../components/BulkMaskModal'
 import { CreateGmailDraftsDialog, RerunDialog } from './Dialogs'
 import { useApp, useWireframeState } from '../store/AppStore'
 import { CATEGORIES, type Role, type RoleStatus } from '../data/types'
 
 /* ==========================================================================
-   S-02 · Roles list (home) — see every role, spot what needs action, open one.
+   S-02 · Roles list (home) — SaaS action-driven table + Bulk Mask & Masked Links
    ========================================================================== */
 
 type StatusTab = RoleStatus | 'All'
@@ -24,6 +29,15 @@ const WF_STATES = [
   { id: 'loading', label: 'Loading' },
   { id: 'filtered', label: 'Filtered empty' },
   { id: 'error', label: 'Error' },
+]
+
+const ROLE_COL_SPECS = [
+  { key: 'title', label: 'Role & must-haves', defaultVisible: true, locked: true },
+  { key: 'company', label: 'Company & type', defaultVisible: true },
+  { key: 'pipeline', label: 'Shortlist & masked links', defaultVisible: true },
+  { key: 'latest', label: 'Latest update', defaultVisible: true },
+  { key: 'next', label: 'Next step', defaultVisible: true },
+  { key: 'cat', label: 'Category (separate col)', defaultVisible: false },
 ]
 
 /** Relative time → minutes, so "needs action first, then most recent" can sort */
@@ -82,7 +96,7 @@ const needsAction = (r: Role) => r.matchStatus === 'out-of-date' || r.matchStatu
 
 export function RolesList() {
   const app = useApp()
-  const { roles, matches } = app
+  const { roles, matches, outputs } = app
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const attention = params.get('filter') === 'attention'
@@ -94,6 +108,8 @@ export function RolesList() {
   const [q, setQ] = useState('')
   const [rerunRole, setRerunRole] = useState<Role | null>(null)
   const [pitchesOpen, setPitchesOpen] = useState(false)
+  const [bulkMaskRoleId, setBulkMaskRoleId] = useState<string | null>(null)
+  const colPrefs = useColumnPrefs('roles-v4-saas', ROLE_COL_SPECS.filter(s => s.defaultVisible).map(s => s.key))
 
   useTopBar([{ label: 'Roles' }])
 
@@ -101,6 +117,10 @@ export function RolesList() {
   const shortlistCount = (r: Role) => {
     const own = matches.filter(m => m.roleId === r.id)
     return own.length ? own.filter(m => m.status === 'shortlisted').length : r.shortlisted
+  }
+  const maskedCount = (r: Role) => {
+    const explicit = outputs.filter(o => o.type === 'Masked' && o.roleId === r.id).length
+    return explicit || Math.max(1, shortlistCount(r))
   }
 
   const rows = useMemo(() => {
@@ -156,66 +176,126 @@ export function RolesList() {
   const lastWhen = (r: Role) => agoMinutes(r.latestUpdate?.when ?? r.updated)
   const stop = (e: React.MouseEvent) => e.stopPropagation()
 
-  const columns: Column<Role>[] = [
+  const allColumns: Column<Role>[] = [
     {
-      key: 'cat', header: 'Category', width: '150px', sortable: true, sortValue: r => r.category,
+      key: 'title',
+      header: 'Role & Must-haves',
+      icon: <Briefcase className="size-3" />,
+      sortable: true,
+      sortValue: r => r.title,
       render: r => (
         <div className="min-w-0">
-          <span className="inline-flex h-5 items-center rounded-sm border border-border bg-secondary px-1.5 text-[11px] font-medium text-foreground">{r.category}</span>
-          <div className="mt-0.5 max-w-[140px] truncate text-xs text-muted-foreground">{r.subcategory}</div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="max-w-[180px] truncate font-semibold text-foreground">{r.title}</span>
+            <span className="inline-flex h-4.5 items-center rounded-xs border border-border bg-secondary px-1.5 text-[10px] font-medium text-gray-1100">
+              {r.category}
+            </span>
+          </div>
+          <div className="mt-0.5 max-w-[235px] truncate text-xs text-muted-foreground" title={mustHavesSummary(r)}>
+            {mustHavesSummary(r)}
+          </div>
         </div>
       ),
     },
     {
-      key: 'company', header: 'Company', width: '17%', sortable: true, sortValue: r => r.company,
-      render: r => (
-        <div className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate text-foreground">{r.company}</span><CompanyTypeTag type={r.companyType} />
-        </div>
-      ),
-    },
-    {
-      key: 'title', header: 'Job title & must-haves', width: '24%', sortable: true, sortValue: r => r.title,
+      key: 'company',
+      header: 'Company',
+      icon: <Building2 className="size-3" />,
+      sortable: true,
+      sortValue: r => r.company,
       render: r => (
         <div className="min-w-0">
-          <div className="truncate font-medium text-foreground">{r.title}</div>
-          <div className="mt-0.5 truncate text-xs text-muted-foreground" title={mustHavesSummary(r)}>{mustHavesSummary(r)}</div>
+          <div className="flex items-center gap-1.5">
+            <span className="max-w-[125px] truncate font-medium text-foreground">{r.company}</span>
+            <CompanyTypeTag type={r.companyType} />
+          </div>
+          <div className="mt-0.5 max-w-[155px] truncate text-[11px] text-muted-foreground">{r.subcategory}</div>
         </div>
       ),
     },
     {
-      key: 'latest', header: 'Latest update', sortable: true, sortValue: r => lastWhen(r),
-      render: r => r.latestUpdate ? (
-        <div className="min-w-0" title={`${r.latestUpdate.text} · ${r.latestUpdate.who} · ${r.latestUpdate.when}`}>
-          <div className="truncate text-[13px] text-foreground">{r.latestUpdate.text}</div>
-          <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground tnum">{r.latestUpdate.who} · {r.latestUpdate.when}</div>
-        </div>
-      ) : <span className="font-mono text-xs text-muted-foreground tnum">Updated {r.updated}</span>,
+      key: 'pipeline',
+      header: 'Shortlist & Masked Links',
+      icon: <Shield className="size-3" />,
+      sortable: true,
+      sortValue: r => shortlistCount(r),
+      render: r => {
+        const sc = shortlistCount(r)
+        const mc = maskedCount(r)
+        return (
+          <div className="flex flex-wrap items-center gap-1.5" onClick={stop}>
+            <button
+              type="button"
+              onClick={() => navigate(`/roles/${r.id}?tab=shortlist`)}
+              className={cn(
+                'inline-flex h-6 items-center gap-1 rounded-md border px-2 font-mono text-[11px] transition-colors hover:border-gray-700 tnum',
+                sc ? 'border-border bg-secondary text-foreground' : 'border-border bg-background text-muted-foreground',
+              )}
+              title={`${sc} shortlisted candidates`}
+            >
+              <ListChecks className="size-3 text-muted-foreground" />
+              <span>{sc} shortlisted</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate(`/resumes/masked-view?role=${r.id}`)}
+              className="inline-flex h-6 items-center gap-1 rounded-md border border-border bg-background px-2 text-[11px] font-medium text-foreground transition-colors hover:border-gray-700 hover:bg-secondary"
+              title="Open shareable Masked Role Links view"
+            >
+              <Shield className="size-3 text-success" />
+              <span className="font-mono tnum">{mc}</span>
+              <span>masked</span>
+            </button>
+          </div>
+        )
+      },
     },
     {
-      key: 'next', header: 'Next step', width: '280px', sortable: true, sortValue: r => (r.matchStatus === 'out-of-date' ? 0 : (r.matchStatus === 'not-run' || (r.scoredCount ?? 0) === 0) ? 1 : 2),
+      key: 'latest',
+      header: 'Latest Update',
+      sortable: true,
+      sortValue: r => lastWhen(r),
+      render: r =>
+        r.latestUpdate ? (
+          <div className="min-w-0" title={`${r.latestUpdate.text} · ${r.latestUpdate.who} · ${r.latestUpdate.when}`}>
+            <div className="max-w-[205px] truncate text-xs text-foreground">{r.latestUpdate.text}</div>
+            <div className="mt-0.5 max-w-[205px] truncate font-mono text-[11px] text-muted-foreground tnum">
+              {r.latestUpdate.who} · {r.latestUpdate.when}
+            </div>
+          </div>
+        ) : (
+          <span className="font-mono text-xs text-muted-foreground tnum">Updated {r.updated}</span>
+        ),
+    },
+    {
+      key: 'next',
+      header: 'Next Step',
+      sortable: true,
+      sortValue: r =>
+        r.matchStatus === 'out-of-date' ? 0 : r.matchStatus === 'not-run' || (r.scoredCount ?? 0) === 0 ? 1 : 2,
       render: r => {
         const sc = shortlistCount(r)
         const notScoredYet = r.matchStatus === 'not-run' || (r.scoredCount ?? 0) === 0
-        const readyToSend = !notScoredYet && r.matchStatus !== 'out-of-date' && sc >= 2 && (r.id === 'lumen-fse' || r.latestUpdate?.text.toLowerCase().includes('shortlist ready'))
+        const readyToSend =
+          !notScoredYet &&
+          r.matchStatus !== 'out-of-date' &&
+          sc >= 2 &&
+          (r.id === 'lumen-fse' || r.latestUpdate?.text.toLowerCase().includes('shortlist ready'))
         return (
           <div className="flex items-center gap-1.5 whitespace-nowrap" onClick={stop}>
             {!readyToSend && <MatchesStatus r={r} />}
             {r.matchStatus === 'out-of-date' ? (
-              <Button variant="outline" size="sm" icon={<RefreshCw />} onClick={() => setRerunRole(r)}>Rerun</Button>
+              <Button variant="outline" size="sm" icon={<RefreshCw />} onClick={() => setRerunRole(r)}>
+                Rerun
+              </Button>
             ) : notScoredYet ? (
               <Button variant="outline" size="sm" icon={<Sparkles />} onClick={() => navigate(`/roles/${r.id}?tab=matches`)}>
                 Score <span className="font-mono tnum">{r.passCount}</span>
               </Button>
             ) : readyToSend ? (
-              <>
-                <Button variant="primary" size="sm" icon={<Send />} onClick={() => navigate(`/roles/${r.id}?tab=shortlist`)}>
-                  Send <span className="font-mono tnum">{sc}</span>
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => navigate(`/roles/${r.id}?tab=matches`)}>
-                  Review <span className="font-mono tnum">{r.scoredCount}</span>
-                </Button>
-              </>
+              <Button variant="primary" size="sm" icon={<Send />} onClick={() => navigate(`/roles/${r.id}?tab=shortlist`)}>
+                Send <span className="font-mono tnum">{sc}</span>
+              </Button>
             ) : (
               <Button variant="ghost" size="sm" onClick={() => navigate(`/roles/${r.id}?tab=matches`)}>
                 Review <span className="font-mono tnum">{r.scoredCount}</span>
@@ -226,28 +306,63 @@ export function RolesList() {
       },
     },
     {
-      key: 'short', header: 'Shortlist', width: '96px', sortable: true, sortValue: r => shortlistCount(r),
-      render: r => {
-        const n = shortlistCount(r)
-        return (
-          <span className={cn('inline-flex h-5 min-w-5 items-center justify-center rounded-sm border px-1.5 font-mono text-[11px] tnum', n ? 'border-border bg-secondary text-foreground' : 'border-border bg-gray-100 text-muted-foreground')}
-            aria-label={`${n} shortlisted`}>{n}</span>
-        )
-      },
+      key: 'cat',
+      header: 'Category',
+      width: '140px',
+      sortable: true,
+      sortValue: r => r.category,
+      render: r => (
+        <div className="min-w-0">
+          <span className="inline-flex h-5 items-center rounded-sm border border-border bg-secondary px-1.5 text-[11px] font-medium text-foreground">
+            {r.category}
+          </span>
+          <div className="mt-0.5 max-w-[130px] truncate text-xs text-muted-foreground">{r.subcategory}</div>
+        </div>
+      ),
     },
   ]
 
+  const visibleColumns = useMemo(
+    () => allColumns.filter(c => colPrefs.visible.includes(c.key)),
+    [allColumns, colPrefs.visible], // eslint-disable-line react-hooks/exhaustive-deps
+  )
+
   const rowActions = (r: Role) => (
-    <Menu width={200}
-      trigger={({ toggle }) => <Button variant="ghost" size="icon-sm" aria-label={`More actions for ${r.title}`} onClick={toggle} icon={<MoreHorizontal />} />}
-      items={[
-        { label: 'Edit role', icon: <Pencil />, onSelect: () => navigate(`/roles/${r.id}/edit`) },
-        { label: 'Put on hold', icon: <Pause />, disabled: r.status === 'On hold', onSelect: () => setStatus(r, 'On hold') },
-        { label: 'Close role', icon: <Lock />, disabled: r.status === 'Closed', onSelect: () => setStatus(r, 'Closed') },
-        { separator: true, label: '' },
-        { label: 'Duplicate role', icon: <Copy />, onSelect: () => duplicate(r) },
-      ]}
-    />
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        icon={<Shield />}
+        title={`Select resumes & bulk mask for ${r.title}`}
+        onClick={() => setBulkMaskRoleId(r.id)}
+      >
+        Mask
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label={`Preview masked links for ${r.title}`}
+        title="Preview client masked links"
+        icon={<Eye />}
+        onClick={() => navigate(`/resumes/masked-view?role=${r.id}`)}
+      />
+      <Menu
+        width={210}
+        trigger={({ toggle }) => (
+          <Button variant="ghost" size="icon-sm" aria-label={`More actions for ${r.title}`} onClick={toggle} icon={<MoreHorizontal />} />
+        )}
+        items={[
+          { label: 'View masked role links', icon: <Eye />, onSelect: () => navigate(`/resumes/masked-view?role=${r.id}`) },
+          { label: 'Select resumes & bulk mask…', icon: <Sparkles />, onSelect: () => setBulkMaskRoleId(r.id) },
+          { separator: true, label: '' },
+          { label: 'Edit role', icon: <Pencil />, onSelect: () => navigate(`/roles/${r.id}/edit`) },
+          { label: 'Put on hold', icon: <Pause />, disabled: r.status === 'On hold', onSelect: () => setStatus(r, 'On hold') },
+          { label: 'Close role', icon: <Lock />, disabled: r.status === 'Closed', onSelect: () => setStatus(r, 'Closed') },
+          { separator: true, label: '' },
+          { label: 'Duplicate role', icon: <Copy />, onSelect: () => duplicate(r) },
+        ]}
+      />
+    </>
   )
 
   const tabCount = (t: StatusTab) => roles.filter(r => t === 'All' || r.status === t).length
@@ -260,11 +375,20 @@ export function RolesList() {
   }
 
   return (
-    <ScrollPage>
+    <ScrollPage className="max-w-[1440px]">
       <PageHeader
         title={<span className="flex items-center gap-2">Roles <ExampleMark /></span>}
-        meta={<span className="tnum">{isEmpty ? 0 : openCount} open</span>}
-        actions={<Button variant="primary" icon={<Plus />} onClick={() => navigate('/roles/new')}>New role</Button>}
+        meta={<span className="tnum">{isEmpty ? 0 : openCount} open · {outputs.filter(o => o.type === 'Masked').length} masked links</span>}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" icon={<Shield />} onClick={() => setBulkMaskRoleId(roles[0]?.id ?? 'northwind-spm')}>
+              Select resumes &amp; bulk mask
+            </Button>
+            <Button variant="primary" icon={<Plus />} onClick={() => navigate('/roles/new')}>
+              New role
+            </Button>
+          </div>
+        }
       />
 
       {isEmpty ? (
@@ -293,7 +417,10 @@ export function RolesList() {
               onClear={sel.clear}
               note={prospectIds.length > 0 && prospectIds.length < sel.selected.length ? `${prospectIds.length} prospect role(s)` : undefined}
             >
-              <Button variant="primary" size="sm" icon={<Mail />} onClick={() => setPitchesOpen(true)}>
+              <Button variant="primary" size="sm" icon={<Sparkles />} onClick={() => setBulkMaskRoleId(sel.selected[0])}>
+                Select resumes &amp; bulk mask
+              </Button>
+              <Button variant="outline" size="sm" icon={<Mail />} onClick={() => setPitchesOpen(true)}>
                 Prepare pitches ({prospectIds.length || sel.selected.length})
               </Button>
               <Button variant="outline" size="sm" icon={<Table2 />} onClick={copyOutreachRows}>
@@ -302,61 +429,97 @@ export function RolesList() {
             </SelectionBar>
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <PillTabs value={tab} onChange={setTab}
-                tabs={(['Open', 'On hold', 'Closed', 'All'] as StatusTab[]).map(t => ({ value: t, label: t, count: tabCount(t) }))} />
+              <PillTabs
+                value={tab}
+                onChange={setTab}
+                tabs={[
+                  { value: 'Open', label: 'Open', icon: <CircleCheck />, count: tabCount('Open') },
+                  { value: 'On hold', label: 'On hold', icon: <Pause />, count: tabCount('On hold') },
+                  { value: 'Closed', label: 'Closed', icon: <Lock />, count: tabCount('Closed') },
+                  { value: 'All', label: 'All', icon: <Layers />, count: tabCount('All') },
+                ]}
+              />
               <div className="flex flex-wrap items-center gap-2">
-                <FilterChip active={type === 'Client'} onClick={() => setType(t => (t === 'Client' ? null : 'Client'))}>Client</FilterChip>
-                <FilterChip active={type === 'Prospect'} onClick={() => setType(t => (t === 'Prospect' ? null : 'Prospect'))}>Prospect</FilterChip>
-                <Select aria-label="Category" value={category} onChange={setCategory}
-                  options={[{ value: 'all', label: 'All categories' }, ...CATEGORIES.map(c => ({ value: c, label: c }))]} />
-                <div className="relative w-56">
-                  <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <Input aria-label="Search roles" placeholder="Search roles…" value={q} onChange={e => setQ(e.target.value)} className="h-8 pl-8" />
+                <FilterChip
+                  active={type === 'Client'}
+                  icon={<Building2 />}
+                  onClick={() => setType(t => (t === 'Client' ? null : 'Client'))}
+                >
+                  Client
+                </FilterChip>
+                <FilterChip
+                  active={type === 'Prospect'}
+                  icon={<Sparkles />}
+                  onClick={() => setType(t => (t === 'Prospect' ? null : 'Prospect'))}
+                >
+                  Prospect
+                </FilterChip>
+                <Select
+                  aria-label="Category"
+                  value={category}
+                  onChange={setCategory}
+                  options={[{ value: 'all', label: 'All categories' }, ...CATEGORIES.map(c => ({ value: c, label: c }))]}
+                />
+                <div className="w-52">
+                  <Input aria-label="Search roles" value={q} onChange={e => setQ(e.target.value)} placeholder="Search roles…" />
                 </div>
+                <ColumnsMenu
+                  options={ROLE_COL_SPECS}
+                  visible={colPrefs.visible}
+                  onChange={colPrefs.setVisible}
+                  onReset={colPrefs.reset}
+                />
               </div>
             </div>
           )}
 
           <DataTable
-            columns={columns}
+            caption="Roles list"
+            columns={visibleColumns}
             rows={tableRows}
             loading={wf === 'loading'}
             selectable
             quietCheckbox
             selected={sel.selected}
             onSelectedChange={sel.setSelected}
-            onRowClick={r => navigate(`/roles/${r.id}?tab=matches`)}
+            onRowClick={r => navigate(`/roles/${r.id}`)}
             rowActions={rowActions}
-            empty={wf === 'error' ? <div className="px-4 py-10 text-center text-sm text-muted-foreground">Roles will appear here once they load.</div> : (
-              <EmptyState icon={<SearchX />} title="No roles match these filters"
-                body={wf === 'filtered' ? 'No prospect roles in Marketing.' : filterDesc()}
-                action={<Button onClick={clearFilters}>Clear filters</Button>} />
-            )}
+            empty={
+              <EmptyState
+                icon={<SearchX />}
+                title="No roles match these filters"
+                body={filterDesc()}
+                action={<Button onClick={clearFilters}>Clear filters</Button>}
+              />
+            }
           />
-          {wf === 'default' && rows.length > 0 && (
-            <p className="eyebrow text-[10px] text-gray-1000">Sorted by needs action first, then latest update</p>
-          )}
+          <p className="eyebrow text-[10px] text-gray-1000">Sorted by needs action first, then latest update</p>
         </div>
       )}
 
-      <RerunDialog open={!!rerunRole} onClose={() => setRerunRole(null)}
+      <RerunDialog
+        open={!!rerunRole}
+        onClose={() => setRerunRole(null)}
         roleLabel={rerunRole ? `${rerunRole.title} — ${rerunRole.company}` : ''}
-        count={rerunRole ? matches.filter(m => m.roleId === rerunRole.id && m.scored).length || rerunRole.scoredCount : 0}
-        newPassers={rerunRole ? matches.filter(m => m.roleId === rerunRole.id && !m.scored && !m.skipped && m.status !== 'rejected').length : 0}
-        newScoreCount={app.defaultScoreCount}
-        onConfirm={opts => {
+        count={rerunRole?.scoredCount || rerunRole?.passCount || 0}
+        onConfirm={() => {
           if (!rerunRole) return
-          const r = rerunRole
-          app.rerun(r.id)
-          if (opts?.alsoScoreNew) app.scoreMatches(r.id, app.defaultScoreCount)
-          app.toast(`Reran matching for ${r.title}`, { action: { label: 'Open', onClick: () => navigate(`/roles/${r.id}?tab=matches&reran=1`) } })
-        }} />
+          app.rerun(rerunRole.id)
+          navigate(`/roles/${rerunRole.id}?tab=matches&reran=1`)
+        }}
+      />
 
       <CreateGmailDraftsDialog
         open={pitchesOpen}
-        onClose={() => { setPitchesOpen(false); sel.clear() }}
+        onClose={() => setPitchesOpen(false)}
+        roleIds={prospectIds.length > 0 ? prospectIds : sel.selected}
         mode="prospect-pitches"
-        roleIds={prospectIds.length ? prospectIds : sel.selected}
+      />
+
+      <BulkMaskForRoleDialog
+        open={!!bulkMaskRoleId}
+        onClose={() => setBulkMaskRoleId(null)}
+        initialRoleId={bulkMaskRoleId}
       />
     </ScrollPage>
   )

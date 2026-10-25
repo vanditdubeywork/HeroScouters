@@ -11,6 +11,7 @@ import { CandidatesList } from './screens/CandidatesList'
 import { NewCandidate } from './screens/NewCandidate'
 import { CandidateProfile } from './screens/CandidateProfile'
 import { MaskedBuilder } from './screens/MaskedBuilder'
+import { MaskedRoleView } from './screens/MaskedRoleView'
 import { TailoredReview } from './screens/TailoredReview'
 import { ResumesLibrary } from './screens/ResumesLibrary'
 import { ActivityLog } from './screens/ActivityLog'
@@ -33,6 +34,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="/candidates/new" element={<NewCandidate />} />
               <Route path="/candidates/:id" element={<CandidateProfile />} />
               <Route path="/resumes" element={<ResumesLibrary />} />
+              <Route path="/resumes/masked-view" element={<MaskedRoleView />} />
               <Route path="/resumes/masked" element={<MaskedBuilder />} />
               <Route path="/resumes/tailored" element={<TailoredReview />} />
               <Route path="/resumes/editable" element={<TailoredReview />} />

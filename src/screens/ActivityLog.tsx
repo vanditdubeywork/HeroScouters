@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronDown, History, SearchX } from 'lucide-react'
+import { Briefcase, CheckCircle2, ChevronDown, FileText, History, RotateCcw, SearchX, SlidersHorizontal, Users } from 'lucide-react'
 import { ScrollPage, useTopBar } from '../shell/AppShell'
 import { Avatar, Button, EmptyState, ExampleMark, PageHeader, Select, cn } from '../components/ui'
 import { FilterChip } from '../components/hs'
@@ -13,6 +13,14 @@ import type { LogEntry, LogKind } from '../data/types'
    ========================================================================== */
 
 const KINDS: LogKind[] = ['Roles', 'Candidates', 'Decisions', 'Reruns', 'Outputs', 'Overrides']
+const KIND_ICON: Record<LogKind, React.ReactNode> = {
+  Roles: <Briefcase className="size-3.5 text-muted-foreground" />,
+  Candidates: <Users className="size-3.5 text-muted-foreground" />,
+  Decisions: <CheckCircle2 className="size-3.5 text-muted-foreground" />,
+  Reruns: <RotateCcw className="size-3.5 text-muted-foreground" />,
+  Outputs: <FileText className="size-3.5 text-muted-foreground" />,
+  Overrides: <SlidersHorizontal className="size-3.5 text-muted-foreground" />,
+}
 const STATES = [
   { id: 'default', label: 'Default' },
   { id: 'batch', label: 'Batch & v0.3 events' },
@@ -62,7 +70,7 @@ export function ActivityLog() {
 
       <div className="flex flex-wrap items-center gap-2">
         {KINDS.map(k => (
-          <FilterChip key={k} active={activeKinds.includes(k)} count={all.filter(e => e.kind === k).length} onClick={() => toggleKind(k)}>{k}</FilterChip>
+          <FilterChip key={k} active={activeKinds.includes(k)} icon={KIND_ICON[k]} count={all.filter(e => e.kind === k).length} onClick={() => toggleKind(k)}>{k}</FilterChip>
         ))}
         <span className="mx-1 h-5 w-px bg-border" />
         <Select aria-label="Person" value={person} onChange={setPerson} options={[{ value: 'all', label: 'Everyone' }, ...people.map(p => ({ value: p, label: p }))]} />

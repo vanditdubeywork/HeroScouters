@@ -191,7 +191,7 @@ export function Segmented<T extends string>({ value, onChange, options, size = '
 
 /** Pill tab strip (h-12 sub-nav pattern) */
 export function PillTabs<T extends string>({ value, onChange, tabs, className }: {
-  value: T; onChange: (v: T) => void; tabs: { value: T; label: React.ReactNode; count?: number }[]; className?: string
+  value: T; onChange: (v: T) => void; tabs: { value: T; label: React.ReactNode; count?: number; icon?: React.ReactNode }[]; className?: string
 }) {
   return (
     <div role="tablist" className={cn('no-scrollbar flex min-w-0 items-center gap-0.5 overflow-auto', className)}>
@@ -201,11 +201,12 @@ export function PillTabs<T extends string>({ value, onChange, tabs, className }:
           <button
             key={t.value} role="tab" aria-selected={active}
             onClick={() => onChange(t.value)}
-            className={cn('relative rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-[color] duration-200 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40',
+            className={cn('relative rounded-lg px-3 py-1.5 text-xs font-[510] tracking-[-0.011em] whitespace-nowrap transition-[color] duration-200 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40',
               active ? 'text-gray-1200' : 'text-gray-900 hover:text-gray-1100')}
           >
             {active && <span className="absolute inset-0 rounded-lg border border-border bg-muted" />}
-            <span className="relative flex items-center gap-1.5">
+            <span className="relative flex items-center gap-1.5 [&>svg]:size-3.5 [&>svg]:shrink-0">
+              {t.icon}
               {t.label}
               {t.count !== undefined && <span className="font-mono text-[10px] text-muted-foreground tnum">{t.count}</span>}
             </span>

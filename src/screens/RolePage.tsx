@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle, ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Download, FileText, Filter, GripVertical,
-  ListChecks, Mail, MessageSquarePlus, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Send, Sparkles, Table2, UserX, Wand2, X,
+  AlertTriangle, ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Download, Eye, FileText, Filter, GripVertical,
+  History as HistoryIcon, ListChecks, Mail, MessageSquarePlus, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Send, Shield, Sparkles, Table2, UserX, Wand2, X,
 } from 'lucide-react'
 import { ScrollPage, useTopBar } from '../shell/AppShell'
 import {
@@ -15,6 +15,8 @@ import {
   AlignmentPills, FilterBar, type FilterField, type FilterState, GatedButton, RequirementRow, ScoreControl, SelectionBar, ShortcutHint, ShortcutSheet, applyFilters, useListSelection,
 } from '../components/v3'
 import { CandidatePreview } from './CandidatePreview'
+import { RoleMaskedLinksSection } from './MaskedRoleView'
+import { BulkMaskForRoleDialog } from '../components/BulkMaskModal'
 import { AddRequirementDialog, ConfirmAssumedDialog, CopyEmailDialog, CreateGmailDraftsDialog, IncludeAnywayDialog, NotInterestedDialog, RejectDialog, RerunDialog } from './Dialogs'
 import { useApp, useWireframeState, whoCanText } from '../store/AppStore'
 import { POOL_SIZE, eliminatedByRole, jdChangesNorthwind } from '../data/mock'
@@ -25,7 +27,7 @@ import { type Eliminated, type EmailDraftKind, type Match, type MatchChip, type 
    Matches (default) · Shortlist (n) · Details (includes Client asks + Recent activity)
    ========================================================================== */
 
-type Tab = 'matches' | 'shortlist' | 'details' | 'history'
+type Tab = 'matches' | 'shortlist' | 'masked-links' | 'details' | 'history'
 type View = 'never' | 'running' | 'ranked' | 'none' | 'few' | 'error'
 type DeltaFilter = 'new' | 'moved' | 'requalified' | 'dropped'
 
@@ -112,7 +114,7 @@ function RoleView({ role }: { role: Role }) {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const rawTab = params.get('tab') ?? ''
-  const tab: Tab = rawTab === 'shortlist' ? 'shortlist' : rawTab === 'details' ? 'details' : rawTab === 'history' ? 'history' : 'matches'
+  const tab: Tab = rawTab === 'shortlist' ? 'shortlist' : rawTab === 'masked-links' ? 'masked-links' : rawTab === 'details' ? 'details' : rawTab === 'history' ? 'history' : 'matches'
   const setTab = (t: Tab) => { const p = new URLSearchParams(params); p.set('tab', t); setParams(p, { replace: true }) }
   const [wf, setWf] = useWireframeState('S-04', 'Role page', WF_STATES)
 
@@ -146,6 +148,7 @@ function RoleView({ role }: { role: Role }) {
   const [emailCandidateIds, setEmailCandidateIds] = useState<string[] | null>(null)
   const [emailInitialKind, setEmailInitialKind] = useState<EmailDraftKind | undefined>(undefined)
   const [notInterestedCandId, setNotInterestedCandId] = useState<string | null>(null)
+  const [bulkMaskCandIds, setBulkMaskCandIds] = useState<string[] | null>(null)
   const [last, setLast] = useState<{ id: string; prev: Match['status'] } | null>(null)
 
   /* Seed session matches for roles without explicit matches in mock.ts */
@@ -752,6 +755,14 @@ function RoleView({ role }: { role: Role }) {
             <Button variant="primary" size="sm" icon={<Check />} kbd="S" disabled={!eligibleForShortlist.length} onClick={handleBulkShortlist}>
               Shortlist
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<Shield />}
+              onClick={() => setBulkMaskCandIds(selectedMatches.map(m => m.candidateId))}
+            >
+              Select resumes &amp; bulk mask ({selectedMatches.length})
+            </Button>
             <GatedButton perm="reject" variant="outline" size="sm" icon={<X />} kbd="X" disabled={!eligibleForReject.length} onClick={() => setBatchRejectOpen(true)}>
               Reject
             </GatedButton>
@@ -885,10 +896,16 @@ function RoleView({ role }: { role: Role }) {
         <div className="flex flex-wrap items-center gap-2">
           <Select aria-label="Role status" value={role.status} onChange={changeStatus} options={['Open', 'On hold', 'Closed']} />
           <VersionChip label={`JD v${role.jdVersion}`} versions={versions} onCompare={() => setCompareOpen(true)} />
+          <Button variant="outline" icon={<Shield />} onClick={() => setBulkMaskCandIds(shortlisted.map(m => m.candidateId))}>
+            Select resumes &amp; bulk mask
+          </Button>
           <Button variant="outline" icon={<Pencil />} onClick={() => navigate(`/roles/${id}/edit`)}>Edit role</Button>
           <Menu width={240}
             trigger={({ toggle }) => <Button variant="ghost" size="icon" aria-label="More role actions" onClick={toggle} icon={<MoreHorizontal />} />}
             items={[
+              { label: 'View masked role links', icon: <Eye />, onSelect: () => setTab('masked-links') },
+              { label: 'Select resumes & bulk mask…', icon: <Sparkles />, onSelect: () => setBulkMaskCandIds(shortlisted.map(m => m.candidateId)) },
+              { separator: true, label: '' },
               { label: 'Add requirement', icon: <MessageSquarePlus />, onSelect: () => setAddAskOpen(true) },
               { label: 'Mark candidate not interested…', icon: <UserX />, onSelect: () => setNotInterestedCandId(focusedOrSelectedCandidateId) },
               { separator: true, label: '' },
@@ -900,10 +917,11 @@ function RoleView({ role }: { role: Role }) {
       <div className="border-b border-border pb-2">
         <PillTabs value={tab} onChange={setTab}
           tabs={[
-            { value: 'matches', label: 'Matches' },
-            { value: 'shortlist', label: 'Shortlist', count: shortlisted.length },
-            { value: 'details', label: 'Details' },
-            { value: 'history', label: 'History' },
+            { value: 'matches', label: 'Matches', icon: <Sparkles />, count: activeFilteredMatches.length },
+            { value: 'shortlist', label: 'Shortlist', icon: <ListChecks />, count: shortlisted.length },
+            { value: 'masked-links', label: 'Masked links', icon: <Shield />, count: Math.max(shortlisted.length, app.outputs.filter(o => o.type === 'Masked' && o.roleId === id).length) },
+            { value: 'details', label: 'Details', icon: <FileText /> },
+            { value: 'history', label: 'History', icon: <HistoryIcon /> },
           ]} />
       </div>
 
@@ -917,6 +935,7 @@ function RoleView({ role }: { role: Role }) {
           onMarkNotInterested={cid => setNotInterestedCandId(cid)}
           onGoMatches={() => setTab('matches')} />
       )}
+      {tab === 'masked-links' && <RoleMaskedLinksSection roleId={id} embedded />}
       {tab === 'details' && <DetailsTab role={role} versions={versions} onCompare={() => setCompareOpen(true)} onAddAsk={() => setAddAskOpen(true)} />}
       {tab === 'history' && <HistoryTab roleId={id} />}
 
@@ -977,6 +996,14 @@ function RoleView({ role }: { role: Role }) {
       />
 
       <AddRequirementDialog open={addAskOpen} onClose={() => setAddAskOpen(false)} roleId={id} />
+
+      <BulkMaskForRoleDialog
+        open={bulkMaskCandIds !== null}
+        onClose={() => setBulkMaskCandIds(null)}
+        initialRoleId={id}
+        initialCandidateIds={bulkMaskCandIds && bulkMaskCandIds.length > 0 ? bulkMaskCandIds : undefined}
+        onCompleted={() => setTab('masked-links')}
+      />
 
       <NotInterestedDialog
         open={!!notInterestedCandId}

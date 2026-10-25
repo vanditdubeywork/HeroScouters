@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import { NavLink, Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   Briefcase, Users, FileText, History, Settings, Bell, Search, Plus, PanelLeft, ChevronDown, ChevronRight,
-  Layers, Map as MapIcon, X, Eye, EyeOff, Sun, Moon,
+  Layers, Map as MapIcon, X, Eye, EyeOff, Sun, Moon, Shield, Sparkles, Wand2, Filter,
 } from 'lucide-react'
 import { Avatar, Button, Kbd, Menu, cn } from '../components/ui'
 import { Toaster } from '../components/hs'
@@ -136,26 +136,66 @@ function Sidebar({ collapsed, onToggle, mobile }: { collapsed: boolean; onToggle
                       <Link
                         to="/candidates?screen=ai"
                         className={cn(
-                          'flex h-7 items-center gap-1.5 rounded-md px-2 text-xs transition-colors',
+                          'flex h-7 items-center gap-2 rounded-md px-2 text-xs transition-colors',
                           loc.pathname === '/candidates' && candScreen === 'ai'
                             ? 'bg-muted font-medium text-foreground'
                             : 'text-gray-1100 hover:bg-muted hover:text-foreground',
                         )}
                       >
-                        <span className="text-gray-900">✦</span>
+                        <Sparkles className="size-3.5 shrink-0 text-gray-900" />
                         <span className="truncate">AI Scout</span>
                       </Link>
                       <Link
                         to="/candidates?screen=manual"
                         className={cn(
-                          'flex h-7 items-center gap-1.5 rounded-md px-2 text-xs transition-colors',
+                          'flex h-7 items-center gap-2 rounded-md px-2 text-xs transition-colors',
                           loc.pathname === '/candidates' && candScreen === 'manual'
                             ? 'bg-muted font-medium text-foreground'
                             : 'text-gray-1100 hover:bg-muted hover:text-foreground',
                         )}
                       >
-                        <span className="text-gray-900">⊞</span>
-                        <span className="truncate">Manual Filters & Pool</span>
+                        <Filter className="size-3.5 shrink-0 text-gray-900" />
+                        <span className="truncate">Manual Filters &amp; Pool</span>
+                      </Link>
+                    </div>
+                  )}
+                  {!collapsed && it.to === '/resumes' && (
+                    <div className="mt-0.5 ml-5 flex flex-col gap-0.5 border-l border-border pl-2">
+                      <Link
+                        to="/resumes/masked-view"
+                        className={cn(
+                          'flex h-7 items-center gap-2 rounded-md px-2 text-xs transition-colors',
+                          loc.pathname === '/resumes/masked-view'
+                            ? 'bg-muted font-medium text-foreground'
+                            : 'text-gray-1100 hover:bg-muted hover:text-foreground',
+                        )}
+                      >
+                        <Shield className="size-3.5 shrink-0 text-gray-900" />
+                        <span className="truncate">Masked Role Links</span>
+                      </Link>
+                      <Link
+                        to="/resumes/masked"
+                        className={cn(
+                          'flex h-7 items-center gap-2 rounded-md px-2 text-xs transition-colors',
+                          loc.pathname === '/resumes/masked'
+                            ? 'bg-muted font-medium text-foreground'
+                            : 'text-gray-1100 hover:bg-muted hover:text-foreground',
+                        )}
+                      >
+                        <Wand2 className="size-3.5 shrink-0 text-gray-900" />
+                        <span className="truncate">Masked Studio</span>
+                      </Link>
+                      <Link
+                        to="/resumes"
+                        className={cn(
+                          'flex h-7 items-center gap-2 rounded-md px-2 text-xs transition-colors',
+                          loc.pathname === '/resumes'
+                            ? 'bg-muted font-medium text-foreground'
+                            : 'text-gray-1100 hover:bg-muted hover:text-foreground',
+                        )}
+                      >
+                        <FileText className="size-3.5 shrink-0 text-gray-900" />
+                        <span className="truncate">All Resumes Library</span>
                       </Link>
                     </div>
                   )}

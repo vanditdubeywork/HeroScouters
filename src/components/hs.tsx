@@ -136,6 +136,7 @@ export function Banner({ variant, children, actions, onDismiss, progress }: {
 export interface Column<T> {
   key: string
   header: React.ReactNode
+  icon?: React.ReactNode
   width?: string
   sortable?: boolean
   align?: 'left' | 'right'
@@ -153,7 +154,7 @@ function parseColStyle(w?: string): React.CSSProperties | undefined {
 
 export function DataTable<T extends { id: string }>({
   columns, rows, onRowClick, selectable, selected, onSelectedChange, loading, empty, rowActions, rowClassName, dense,
-  columnMenu, isSelectable, quietCheckbox,
+  columnMenu, isSelectable, quietCheckbox, caption, toolbar, stickyActions = true,
 }: {
   columns: Column<T>[]; rows: T[]; onRowClick?: (r: T) => void
   selectable?: boolean; selected?: string[]; onSelectedChange?: (ids: string[]) => void
@@ -164,6 +165,9 @@ export function DataTable<T extends { id: string }>({
   isSelectable?: (r: T) => boolean
   /** v0.3 · P8 checkbox hidden until hover or any selection */
   quietCheckbox?: boolean
+  caption?: string
+  toolbar?: React.ReactNode
+  stickyActions?: boolean
 }) {
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null)
   const anchor = useRef<string | null>(null)
@@ -194,10 +198,20 @@ export function DataTable<T extends { id: string }>({
 
   return (
     <section className="rounded-2xl border border-border bg-gray-100 p-1">
-      <div className="no-scrollbar overflow-x-auto rounded-xl border border-border bg-card">
+      {toolbar && (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+          {toolbar}
+        </div>
+      )}
+      <div
+        tabIndex={0}
+        role="region"
+        aria-label={caption ?? 'Data table'}
+        className="no-scrollbar overflow-x-auto rounded-xl border border-border bg-card outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40"
+      >
         <table role="table" className="w-full border-collapse text-left text-sm">
-          <thead>
-            <tr role="row" className="h-9 divide-x divide-border border-b border-border bg-gray-100/90">
+          <thead className="sticky top-0 z-10 bg-gray-100">
+            <tr role="row" className="h-9 divide-x divide-border border-b border-border bg-gray-100/95 backdrop-blur-xs">
               {selectable && (
                 <th className="w-8 px-2.5 py-2 align-middle">
                   <Checkbox aria-label={`Select all ${selectableRows.length} shown`} checked={allSel} onChange={v => onSelectedChange?.(v ? selectableRows.map(r => r.id) : [])} />
@@ -209,12 +223,13 @@ export function DataTable<T extends { id: string }>({
                   role="columnheader"
                   style={parseColStyle(c.width)}
                   aria-sort={sort?.key === c.key ? (sort.dir === 1 ? 'ascending' : 'descending') : undefined}
-                  className={cn('eyebrow px-2.5 py-2 text-[10px] font-medium whitespace-nowrap text-gray-1000 select-none', c.align === 'right' && 'text-right')}
+                  className={cn('eyebrow px-3 py-2 text-[10px] font-medium whitespace-nowrap text-gray-1000 select-none', c.align === 'right' && 'text-right')}
                 >
                   {columnMenu ? (
                     <Menu align="start" width={200}
                       trigger={({ toggle }) => (
-                        <button type="button" onClick={toggle} className={cn('inline-flex items-center gap-1 uppercase transition-colors hover:text-foreground', sort?.key === c.key && 'text-foreground')}>
+                        <button type="button" onClick={toggle} className={cn('inline-flex items-center gap-1.5 uppercase transition-colors hover:text-foreground [&>svg]:size-3', sort?.key === c.key && 'text-foreground')}>
+                          {c.icon}
                           {c.header}
                           {sort?.key === c.key ? (sort.dir === 1 ? <ArrowUp className="size-3 text-foreground" /> : <ArrowDown className="size-3 text-foreground" />) : <ChevronDown className="size-3 text-gray-800" />}
                         </button>
@@ -224,19 +239,31 @@ export function DataTable<T extends { id: string }>({
                   ) : c.sortable ? (
                     <button
                       type="button"
-                      className={cn('inline-flex items-center gap-1 uppercase transition-colors hover:text-foreground', sort?.key === c.key && 'text-foreground')}
+                      className={cn('inline-flex items-center gap-1.5 uppercase transition-colors hover:text-foreground [&>svg]:size-3', sort?.key === c.key && 'text-foreground')}
                       onClick={() => setSort(s => s?.key === c.key ? { key: c.key, dir: s.dir === 1 ? -1 : 1 } : { key: c.key, dir: 1 })}
                     >
+                      {c.icon}
                       {c.header}
                       {sort?.key === c.key
                         ? (sort.dir === 1 ? <ArrowUp className="size-3 text-foreground" /> : <ArrowDown className="size-3 text-foreground" />)
                         : <span className="font-sans text-[9px] tracking-normal text-gray-800">↕</span>}
                     </button>
-                  ) : c.header}
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 [&>svg]:size-3">
+                      {c.icon}
+                      {c.header}
+                    </span>
+                  )}
                 </th>
               ))}
               {rowActions && (
-                <th role="columnheader" className="eyebrow w-[1%] px-2.5 py-2 text-right text-[10px] font-medium whitespace-nowrap text-gray-1000 select-none">
+                <th
+                  role="columnheader"
+                  className={cn(
+                    'eyebrow w-[1%] px-3 py-2 text-right text-[10px] font-medium whitespace-nowrap text-gray-1000 select-none',
+                    stickyActions && 'sticky right-0 z-10 bg-gray-100/95 shadow-[-1px_0_0_0_var(--border)] backdrop-blur-xs',
+                  )}
+                >
                   Actions
                 </th>
               )}
@@ -248,11 +275,11 @@ export function DataTable<T extends { id: string }>({
                 <tr key={i} className="h-12 divide-x divide-border">
                   {selectable && <td className="px-2.5 py-2.5"><Skeleton className="size-4 rounded-xl" /></td>}
                   {columns.map((c, j) => (
-                    <td key={c.key} className="px-2.5 py-2.5">
+                    <td key={c.key} className="px-3 py-2.5">
                       <Skeleton className={cn('h-3.5', j === 0 ? 'w-3/4' : 'w-1/2')} />
                     </td>
                   ))}
-                  {rowActions && <td className="px-2.5 py-2.5" />}
+                  {rowActions && <td className="px-3 py-2.5" />}
                 </tr>
               ))
             ) : sorted.length === 0 ? (
@@ -275,7 +302,7 @@ export function DataTable<T extends { id: string }>({
                     onKeyDown={e => { if (e.key === 'Enter' && onRowClick) onRowClick(r) }}
                     className={cn(
                       'group/row divide-x divide-border transition-colors outline-none focus-visible:bg-secondary/80',
-                      dense ? 'h-10' : 'h-12',
+                      dense ? 'h-11' : 'h-14',
                       onRowClick && 'cursor-pointer hover:bg-secondary/50',
                       isSel && 'bg-secondary/75',
                       rowClassName?.(r),
@@ -293,14 +320,21 @@ export function DataTable<T extends { id: string }>({
                         key={c.key}
                         role="cell"
                         style={parseColStyle(c.width)}
-                        className={cn('px-2.5 align-middle', dense ? 'py-1.5' : 'py-2', c.align === 'right' && 'text-right')}
+                        className={cn('px-3 align-middle', dense ? 'py-2' : 'py-2.5', c.align === 'right' && 'text-right')}
                       >
                         {c.render(r)}
                       </td>
                     ))}
                     {rowActions && (
-                      <td className="w-[1%] px-2.5 py-2 text-right align-middle whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                        <div className="inline-flex items-center justify-end gap-1 opacity-85 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100">
+                      <td
+                        className={cn(
+                          'w-[1%] px-3 py-2 text-right align-middle whitespace-nowrap transition-colors',
+                          stickyActions && 'sticky right-0 z-[5] bg-card/95 shadow-[-1px_0_0_0_var(--border)] backdrop-blur-xs group-hover/row:bg-secondary/90',
+                          isSel && stickyActions && 'bg-secondary/95',
+                        )}
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <div className="inline-flex items-center justify-end gap-1.5 opacity-90 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100">
                           {rowActions(r)}
                         </div>
                       </td>
@@ -761,14 +795,20 @@ export function Toaster() {
 }
 
 /* ---------- N12 · Filter chip ---------- */
-export function FilterChip({ active, onClick, children, count }: { active: boolean; onClick: () => void; children: React.ReactNode; count?: number }) {
+export function FilterChip({ active, onClick, children, count, icon }: { active: boolean; onClick: () => void; children: React.ReactNode; count?: number; icon?: React.ReactNode }) {
   return (
     <button type="button" aria-pressed={active} onClick={onClick}
-      className={cn('inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40',
-        active ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background text-gray-1100 hover:border-gray-700 hover:text-foreground')}>
-      {active && <Check className="size-3" />}
+      className={cn('inline-flex h-8 items-center gap-1.5 rounded-2xl border px-3 text-xs font-[510] tracking-[-0.011em] whitespace-nowrap transition-all duration-150 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 [&>svg]:size-3.5 [&>svg]:shrink-0',
+        active
+          ? 'border-primary bg-primary text-primary-foreground shadow-xs'
+          : 'border-border bg-card text-gray-1100 hover:border-gray-700 hover:bg-secondary hover:text-foreground')}>
+      {active ? <Check className="size-3.5 shrink-0" /> : icon}
       {children}
-      {count !== undefined && <span className={cn('font-mono text-[10px] tnum', active ? 'text-primary-foreground/70' : 'text-gray-900')}>{count}</span>}
+      {count !== undefined && (
+        <span className={cn('rounded-sm px-1 py-0.2 font-mono text-[10px] tnum', active ? 'bg-primary-foreground/15 text-primary-foreground' : 'bg-secondary text-gray-1000')}>
+          {count}
+        </span>
+      )}
     </button>
   )
 }

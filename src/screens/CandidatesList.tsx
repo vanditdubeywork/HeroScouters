@@ -4,7 +4,7 @@ import {
   Plus, SlidersHorizontal, Copy, ChevronDown, ChevronRight, ChevronUp, Download, Search, FileText, Users, X, Check,
   EyeOff, Eye, Smartphone, MapPin, Clock, Star, ShieldCheck, DollarSign, Calendar, Sparkles, ExternalLink, Briefcase, Info,
   RotateCcw, ArrowRight, ArrowUp, ArrowDown, ArrowUpRight, Layers, Filter, CheckCircle2, Loader2, Terminal,
-  Code2, CreditCard, TrendingUp, PhoneCall, HelpCircle, Compass, Bot, Wand2, PanelRightOpen,
+  Code2, CreditCard, TrendingUp, PhoneCall, HelpCircle, Compass, Bot, Wand2, PanelRightOpen, Shield,
 } from 'lucide-react'
 import { ScrollPage, useTopBar } from '../shell/AppShell'
 import { Avatar, Button, Checkbox, EmptyState, ExampleMark, Input, Kbd, Menu, Segmented, Select, Switch, Tag, cn } from '../components/ui'
@@ -13,6 +13,7 @@ import {
   ColumnsMenu, FilterBar, FilterPicker, GatedButton, SelectionBar, TakeMarker, applyFilters, useColumnPrefs,
   type ColumnOption, type FilterField, type FilterState, type FilterValue,
 } from '../components/v3'
+import { BulkMaskForRoleDialog } from '../components/BulkMaskModal'
 import { CandidatePreview } from './CandidatePreview'
 import { useApp, useWireframeState, whoCanText } from '../store/AppStore'
 import { POOL_SIZE, candidates as SEED_CANDIDATES } from '../data/mock'
@@ -74,22 +75,22 @@ const POPULAR_SKILLS = [
   'Figma',
 ]
 
-/* ---------- Columns (N18) ---------- */
+/* ---------- Columns (N18) — Consolidated to 5 High-Signal SaaS Columns by Default ---------- */
 const COLUMN_OPTIONS: ColumnOption[] = [
-  { key: 'name', label: 'Candidate', locked: true },
-  { key: 'cat', label: 'Function · sub' },
-  { key: 'years', label: 'Exp · Pay' },
-  { key: 'loc', label: 'Location · Mode' },
-  { key: 'auth', label: 'Work Auth' },
-  { key: 'skills', label: 'Skills & ◇ AI' },
-  { key: 'comp', label: 'Profile · Updated' },
+  { key: 'name', label: 'Candidate & Resume', locked: true },
+  { key: 'cat', label: 'Function & Seniority' },
+  { key: 'loc', label: 'Location & Work Auth' },
+  { key: 'skills', label: 'Skills & ◇ AI Graph' },
+  { key: 'comp', label: 'Profile & Take' },
+  { key: 'years', label: 'Exp · Pay (separate)' },
+  { key: 'auth', label: 'Work Auth (separate)' },
   { key: 'domain', label: 'Domain' },
   { key: 'resumes', label: 'Resumes' },
-  { key: 'take', label: 'Our take' },
+  { key: 'take', label: 'Our take (separate)' },
   { key: 'availability', label: 'Availability' },
   { key: 'source', label: 'Source' },
 ]
-const DEFAULT_COLUMNS = ['name', 'cat', 'years', 'loc', 'auth', 'skills', 'comp']
+const DEFAULT_COLUMNS = ['name', 'cat', 'loc', 'skills']
 
 const COLUMN_FILTER: Record<string, string | undefined> = {
   cat: 'category',
@@ -489,8 +490,9 @@ export function CandidatesList() {
   const [allMatching, setAllMatching] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const [copyOpen, setCopyOpen] = useState(false)
-  const [consoleExpanded, setConsoleExpanded] = useState(true)
+  const [consoleExpanded, setConsoleExpanded] = useState(false)
   const [preview, setPreview] = useState<string | null>(null)
+  const [bulkMaskCandIds, setBulkMaskCandIds] = useState<string[] | null>(null)
   const [layout, setLayout] = useState<'table' | 'split'>('table')
   const [activeId, setActiveId] = useState<string>('priya')
 
@@ -498,7 +500,7 @@ export function CandidatesList() {
   const [sheetsFilters, setSheetsFilters] = useState<FilterState>({})
   const [colFilter, setColFilter] = useState<string | null>(null)
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null)
-  const { visible, setVisible, reset } = useColumnPrefs('candidates-v4', DEFAULT_COLUMNS)
+  const { visible, setVisible, reset } = useColumnPrefs('candidates-v4-saas-4col', DEFAULT_COLUMNS)
   const barRef = useRef<HTMLDivElement>(null)
 
   /* ---------- V03/V04 Sheets Filter Fields (§7.3, C8: repeated column = OR) ---------- */
@@ -890,43 +892,64 @@ export function CandidatesList() {
     ]
   }
 
-  /* ---------- Structured Table Columns (Rows & Columns Divided by 1px Lines) ---------- */
+  /* ---------- Structured Table Columns (5 Consolidated SaaS Columns by Default) ---------- */
   const allColumnsMap: Record<string, Column<Candidate>> = {
     name: {
-      key: 'name', header: 'Candidate', sortable: true, sortValue: c => c.name,
-      render: c => (
-        <div className="flex min-w-0 items-center gap-2" data-cid={c.id}>
-          <Avatar initials={c.initials} size={28} />
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={e => { e.stopPropagation(); navigate(`/candidates/${c.id}`) }}
-                className="max-w-[125px] truncate text-left text-[13px] font-semibold text-foreground hover:underline"
-              >
-                {c.name}
-              </button>
-              {c.searchStatus === 'Active' && (
-                <span className="inline-flex h-4 items-center rounded-xs border border-border bg-secondary px-1 font-mono text-[9px] text-gray-1100">
-                  Active
-                </span>
-              )}
-            </div>
-            <div className="max-w-[165px] truncate text-[11px] text-muted-foreground">
-              {c.companies[0] ? `${c.companies[0].title} · ${c.companies[0].name}` : c.headline}
+      key: 'name', header: 'Candidate & Resume', sortable: true, sortValue: c => c.name,
+      render: c => {
+        const rs = app.resumesFor(c.id)
+        return (
+          <div className="flex min-w-0 items-center gap-2.5" data-cid={c.id}>
+            <Avatar initials={c.initials} size={28} />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={e => { e.stopPropagation(); navigate(`/candidates/${c.id}`) }}
+                  className="max-w-[140px] truncate text-left text-[13px] font-[590] tracking-[-0.014em] text-foreground hover:underline"
+                >
+                  {c.name}
+                </button>
+                {c.searchStatus === 'Active' && (
+                  <span className="inline-flex h-4 items-center rounded-xs border border-border bg-secondary px-1 font-mono text-[9px] text-gray-1100">
+                    Active
+                  </span>
+                )}
+                {rs.length > 1 && (
+                  <button
+                    type="button"
+                    title="Select resume version for role masking"
+                    onClick={e => { e.stopPropagation(); setBulkMaskCandIds([c.id]) }}
+                    className="inline-flex h-4 items-center gap-0.5 rounded-xs border border-border bg-card px-1 font-mono text-[9.5px] text-foreground hover:bg-secondary cursor-pointer"
+                  >
+                    <FileText className="size-2.5 text-muted-foreground" />
+                    <span>{rs.length} resumes</span>
+                  </button>
+                )}
+              </div>
+              <div className="max-w-[190px] truncate text-[11px] text-muted-foreground">
+                {c.companies[0] ? `${c.companies[0].title} · ${c.companies[0].name}` : c.headline}
+              </div>
             </div>
           </div>
-        </div>
-      ),
+        )
+      },
     },
     cat: {
-      key: 'cat', header: 'Function', sortable: true, sortValue: c => c.category,
+      key: 'cat', header: 'Function & Seniority', sortable: true, sortValue: c => c.category,
       render: c => (
-        <div className="flex items-center gap-1.5 whitespace-nowrap">
-          <span className="inline-flex h-5 items-center rounded-sm border border-border bg-secondary px-1.5 text-[11px] font-medium text-foreground">
-            {c.category}
-          </span>
-          <span className="max-w-[78px] truncate text-xs text-gray-1100">{c.subcategory}</span>
+        <div className="flex flex-col gap-0.5 whitespace-nowrap">
+          <div className="flex items-center gap-1.5">
+            <span className="inline-flex h-5 items-center rounded-sm border border-border bg-secondary px-1.5 text-[11px] font-medium text-foreground">
+              {c.category}
+            </span>
+            <span className="max-w-[90px] truncate text-xs text-gray-1100">{c.subcategory}</span>
+          </div>
+          <div className="flex items-center gap-1.5 font-mono text-[10.5px] text-muted-foreground tnum">
+            <span>{c.years !== null ? `${c.years} yrs` : '? yrs'}</span>
+            <span>·</span>
+            <span>{c.pay ?? '? Pay assumed'}</span>
+          </div>
         </div>
       ),
     },
@@ -944,15 +967,23 @@ export function CandidatesList() {
       ),
     },
     loc: {
-      key: 'loc', header: 'Location · Mode',
-      render: c => (
-        <div className="flex items-center gap-1 whitespace-nowrap">
-          {c.metro ? <span className="max-w-[82px] truncate text-xs font-medium text-foreground">{c.metro}</span> : <NotCaptured />}
-          {c.workModes
-            ? <span className="inline-flex h-[18px] items-center rounded-xs border border-border bg-secondary/70 px-1 font-mono text-[10px] text-gray-1100">{c.workModes.join('/').toLowerCase()}</span>
-            : <span className="inline-flex h-[18px] items-center rounded-xs border border-dashed border-warning/60 bg-warning/5 px-1 text-[10px] text-[#b45309]">? Mode</span>}
-        </div>
-      ),
+      key: 'loc', header: 'Location & Work Auth',
+      render: c => {
+        const s = workAuthShort(c.workAuth)
+        return (
+          <div className="flex flex-col gap-0.5 whitespace-nowrap">
+            <div className="flex items-center gap-1">
+              {c.metro ? <span className="max-w-[90px] truncate text-xs font-medium text-foreground">{c.metro}</span> : <NotCaptured />}
+              {c.workModes
+                ? <span className="inline-flex h-[18px] items-center rounded-xs border border-border bg-secondary/70 px-1 font-mono text-[10px] text-gray-1100">{c.workModes.join('/').toLowerCase()}</span>
+                : <span className="inline-flex h-[18px] items-center rounded-xs border border-dashed border-warning/60 bg-warning/5 px-1 text-[10px] text-[#b45309]">? Mode</span>}
+            </div>
+            <span className="font-mono text-[10.5px] text-muted-foreground">
+              {s ?? 'Auth not captured'}
+            </span>
+          </div>
+        )
+      },
     },
     auth: {
       key: 'auth', header: 'Work Auth',
@@ -970,9 +1001,9 @@ export function CandidatesList() {
       },
     },
     skills: {
-      key: 'skills', header: 'Skills & ◇ AI',
+      key: 'skills', header: 'Skills & ◇ AI Graph',
       render: c => (
-        <div className="flex max-w-[155px] flex-wrap items-center gap-1">
+        <div className="flex max-w-[175px] flex-wrap items-center gap-1">
           {c.skills.slice(0, 2).map(sk => (
             <span
               key={sk}
@@ -995,13 +1026,13 @@ export function CandidatesList() {
       ),
     },
     comp: {
-      key: 'comp', header: 'Profile · Updated', sortable: true, sortValue: c => c.completeness,
+      key: 'comp', header: 'Profile & Take', sortable: true, sortValue: c => c.completeness,
       render: c => (
-        <div className="flex flex-col gap-0.5 whitespace-nowrap">
+        <div className="flex flex-col gap-1 whitespace-nowrap">
           <CompletenessMeter compact value={c.completeness} />
-          <span className="font-mono text-[10px] text-muted-foreground tnum">
-            {c.updated.replace(' days ago', 'd ago').replace(' weeks ago', 'w ago').replace(' week ago', '1w ago').replace('Yesterday', '1d ago')}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <TakeMarker candidateId={c.id} />
+          </div>
         </div>
       ),
     },
@@ -1038,31 +1069,12 @@ export function CandidatesList() {
   const visibleKeys = ['name', ...visible.filter(k => k !== 'name' && allColumnsMap[k])]
   const columns = visibleKeys.map(k => allColumnsMap[k])
 
-  /* Compact columns for the 3/4 Split Workspace so all columns + row actions fit with zero horizontal scroll */
+  /* Compact 4-column layout for the 3/4 Split Workspace so all columns + sticky row actions fit with zero horizontal scroll */
   const splitWorkspaceColumns: Column<Candidate>[] = [
     allColumnsMap.name,
     allColumnsMap.cat,
-    allColumnsMap.years,
-    {
-      key: 'locAuth', header: 'Location · Auth',
-      render: c => (
-        <div className="flex flex-col gap-0.5 whitespace-nowrap">
-          <div className="flex items-center gap-1">
-            {c.metro ? <span className="max-w-[78px] truncate text-xs font-medium text-foreground">{c.metro}</span> : <NotCaptured />}
-            {c.workModes && (
-              <span className="inline-flex h-4 items-center rounded-xs border border-border bg-secondary/70 px-1 font-mono text-[9.5px] text-gray-1100">
-                {c.workModes[0].toLowerCase()}
-              </span>
-            )}
-          </div>
-          <span className="font-mono text-[10px] text-muted-foreground">
-            {workAuthShort(c.workAuth) ?? 'Auth ?'}
-          </span>
-        </div>
-      ),
-    },
+    allColumnsMap.loc,
     allColumnsMap.skills,
-    allColumnsMap.comp,
   ]
 
   // Space on a focused row → quick look sidebar (S-08)
@@ -1159,13 +1171,20 @@ export function CandidatesList() {
           onClear={clearSel}
           note={targetIds.length > MASKED_BATCH_CAP ? `Masked resumes run ${MASKED_BATCH_CAP} per batch.` : undefined}
         >
+          <Button
+            variant="primary"
+            icon={<Shield />}
+            onClick={() => setBulkMaskCandIds(targetIds.slice(0, MASKED_BATCH_CAP))}
+          >
+            Select resumes & bulk mask ({targetIds.length})
+          </Button>
           <GatedButton
             perm="genMasked"
-            variant="primary"
-            icon={<FileText />}
+            variant="outline"
+            icon={<Wand2 />}
             onClick={() => navigate(`/resumes/masked?candidates=${targetIds.slice(0, MASKED_BATCH_CAP).join(',')}`)}
           >
-            Generate masked resumes
+            Open Masked Studio
           </GatedButton>
           <Menu
             width={250}
@@ -1198,11 +1217,12 @@ export function CandidatesList() {
           onOpenProfile={id => navigate(`/candidates/${id}`)}
           onOpenSlideOver={id => setPreview(id)}
           onFindRoles={id => navigate(`/candidates/${id}?tab=roles`)}
-          onMask={id => navigate(`/resumes/masked?candidates=${id}`)}
+          onMask={id => setBulkMaskCandIds([id])}
         />
       ) : (
         <div onKeyDown={onTableKey}>
           <DataTable
+            caption="Candidates pool"
             columns={compactForSplitWorkspace ? splitWorkspaceColumns : columns}
             rows={rows}
             loading={isLoading}
@@ -1214,9 +1234,9 @@ export function CandidatesList() {
             onRowClick={c => setPreview(c.id)}
             rowActions={c => (
               <>
+                <Button variant="outline" size="sm" icon={<Shield />} title="Select resume & mask for a role" onClick={() => setBulkMaskCandIds([c.id])}>Mask for role</Button>
                 <Button variant="ghost" size="sm" icon={<PanelRightOpen />} title="Open preview sidebar (Space)" onClick={() => setPreview(c.id)}>Preview</Button>
-                <Button variant="outline" size="sm" title="Find matching roles" onClick={() => navigate(`/candidates/${c.id}?tab=roles`)}>Roles</Button>
-                <Button variant="ghost" size="sm" title="Generate masked resume" onClick={() => navigate(`/resumes/masked?candidates=${c.id}`)}>Mask</Button>
+                <Button variant="ghost" size="sm" title="Find matching roles" onClick={() => navigate(`/candidates/${c.id}?tab=roles`)}>Roles</Button>
               </>
             )}
             empty={
@@ -1293,6 +1313,9 @@ export function CandidatesList() {
               )}
             </button>
           </div>
+          <Button variant="outline" icon={<Shield />} onClick={() => setBulkMaskCandIds(selected.length > 0 ? selected : rows.slice(0, 4).map(r => r.id))}>
+            Select resumes & bulk mask
+          </Button>
           <Button variant="primary" icon={<Plus />} onClick={() => navigate('/candidates/new')}>New candidate</Button>
         </div>
       </div>
@@ -1898,11 +1921,11 @@ export function CandidatesList() {
                           </button>
                           <button
                             type="button"
-                            title="Generate masked resumes for top matches"
-                            onClick={() => navigate(`/resumes/masked?candidates=${rows.slice(0, 3).map(r => r.id).join(',')}`)}
+                            title="Select resume versions & bulk mask top matches for a role"
+                            onClick={() => setBulkMaskCandIds(rows.slice(0, 3).map(r => r.id))}
                             className="inline-flex h-6 items-center gap-1 rounded-md border border-border bg-secondary px-2 text-[10.5px] text-gray-1100 hover:text-foreground cursor-pointer"
                           >
-                            <FileText className="size-3" />
+                            <Shield className="size-3" />
                             <span>Mask top 3</span>
                           </button>
                         </div>
@@ -2048,6 +2071,7 @@ export function CandidatesList() {
                             key={k}
                             active={cats.includes(k)}
                             onClick={() => toggleCat(k)}
+                            icon={<Briefcase className="size-3.5 text-muted-foreground" />}
                             count={cats.includes(k) ? undefined : POOL_BY_CATEGORY[k]}
                           >
                             {k}
@@ -2422,6 +2446,12 @@ export function CandidatesList() {
       </Dialog>
 
       <CandidatePreview open={!!preview} onClose={() => setPreview(null)} candidateId={preview} list={rows.map(r => r.id)} onNavigate={setPreview} />
+      <BulkMaskForRoleDialog
+        open={bulkMaskCandIds !== null}
+        onClose={() => setBulkMaskCandIds(null)}
+        initialCandidateIds={bulkMaskCandIds ?? undefined}
+        initialRoleId={aiAttachedRole !== 'none' ? aiAttachedRole : undefined}
+      />
     </ScrollPage>
   )
 }

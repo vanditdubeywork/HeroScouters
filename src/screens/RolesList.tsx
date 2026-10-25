@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle, Briefcase, Building2, CircleCheck, Copy, Eye, Layers, ListChecks,
-  Lock, Mail, MoreHorizontal, Pause, Pencil, Plus, RefreshCw, SearchX, Send,
+  Briefcase, Building2, CircleCheck, Copy, Eye, Layers, ListChecks,
+  Lock, Mail, MoreHorizontal, Pause, Pencil, Plus, RefreshCw, SearchX,
   Shield, Sparkles, Table2,
 } from 'lucide-react'
 import { ScrollPage, useTopBar } from '../shell/AppShell'
@@ -36,7 +36,6 @@ const ROLE_COL_SPECS = [
   { key: 'company', label: 'Company & type', defaultVisible: true },
   { key: 'pipeline', label: 'Shortlist & masked links', defaultVisible: true },
   { key: 'latest', label: 'Latest update', defaultVisible: true },
-  { key: 'next', label: 'Next step', defaultVisible: true },
   { key: 'cat', label: 'Category (separate col)', defaultVisible: false },
 ]
 
@@ -68,30 +67,6 @@ export function matchStatusLabel(r: Role) {
   return r.matchStatus === 'out-of-date' ? 'Out of date' : r.matchStatus === 'not-run' ? 'Not scored' : 'Scored'
 }
 
-function MatchesStatus({ r }: { r: Role }) {
-  if (r.matchStatus === 'out-of-date') {
-    return (
-      <span className="inline-flex h-6 items-center gap-1.5 rounded-md border border-warning/40 bg-warning/[0.08] px-2 text-xs font-medium whitespace-nowrap text-[#b45309]">
-        <AlertTriangle className="size-3.5 shrink-0 text-warning" />Out of date
-      </span>
-    )
-  }
-  if (r.matchStatus === 'not-run' || (r.scoredCount ?? 0) === 0) {
-    return (
-      <span className="inline-flex h-6 items-center gap-1.5 rounded-md border border-dashed border-gray-700 px-2 text-xs whitespace-nowrap text-muted-foreground">
-        <span className="size-1.5 rounded-full border border-gray-800" />Not scored
-      </span>
-    )
-  }
-  const isSuggestedOnly = (r.suggestedCount ?? 0) > 0 && r.scoredCount === r.suggestedCount
-  return (
-    <span className="inline-flex h-6 items-center gap-1.5 rounded-md border border-border bg-gray-100 px-2 text-xs whitespace-nowrap text-foreground">
-      <CircleCheck className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="tnum">{isSuggestedOnly ? `${r.scoredCount} suggested` : `Scored (${r.scoredCount})`}</span>
-    </span>
-  )
-}
-
 const needsAction = (r: Role) => r.matchStatus === 'out-of-date' || r.matchStatus === 'not-run' || (r.scoredCount ?? 0) === 0
 
 export function RolesList() {
@@ -109,7 +84,7 @@ export function RolesList() {
   const [rerunRole, setRerunRole] = useState<Role | null>(null)
   const [pitchesOpen, setPitchesOpen] = useState(false)
   const [bulkMaskRoleId, setBulkMaskRoleId] = useState<string | null>(null)
-  const colPrefs = useColumnPrefs('roles-v4-saas', ROLE_COL_SPECS.filter(s => s.defaultVisible).map(s => s.key))
+  const colPrefs = useColumnPrefs('roles-v4-saas-no-next', ROLE_COL_SPECS.filter(s => s.defaultVisible).map(s => s.key))
 
   useTopBar([{ label: 'Roles' }])
 
@@ -277,52 +252,14 @@ export function RolesList() {
       render: r =>
         r.latestUpdate ? (
           <div className="min-w-0" title={`${r.latestUpdate.text} · ${r.latestUpdate.who} · ${r.latestUpdate.when}`}>
-            <div className="max-w-[205px] truncate text-xs text-foreground">{r.latestUpdate.text}</div>
-            <div className="mt-0.5 max-w-[205px] truncate font-mono text-[11px] text-muted-foreground tnum">
+            <div className="max-w-[240px] truncate text-xs text-foreground">{r.latestUpdate.text}</div>
+            <div className="mt-0.5 max-w-[240px] truncate font-mono text-[11px] text-muted-foreground tnum">
               {r.latestUpdate.who} · {r.latestUpdate.when}
             </div>
           </div>
         ) : (
           <span className="font-mono text-xs text-muted-foreground tnum">Updated {r.updated}</span>
         ),
-    },
-    {
-      key: 'next',
-      header: 'Next Step',
-      sortable: true,
-      sortValue: r =>
-        r.matchStatus === 'out-of-date' ? 0 : r.matchStatus === 'not-run' || (r.scoredCount ?? 0) === 0 ? 1 : 2,
-      render: r => {
-        const sc = shortlistCount(r)
-        const notScoredYet = r.matchStatus === 'not-run' || (r.scoredCount ?? 0) === 0
-        const readyToSend =
-          !notScoredYet &&
-          r.matchStatus !== 'out-of-date' &&
-          sc >= 2 &&
-          (r.id === 'lumen-fse' || r.latestUpdate?.text.toLowerCase().includes('shortlist ready'))
-        return (
-          <div className="flex items-center gap-1.5 whitespace-nowrap" onClick={stop}>
-            {!readyToSend && <MatchesStatus r={r} />}
-            {r.matchStatus === 'out-of-date' ? (
-              <Button variant="outline" size="sm" icon={<RefreshCw />} onClick={() => setRerunRole(r)}>
-                Rerun
-              </Button>
-            ) : notScoredYet ? (
-              <Button variant="outline" size="sm" icon={<Sparkles />} onClick={() => navigate(`/roles/${r.id}?tab=matches`)}>
-                Score <span className="font-mono tnum">{r.passCount}</span>
-              </Button>
-            ) : readyToSend ? (
-              <Button variant="primary" size="sm" icon={<Send />} onClick={() => navigate(`/roles/${r.id}?tab=shortlist`)}>
-                Send <span className="font-mono tnum">{sc}</span>
-              </Button>
-            ) : (
-              <Button variant="ghost" size="sm" onClick={() => navigate(`/roles/${r.id}?tab=matches`)}>
-                Review <span className="font-mono tnum">{r.scoredCount}</span>
-              </Button>
-            )}
-          </div>
-        )
-      },
     },
     {
       key: 'cat',

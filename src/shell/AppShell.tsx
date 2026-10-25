@@ -93,6 +93,9 @@ function Sidebar({ collapsed, onToggle, mobile }: { collapsed: boolean; onToggle
   const outOfDate = roles.filter(r => r.matchStatus === 'out-of-date').length
   const missing = 9
   const navigate = useNavigate()
+  const loc = useLocation()
+  const sp = new URLSearchParams(loc.search)
+  const candScreen = sp.get('screen') ?? 'ai'
 
   return (
     <div className="flex size-full min-w-0 flex-col">
@@ -128,6 +131,34 @@ function Sidebar({ collapsed, onToggle, mobile }: { collapsed: boolean; onToggle
                     {!collapsed && it.to === '/roles' && <span className="ml-auto font-mono text-[10px] text-gray-900 tnum">{roles.filter(r => r.status === 'Open').length}</span>}
                     {!collapsed && it.to === '/candidates' && <span className="ml-auto font-mono text-[10px] text-gray-900 tnum">412</span>}
                   </NavLink>
+                  {!collapsed && it.to === '/candidates' && (
+                    <div className="mt-0.5 ml-5 flex flex-col gap-0.5 border-l border-border pl-2">
+                      <Link
+                        to="/candidates?screen=ai"
+                        className={cn(
+                          'flex h-7 items-center gap-1.5 rounded-md px-2 text-xs transition-colors',
+                          loc.pathname === '/candidates' && candScreen === 'ai'
+                            ? 'bg-muted font-medium text-foreground'
+                            : 'text-gray-1100 hover:bg-muted hover:text-foreground',
+                        )}
+                      >
+                        <span className="text-gray-900">✦</span>
+                        <span className="truncate">AI Scout</span>
+                      </Link>
+                      <Link
+                        to="/candidates?screen=manual"
+                        className={cn(
+                          'flex h-7 items-center gap-1.5 rounded-md px-2 text-xs transition-colors',
+                          loc.pathname === '/candidates' && candScreen === 'manual'
+                            ? 'bg-muted font-medium text-foreground'
+                            : 'text-gray-1100 hover:bg-muted hover:text-foreground',
+                        )}
+                      >
+                        <span className="text-gray-900">⊞</span>
+                        <span className="truncate">Manual Filters & Pool</span>
+                      </Link>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

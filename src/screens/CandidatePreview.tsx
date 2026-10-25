@@ -1,15 +1,17 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ExternalLink, X, MapPin, Clock, Star, ShieldCheck, DollarSign, Calendar, Layers, MessageSquareText } from 'lucide-react'
-import { Avatar, Button, Tag } from '../components/ui'
+import { ExternalLink, X, MapPin, Clock, Star, ShieldCheck, DollarSign, Calendar, Layers, MessageSquareText, Sparkles, FileText, Link2 } from 'lucide-react'
+import { Avatar, Button, CompanyTypeTag, Tag } from '../components/ui'
 import { BandChip, ChipRow, MatchChipView, OverviewGrid, PanelNav, SidePanel, SourceBadge, WorkAuthChip, type OverviewRow } from '../components/hs'
-import { TakeMarker, signature } from '../components/v3'
+import { RecommendationBlock, RecommendationPill, TakeMarker, signature } from '../components/v3'
 import { useApp } from '../store/AppStore'
-import type { Match } from '../data/types'
+import type { Band, Match, Recommendation } from '../data/types'
 
 /* ==========================================================================
    S-08 · Candidate preview (N3 side panel)
-   Opens from a match row (with band) or a list row. J/K, S, X, Esc.
+   Opens from a match row (with RecommendationPill + Requirements met + flags)
+   or from CandidatesList (with matching roles summary, source links & quick actions).
+   J/K, S, X, Esc.
    ========================================================================== */
 
 export interface CandidatePreviewProps {
@@ -26,7 +28,7 @@ export interface CandidatePreviewProps {
 }
 
 export function CandidatePreview({ open, onClose, candidateId, list, onNavigate, match, onShortlist, onReject }: CandidatePreviewProps) {
-  const { candidate, addToAskList, resumesFor, takeFor, member } = useApp()
+  const { candidate, role, rolesForCandidate, matches, addToAskList, resumesFor, takeFor, member } = useApp()
   const navigate = useNavigate()
   const c = candidateId ? candidate(candidateId) : undefined
   const idx = candidateId ? list.indexOf(candidateId) : -1
@@ -54,6 +56,11 @@ export function CandidatePreview({ open, onClose, candidateId, list, onNavigate,
   const gaps = match ? match.chips.filter(ch => ch.kind === 'gap' || ch.kind === 'assumed') : []
   const why = match ? match.chips.filter(ch => ch.kind === 'evidence' || ch.kind === 'predicted') : []
   const isShortlisted = match?.status === 'shortlisted'
+  const candRoleMatches: Array<{ roleId: string; reason: string; band: Band; recommendation?: Recommendation }> = !match
+    ? ((rolesForCandidate[c.id]?.length ?? 0) > 0
+        ? rolesForCandidate[c.id].filter(m => m.status !== 'not-interested')
+        : matches.filter(m => m.candidateId === c.id && m.status !== 'rejected' && m.status !== 'not-interested'))
+    : []
 
   const overviewRows: OverviewRow[] = [
     {
@@ -124,7 +131,9 @@ export function CandidatePreview({ open, onClose, candidateId, list, onNavigate,
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-base font-semibold tracking-tight">{c.name}</h2>
                 {resumes.length > 1 && <Tag tone="outline">{resumes.length} resumes</Tag>}
-                {match && <BandChip band={match.band} score={match.score} />}
+                {match && (match.recommendation
+                  ? <RecommendationPill recommendation={match.recommendation} suggested={match.suggested} />
+                  : <BandChip band={match.band} score={match.score} />)}
                 {match && <span className="font-mono text-[11px] text-gray-1000">#{match.rank}</span>}
               </div>
               <p className="truncate text-sm text-muted-foreground">{c.headline}</p>
@@ -142,7 +151,16 @@ export function CandidatePreview({ open, onClose, candidateId, list, onNavigate,
               : <Button variant="primary" onClick={onShortlist} kbd="S">Shortlist</Button>)}
           </div>
         </div>
-      ) : undefined}
+      ) : (
+        <div className="flex items-center justify-between gap-2">
+          <span className="hidden text-[11px] text-muted-foreground sm:inline">J/K move between candidates · Esc close</span>
+          <div className="ml-auto flex items-center gap-2">
+            <Button variant="outline" size="sm" icon={<Sparkles />} onClick={() => { onClose(); navigate(`/candidates/${c.id}?tab=roles`) }}>Find roles</Button>
+            <Button variant="outline" size="sm" icon={<FileText />} onClick={() => { onClose(); navigate(`/resumes/masked?candidates=${c.id}`) }}>Masked resume</Button>
+            <Button variant="primary" size="sm" iconRight={<ExternalLink />} onClick={() => { onClose(); navigate(`/candidates/${c.id}`) }}>Full profile</Button>
+          </div>
+        </div>
+      )}
     >
       <div className="space-y-4 p-4">
         {match && (
@@ -150,7 +168,50 @@ export function CandidatePreview({ open, onClose, candidateId, list, onNavigate,
             <h3 className="mb-2 px-1 text-sm font-semibold text-foreground">Why they fit</h3>
             <div className="space-y-2.5 rounded-xl border border-border bg-card p-3.5 text-xs">
               <p className="leading-relaxed text-foreground">“{match.reason}”</p>
-              <ChipRow chips={why} max={8} />
+              {(match.requirementsMet?.length || match.greenFlags?.length || match.redFlags?.length) ? (
+                <RecommendationBlock
+                  requirementsMet={match.requirementsMet}
+                  greenFlags={match.greenFlags}
+                  redFlags={match.redFlags}
+                  onAskAssumed={(label: string) => addToAskList(c.id, `Confirm ${label.toLowerCase()}?`)}
+                />
+              ) : (
+                <ChipRow chips={why} max={8} />
+              )}
+            </div>
+          </section>
+        )}
+        {!match && candRoleMatches.length > 0 && (
+          <section className="rounded-2xl border border-border bg-gray-100 p-3">
+            <div className="mb-2 flex items-center justify-between px-1">
+              <h3 className="text-sm font-semibold text-foreground">Matching open roles ({candRoleMatches.length})</h3>
+              <button type="button" onClick={() => { onClose(); navigate(`/candidates/${c.id}?tab=roles`) }} className="text-xs text-muted-foreground hover:text-foreground">
+                See all →
+              </button>
+            </div>
+            <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+              {candRoleMatches.slice(0, 3).map(m => {
+                const r = role(m.roleId)
+                if (!r) return null
+                return (
+                  <button
+                    key={m.roleId}
+                    type="button"
+                    onClick={() => { onClose(); navigate(`/roles/${r.id}?tab=matches`) }}
+                    className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-xs transition-colors hover:bg-muted/60"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 font-medium text-foreground">
+                        <span className="truncate">{r.title}</span>
+                        <span className="text-muted-foreground">· {r.company}</span>
+                        <CompanyTypeTag type={r.companyType} />
+                      </div>
+                      <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{m.reason}</p>
+                    </div>
+                    {m.recommendation ? <RecommendationPill recommendation={m.recommendation} /> : <BandChip band={m.band} />}
+                  </button>
+                )
+              })}
             </div>
           </section>
         )}
@@ -184,6 +245,27 @@ export function CandidatePreview({ open, onClose, candidateId, list, onNavigate,
           title="Overview"
           rows={overviewRows}
         />
+
+        {c.sourceLinks && c.sourceLinks.length > 0 && (
+          <section className="space-y-2">
+            <h3 className="eyebrow text-[10px] text-gray-1000">Source Links</h3>
+            <div className="flex flex-wrap gap-1.5">
+              {c.sourceLinks.map(lk => (
+                <a
+                  key={lk.url}
+                  href={lk.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex h-6 items-center gap-1.5 rounded-md border border-border bg-secondary px-2 text-xs text-foreground hover:bg-muted"
+                >
+                  <Link2 className="size-3 text-muted-foreground" />
+                  <span>{lk.label}</span>
+                  <ExternalLink className="size-2.5 text-muted-foreground" />
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
 
         {c.companies.length > 0 && (
           <section className="space-y-2">

@@ -679,12 +679,12 @@ export function RecommendationBlock({
   if (!total && !greenFlags.length && !redFlags.length) return null
 
   return (
-    <div className="space-y-2" onClick={e => e.stopPropagation()}>
+    <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-1.5">
         {total > 0 && (
           <button
             type="button"
-            onClick={() => setExpanded(x => !x)}
+            onClick={e => { e.stopPropagation(); setExpanded(x => !x) }}
             aria-expanded={expanded}
             className="inline-flex h-6 items-center gap-1 rounded-md border border-gray-900 bg-secondary px-2 font-mono text-[11px] font-medium text-foreground transition-colors hover:border-foreground"
           >
@@ -710,7 +710,7 @@ export function RecommendationBlock({
       </div>
 
       {expanded && total > 0 && (
-        <div className="rounded-xl border border-border bg-secondary/40 p-2.5 space-y-1.5">
+        <div className="rounded-xl border border-border bg-secondary/40 p-2.5 space-y-1.5" onClick={e => e.stopPropagation()}>
           <div className="eyebrow text-[9px] text-gray-1000">Requirements check ({metCount} of {total} met)</div>
           <ul className="space-y-1 text-xs">
             {requirementsMet.map(item => {

@@ -25,7 +25,7 @@ import { type Eliminated, type EmailDraftKind, type Match, type MatchChip, type 
    Matches (default) · Shortlist (n) · Details (includes Client asks + Recent activity)
    ========================================================================== */
 
-type Tab = 'matches' | 'shortlist' | 'details'
+type Tab = 'matches' | 'shortlist' | 'details' | 'history'
 type View = 'never' | 'running' | 'ranked' | 'none' | 'few' | 'error'
 type DeltaFilter = 'new' | 'moved' | 'requalified' | 'dropped'
 
@@ -112,7 +112,7 @@ function RoleView({ role }: { role: Role }) {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const rawTab = params.get('tab') ?? ''
-  const tab: Tab = rawTab === 'shortlist' ? 'shortlist' : rawTab === 'details' || rawTab === 'history' ? 'details' : 'matches'
+  const tab: Tab = rawTab === 'shortlist' ? 'shortlist' : rawTab === 'details' ? 'details' : rawTab === 'history' ? 'history' : 'matches'
   const setTab = (t: Tab) => { const p = new URLSearchParams(params); p.set('tab', t); setParams(p, { replace: true }) }
   const [wf, setWf] = useWireframeState('S-04', 'Role page', WF_STATES)
 
@@ -903,6 +903,7 @@ function RoleView({ role }: { role: Role }) {
             { value: 'matches', label: 'Matches' },
             { value: 'shortlist', label: 'Shortlist', count: shortlisted.length },
             { value: 'details', label: 'Details' },
+            { value: 'history', label: 'History' },
           ]} />
       </div>
 
@@ -916,7 +917,8 @@ function RoleView({ role }: { role: Role }) {
           onMarkNotInterested={cid => setNotInterestedCandId(cid)}
           onGoMatches={() => setTab('matches')} />
       )}
-      {tab === 'details' && <DetailsTab role={role} onAddAsk={() => setAddAskOpen(true)} />}
+      {tab === 'details' && <DetailsTab role={role} versions={versions} onCompare={() => setCompareOpen(true)} onAddAsk={() => setAddAskOpen(true)} />}
+      {tab === 'history' && <HistoryTab roleId={id} />}
 
       {/* Overlays */}
       <CandidatePreview open={!!previewId} onClose={() => setPreviewId(null)} candidateId={previewId} list={previewList}
@@ -1328,7 +1330,7 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onOpenEmail
 }
 
 /* ---------- Details tab (§7.1, T7, T9) ---------- */
-function DetailsTab({ role, onAddAsk }: { role: Role; onAddAsk: () => void }) {
+function DetailsTab({ role, versions, onCompare, onAddAsk }: { role: Role; versions: { v: string; who: string; when: string }[]; onCompare: () => void; onAddAsk: () => void }) {
   const app = useApp()
   const navigate = useNavigate()
   const [openDiff, setOpenDiff] = useState<Record<string, boolean>>({})
@@ -1392,6 +1394,29 @@ function DetailsTab({ role, onAddAsk }: { role: Role; onAddAsk: () => void }) {
               <Fact label="Sponsorship offered">{yn(role.sponsorship)}</Fact>
               <Fact label="Visa transfer supported">{yn(role.transfer)}</Fact>
             </div>
+
+            {(role.mustSkills.length > 0 || role.niceSkills.length > 0) && (
+              <div className="mt-4 grid gap-3 rounded-xl border border-border bg-secondary/40 p-3 sm:grid-cols-2">
+                <Fact label="Must-have skills">
+                  {role.mustSkills.length ? (
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {role.mustSkills.map(s => (
+                        <span key={s} className="inline-flex h-6 items-center rounded-md border border-border bg-background px-2 text-xs">{s}</span>
+                      ))}
+                    </div>
+                  ) : <span className="text-muted-foreground">None</span>}
+                </Fact>
+                <Fact label="Nice-to-have skills">
+                  {role.niceSkills.length ? (
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {role.niceSkills.map(s => (
+                        <span key={s} className="inline-flex h-6 items-center rounded-md border border-border bg-background px-2 text-xs">{s}</span>
+                      ))}
+                    </div>
+                  ) : <span className="text-muted-foreground">None</span>}
+                </Fact>
+              </div>
+            )}
           </BezelCard>
 
           <BezelCard title="Pay">
@@ -1412,7 +1437,7 @@ function DetailsTab({ role, onAddAsk }: { role: Role; onAddAsk: () => void }) {
           </BezelCard>
 
           <BezelCard title="Job description" action={<span className="font-mono text-[11px] text-muted-foreground">JD v{role.jdVersion}</span>}>
-            <details className="group">
+            <details className="group" open>
               <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium text-foreground select-none">
                 <span>Job description text (JD v{role.jdVersion})</span>
                 <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
@@ -1423,6 +1448,20 @@ function DetailsTab({ role, onAddAsk }: { role: Role; onAddAsk: () => void }) {
                   : <p className="text-sm text-muted-foreground">No JD text saved for this role.</p>}
               </div>
             </details>
+          </BezelCard>
+
+          <BezelCard title="Version history" action={versions.length > 1 ? <Button variant="ghost" size="sm" onClick={onCompare}>Compare</Button> : undefined}>
+            <ul className="divide-y divide-border">
+              {versions.map((v, i) => (
+                <li key={v.v} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-medium">{v.v}</span>
+                    {i === 0 && <span className="eyebrow rounded-sm bg-muted px-1.5 py-0.5 text-[9px] text-gray-1100">Current</span>}
+                  </div>
+                  <span className="text-xs text-muted-foreground">{v.who} · {v.when}</span>
+                </li>
+              ))}
+            </ul>
           </BezelCard>
         </div>
       </div>
@@ -1467,6 +1506,57 @@ function DetailsTab({ role, onAddAsk }: { role: Role; onAddAsk: () => void }) {
           <p className="text-sm text-muted-foreground">No activity recorded for this role yet.</p>
         )}
       </BezelCard>
+    </div>
+  )
+}
+
+/* ---------- History tab ---------- */
+function HistoryTab({ roleId }: { roleId: string }) {
+  const { activity } = useApp()
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+  const entries = activity.filter(e => e.recordHref === `/roles/${roleId}`)
+  const initials = (who: string) => who.split(/\s+/).map(s => s[0]).join('').replace(/[^A-Z]/gi, '').slice(0, 2).toUpperCase()
+
+  if (!entries.length) {
+    return (
+      <div className="rounded-2xl border border-border bg-card">
+        <EmptyState icon={<RefreshCw />} title="No activity for this role yet" body="Decisions, reruns, and JD changes for this role will appear here." />
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card">
+      <ol className="divide-y divide-border">
+        {entries.map(e => {
+          const expandable = !!(e.before || e.after)
+          const isOpen = open[e.id]
+          return (
+            <li key={e.id} className="px-4 py-3.5">
+              <div className="flex items-start gap-3">
+                <Avatar initials={initials(e.who)} size={28} className="mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm"><span className="font-medium">{e.who}</span> <span className="text-gray-1100">{e.what}</span></p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="eyebrow text-[9px] text-gray-1000">{e.kind}</span>
+                    <span className="font-mono text-[11px] text-muted-foreground">{e.when}</span>
+                  </div>
+                </div>
+                {expandable && (
+                  <Button variant="ghost" size="sm" aria-expanded={!!isOpen} iconRight={isOpen ? <ChevronDown /> : <ChevronRight />}
+                    onClick={() => setOpen(o => ({ ...o, [e.id]: !o[e.id] }))}>{isOpen ? 'Hide change' : 'Show change'}</Button>
+                )}
+              </div>
+              {expandable && isOpen && (
+                <div className="mt-3 ml-10 grid gap-2 rounded-lg border border-border bg-secondary/70 p-3 text-sm sm:grid-cols-2">
+                  <div><div className="eyebrow mb-1 text-[9px] text-gray-1000">Before</div><span className="text-muted-foreground">{e.before ?? '—'}</span></div>
+                  <div><div className="eyebrow mb-1 text-[9px] text-gray-1000">After</div><span>{e.after ?? '—'}</span></div>
+                </div>
+              )}
+            </li>
+          )
+        })}
+      </ol>
     </div>
   )
 }

@@ -175,8 +175,12 @@ export function RolesList() {
       ),
     },
     {
-      key: 'title', header: 'Job title', width: '20%', sortable: true, sortValue: r => r.title,
+      key: 'title', header: 'Job title', width: '18%', sortable: true, sortValue: r => r.title,
       render: r => <div className="truncate font-medium text-foreground">{r.title}</div>,
+    },
+    {
+      key: 'must', header: 'Must-haves', width: '18%',
+      render: r => <div className="truncate text-xs text-gray-1100" title={mustHavesSummary(r)}>{mustHavesSummary(r)}</div>,
     },
     {
       key: 'latest', header: 'Latest update', sortable: true, sortValue: r => lastWhen(r),

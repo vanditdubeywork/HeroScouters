@@ -2,23 +2,23 @@ import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Download, FileText, Filter, GripVertical,
-  ListChecks, Mail, MessageSquarePlus, MoreHorizontal, Pencil, Plus, RefreshCw, RotateCcw, Search, Sparkles, Wand2, X,
+  ListChecks, Mail, MessageSquarePlus, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Send, Sparkles, Table2, UserX, Wand2, X,
 } from 'lucide-react'
 import { ScrollPage, useTopBar } from '../shell/AppShell'
 import {
-  Avatar, BezelCard, Button, Checkbox, CompanyTypeTag, EmptyState, ExampleMark, Fact, Menu, PillTabs, Select, Skeleton, Tag, cn,
+  Avatar, BezelCard, Button, Checkbox, CompanyTypeTag, EmptyState, ExampleMark, Fact, Menu, PillTabs, Select, Skeleton, cn,
 } from '../components/ui'
 import {
   Banner, Dialog, FunnelLine, InfoNote, MatchChipView, MatchRow, NotCaptured, RerunSummary, SourceBadge, VersionChip, candidateLocation,
 } from '../components/hs'
 import {
-  FilterBar, type FilterField, type FilterState, GatedButton, ScoreControl, SelectionBar, ShortcutHint, ShortcutSheet, applyFilters, useListSelection,
+  AlignmentPills, FilterBar, type FilterField, type FilterState, GatedButton, RequirementRow, ScoreControl, SelectionBar, ShortcutHint, ShortcutSheet, applyFilters, useListSelection,
 } from '../components/v3'
 import { CandidatePreview } from './CandidatePreview'
-import { AddClientAskDialog, ConfirmAssumedDialog, CopyEmailDialog, IncludeAnywayDialog, RejectDialog, RerunDialog } from './Dialogs'
+import { AddRequirementDialog, ConfirmAssumedDialog, CopyEmailDialog, CreateGmailDraftsDialog, IncludeAnywayDialog, NotInterestedDialog, RejectDialog, RerunDialog } from './Dialogs'
 import { useApp, useWireframeState, whoCanText } from '../store/AppStore'
 import { POOL_SIZE, eliminatedByRole, jdChangesNorthwind } from '../data/mock'
-import { CLIENT_ASK_TYPES, type Eliminated, type Match, type MatchChip, type OutputType, type Role, type RoleStatus } from '../data/types'
+import { type Eliminated, type EmailDraftKind, type Match, type MatchChip, type OutputType, type Role, type RoleStatus } from '../data/types'
 
 /* ==========================================================================
    S-04 · Role page — the core screen (PRD v0.3).
@@ -132,7 +132,6 @@ function RoleView({ role }: { role: Role }) {
   const [elimOpen, setElimOpen] = useState(false)
   const [filters, setFilters] = useState<FilterState>({})
   const [unscoredOpen, setUnscoredOpen] = useState(true)
-  const [skippedOpen, setSkippedOpen] = useState(false)
   const [focusIdx, setFocusIdx] = useState(-1)
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [previewFrom, setPreviewFrom] = useState<'matches' | 'shortlist'>('matches')
@@ -145,6 +144,8 @@ function RoleView({ role }: { role: Role }) {
   const [rerunOpen, setRerunOpen] = useState<null | 'normal' | 'force'>(null)
   const [compareOpen, setCompareOpen] = useState(false)
   const [emailCandidateIds, setEmailCandidateIds] = useState<string[] | null>(null)
+  const [emailInitialKind, setEmailInitialKind] = useState<EmailDraftKind | undefined>(undefined)
+  const [notInterestedCandId, setNotInterestedCandId] = useState<string | null>(null)
   const [last, setLast] = useState<{ id: string; prev: Match['status'] } | null>(null)
 
   /* Seed session matches for roles without explicit matches in mock.ts */
@@ -224,20 +225,28 @@ function RoleView({ role }: { role: Role }) {
   /* ---------- FilterBar fields (N17) ---------- */
   const filterFields = useMemo<FilterField<Match>[]>(() => [
     {
-      key: 'band',
-      label: 'Fit band',
+      key: 'recommendation',
+      label: 'Recommendation',
       kind: 'values',
-      options: ['Strong', 'Good', 'Stretch'],
+      options: ['Strong', 'Mild', 'Not recommended'],
       pinned: true,
-      get: m => (!forceNotScored && m.scored) ? m.band : null,
+      get: m => (!forceNotScored && m.scored)
+        ? (m.recommendation ?? (m.band === 'Strong' ? 'Strong' : m.band === 'Good' ? 'Mild' : 'Not recommended'))
+        : null,
     },
     {
       key: 'status',
       label: 'Decision status',
       kind: 'values',
-      options: ['New', 'Shortlisted', 'Rejected', 'Re-qualified'],
+      options: ['New', 'Shortlisted', 'Rejected', 'Re-qualified', 'Not interested'],
       pinned: true,
-      get: m => ({ new: 'New', shortlisted: 'Shortlisted', rejected: 'Rejected', requalified: 'Re-qualified' }[m.status]),
+      get: m => ({
+        new: 'New',
+        shortlisted: 'Shortlisted',
+        rejected: 'Rejected',
+        requalified: 'Re-qualified',
+        'not-interested': 'Not interested',
+      }[m.status]),
     },
     {
       key: 'scored',
@@ -324,7 +333,7 @@ function RoleView({ role }: { role: Role }) {
   const filteredMatches = useMemo(() => {
     let base = applyFilters(all, filterFields, filters)
     if (showSummary && deltaFilter) {
-      base = deltaFilter === 'dropped' ? base.filter(m => m.rank > 5 && m.status !== 'rejected')
+      base = deltaFilter === 'dropped' ? base.filter(m => m.rank > 5 && m.status !== 'rejected' && m.status !== 'not-interested')
         : deltaFilter === 'requalified' ? base.filter(m => m.status === 'requalified')
           : base.filter(m => m.delta === deltaFilter)
     }
@@ -332,32 +341,37 @@ function RoleView({ role }: { role: Role }) {
     return base
   }, [all, filterFields, filters, showSummary, deltaFilter, view])
 
-  const allScoredCount = all.filter(m => isRowScored(m)).length
+  const notInterestedRows = useMemo(
+    () => all.filter(m => m.status === 'not-interested'),
+    [all],
+  )
+  const activeFilteredMatches = useMemo(
+    () => filteredMatches.filter(m => m.status !== 'not-interested'),
+    [filteredMatches],
+  )
+
+  const allScoredCount = all.filter(m => m.status !== 'not-interested' && isRowScored(m)).length
   const notScoredYetMode = allScoredCount === 0
 
   const scoredRows = useMemo(
-    () => filteredMatches.filter(m => isRowScored(m)).sort((a, b) => a.rank - b.rank),
-    [filteredMatches, forceNotScored], // eslint-disable-line react-hooks/exhaustive-deps
+    () => activeFilteredMatches.filter(m => isRowScored(m)).sort((a, b) => a.rank - b.rank),
+    [activeFilteredMatches, forceNotScored], // eslint-disable-line react-hooks/exhaustive-deps
   )
   const unscoredRows = useMemo(
-    () => filteredMatches.filter(m => !isRowScored(m) && !m.skipped).sort((a, b) => a.similarity - b.similarity),
-    [filteredMatches, forceNotScored], // eslint-disable-line react-hooks/exhaustive-deps
+    () => activeFilteredMatches.filter(m => !isRowScored(m)).sort((a, b) => a.similarity - b.similarity),
+    [activeFilteredMatches, forceNotScored], // eslint-disable-line react-hooks/exhaustive-deps
   )
-  const skippedRows = useMemo(
-    () => filteredMatches.filter(m => !isRowScored(m) && !!m.skipped).sort((a, b) => a.similarity - b.similarity),
-    [filteredMatches, forceNotScored], // eslint-disable-line react-hooks/exhaustive-deps
-  )
-  const totalUnscoredPool = all.filter(m => !isRowScored(m) && !m.skipped && m.status !== 'rejected').length
+  const totalUnscoredPool = all.filter(m => !isRowScored(m) && m.status !== 'rejected' && m.status !== 'not-interested').length
 
   /* Visible rows for keyboard navigation & selection */
   const visibleRows = useMemo(() => {
     if (notScoredYetMode) {
-      return [...unscoredRows, ...(skippedOpen ? skippedRows : [])]
+      return unscoredRows
     }
-    return [...scoredRows, ...(unscoredOpen ? unscoredRows : []), ...(skippedOpen ? skippedRows : [])]
-  }, [notScoredYetMode, scoredRows, unscoredRows, skippedRows, unscoredOpen, skippedOpen])
+    return [...scoredRows, ...(unscoredOpen ? unscoredRows : [])]
+  }, [notScoredYetMode, scoredRows, unscoredRows, unscoredOpen])
 
-  const focusable = useMemo(() => visibleRows.filter(m => m.status !== 'rejected'), [visibleRows])
+  const focusable = useMemo(() => visibleRows.filter(m => m.status !== 'rejected' && m.status !== 'not-interested'), [visibleRows])
   const selectableIds = useMemo(() => focusable.map(m => m.id), [focusable])
   const sel = useListSelection(selectableIds)
   const focusedId = focusIdx >= 0 ? focusable[Math.min(focusIdx, focusable.length - 1)]?.id : undefined
@@ -410,8 +424,11 @@ function RoleView({ role }: { role: Role }) {
     } else app.reorderShortlist(id, ids)
   }
   const ask = (m: Match, chip: MatchChip) => {
-    app.addToAskList(m.candidateId, askFor(chip))
-    app.log({ what: `Added to ask list: “${askFor(chip)}”`, record: nameOf(m), recordHref: `/candidates/${m.candidateId}`, kind: 'Candidates' })
+    const q = chip.label.toLowerCase().startsWith('confirm ')
+      ? (chip.label.endsWith('?') ? chip.label : `${chip.label}?`)
+      : askFor(chip)
+    app.addToAskList(m.candidateId, q)
+    app.log({ what: `Added to ask list: “${q}”`, record: nameOf(m), recordHref: `/candidates/${m.candidateId}`, kind: 'Candidates' })
   }
 
   const triggerScore = (n: number) => {
@@ -425,7 +442,7 @@ function RoleView({ role }: { role: Role }) {
         return {
           ...v,
           [id]: listV.map(m => {
-            if (!m.scored && !m.skipped && m.status !== 'rejected' && left > 0) {
+            if (!m.scored && m.status !== 'rejected' && m.status !== 'not-interested' && left > 0) {
               left--
               return { ...m, scored: true }
             }
@@ -460,9 +477,8 @@ function RoleView({ role }: { role: Role }) {
   /* ---------- Bulk selection derived data ---------- */
   const selectedMatches = useMemo(() => all.filter(m => sel.selected.includes(m.id)), [all, sel.selected])
   const alreadyShortlistedCount = selectedMatches.filter(m => m.status === 'shortlisted').length
-  const eligibleForShortlist = selectedMatches.filter(m => m.status !== 'shortlisted' && m.status !== 'rejected')
-  const eligibleForReject = selectedMatches.filter(m => m.status !== 'rejected')
-  const selectedUnscoredIds = selectedMatches.filter(m => !isRowScored(m) && !m.skipped).map(m => m.id)
+  const eligibleForShortlist = selectedMatches.filter(m => m.status !== 'shortlisted' && m.status !== 'rejected' && m.status !== 'not-interested')
+  const eligibleForReject = selectedMatches.filter(m => m.status !== 'rejected' && m.status !== 'not-interested')
 
   const assumedSummary = useMemo(() => {
     const fieldCounts: Record<string, number> = {}
@@ -499,7 +515,7 @@ function RoleView({ role }: { role: Role }) {
     }
   }
 
-  /* ---------- Gmail-aligned Keyboard: J/K · Space · X · S · E · U · Esc · ? ---------- */
+  /* ---------- v0.4 §7.3 Keyboard: J/K · Shift+J/K · Space · S · X · E · U · Esc · ? ---------- */
   useEffect(() => {
     if (tab !== 'matches' || (view !== 'ranked' && view !== 'few' && view !== 'none' && view !== 'error')) return
     const onKey = (e: KeyboardEvent) => {
@@ -513,17 +529,31 @@ function RoleView({ role }: { role: Role }) {
         return
       }
       const k = e.key.toLowerCase()
-      const cur = focusIdx >= 0 ? focusable[Math.min(focusIdx, focusable.length - 1)] : undefined
+      const curIdx = focusIdx >= 0 ? Math.min(focusIdx, focusable.length - 1) : 0
+      const cur = focusable[curIdx]
+
+      if (e.shiftKey && (k === 'j' || e.key === 'ArrowDown' || k === 'k' || e.key === 'ArrowUp')) {
+        e.preventDefault()
+        if (!focusable.length) return
+        const nextIdx = (k === 'j' || e.key === 'ArrowDown')
+          ? Math.min(focusable.length - 1, (focusIdx < 0 ? 0 : curIdx) + 1)
+          : Math.max(0, (focusIdx < 0 ? 0 : curIdx) - 1)
+        const fromRow = focusable[focusIdx < 0 ? 0 : curIdx]
+        const nextRow = focusable[nextIdx]
+        setFocusIdx(nextIdx)
+        if (fromRow && nextRow) sel.extendTo(fromRow.id, nextRow.id)
+        return
+      }
+
       if (k === 'j' || e.key === 'ArrowDown') { e.preventDefault(); setFocusIdx(i => Math.min(focusable.length - 1, i + 1)) }
       else if (k === 'k' || e.key === 'ArrowUp') { e.preventDefault(); setFocusIdx(i => Math.max(0, i - 1)) }
       else if (e.key === ' ' && cur && t.tagName !== 'BUTTON') { e.preventDefault(); setPreviewFrom('matches'); setPreviewId(cur.candidateId) }
-      else if (k === 'x' && cur) { e.preventDefault(); sel.toggle(cur.id, e.shiftKey) }
       else if (k === 's') {
         e.preventDefault()
         if (sel.selected.length > 0) handleBulkShortlist()
         else if (cur) doShortlist(cur)
       }
-      else if (k === 'e') {
+      else if (k === 'x') {
         e.preventDefault()
         if (!app.can('reject')) return
         if (sel.selected.length > 0) {
@@ -531,6 +561,10 @@ function RoleView({ role }: { role: Role }) {
         } else if (cur) {
           setRejectTarget(cur)
         }
+      }
+      else if (k === 'e') {
+        e.preventDefault()
+        setElimOpen(v => !v)
       }
       else if (k === 'u') { e.preventDefault(); undoLast() }
     }
@@ -553,14 +587,13 @@ function RoleView({ role }: { role: Role }) {
   const previewMatch = previewId ? all.find(m => m.candidateId === previewId) : undefined
 
   /* ---------- Render MatchRow ---------- */
-  const renderRow = (m: Match, opts?: { forceUnscored?: boolean; skipped?: boolean }) => {
+  const renderRow = (m: Match, opts?: { forceUnscored?: boolean }) => {
     const c = app.candidate(m.candidateId)
     if (!c) return null
     const loc = candidateLocation(c)
     const fIdx = focusable.findIndex(x => x.id === m.id)
     const notScored = opts?.forceUnscored ?? !isRowScored(m)
-    const isSkipped = opts?.skipped ?? !!m.skipped
-    const canSelect = m.status !== 'rejected'
+    const canSelect = m.status !== 'rejected' && m.status !== 'not-interested'
 
     const resumes = app.resumesFor(m.candidateId)
     const currentResume = resumes.find(r => r.id === m.scoredOnResumeId) ?? resumes.find(r => r.isPrimary) ?? resumes[0]
@@ -604,25 +637,23 @@ function RoleView({ role }: { role: Role }) {
       </div>
     ) : undefined
 
-    const footerNode = isSkipped ? (
-      <Button variant="ghost" size="sm" icon={<RotateCcw />} onClick={() => app.skipForScoring([m.id], false)}>
-        Restore
-      </Button>
-    ) : undefined
-
     return (
       <MatchRow key={m.id}
         rank={m.rank} initials={c.initials} title={c.name} subtitle={`${c.headline}${loc ? ` · ${loc}` : ''}`}
         candidate={c}
         band={m.band} score={m.score} reason={m.reason} chips={m.chips}
+        recommendation={m.recommendation}
+        suggested={m.suggested}
+        requirementsMet={m.requirementsMet}
+        greenFlags={m.greenFlags}
+        redFlags={m.redFlags}
+        notInterestedReason={m.notInterestedReason}
         status={m.status} rejectReason={m.rejectReason} delta={m.delta === 'requalified' ? undefined : m.delta}
         dimmed={stale} focused={m.id === focusedId}
         selected={canSelect ? sel.isSelected(m.id) : false}
         onToggleSelect={canSelect ? shift => sel.toggle(m.id, shift) : undefined}
         notScored={notScored}
-        skipped={isSkipped}
         meta={metaNode}
-        footer={footerNode}
         actionsDisabled={{
           shortlist: app.can('shortlist') ? undefined : whoCanText('shortlist'),
           reject: app.can('reject') ? undefined : whoCanText('reject'),
@@ -630,7 +661,7 @@ function RoleView({ role }: { role: Role }) {
         onPreview={() => { setFocusIdx(fIdx); setPreviewFrom('matches'); setPreviewId(c.id) }}
         onShortlist={() => doShortlist(m)}
         onReject={() => setRejectTarget(m)}
-        onUndo={() => doUndo(m)}
+        onUndo={() => m.status === 'not-interested' ? app.undoNotInterested(m.candidateId, role.id) : doUndo(m)}
         onAddToAsk={chip => ask(m, chip)}
       />
     )
@@ -646,6 +677,8 @@ function RoleView({ role }: { role: Role }) {
     />
   )
 
+  const suggestedCount = scoredRows.filter(m => m.suggested).length || allScoredCount
+
   const matchesTab = (() => {
     if (view === 'running') {
       return (
@@ -653,7 +686,7 @@ function RoleView({ role }: { role: Role }) {
           <Banner variant="info" progress={wf === 'running' ? 45 : progress}>
             Scoring <span className="font-mono tnum">{scoringCount ?? role.passCount}</span> candidates… <span className="text-muted-foreground">You can keep working. We'll let you know when it's ready.</span>
           </Banner>
-          <FunnelLine pool={elim.pool} pass={role.passCount} top={allScoredCount} onSeeEliminated={() => setElimOpen(o => !o)} eliminatedOpen={elimOpen} />
+          <FunnelLine pool={elim.pool} pass={role.passCount} top={allScoredCount} notScored={unscoredRows.length} suggested={suggestedCount} shortlisted={shortlisted.length} onSeeEliminated={() => setElimOpen(o => !o)} eliminatedOpen={elimOpen} />
           <div className="space-y-2" aria-hidden>{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-[112px] rounded-xl" />)}</div>
         </div>
       )
@@ -661,11 +694,11 @@ function RoleView({ role }: { role: Role }) {
     if (view === 'none') {
       return (
         <div className="space-y-4">
-          <FunnelLine pool={elim.pool} pass={0} top={0} onSeeEliminated={() => setElimOpen(o => !o)} eliminatedOpen={elimOpen} />
+          <FunnelLine pool={elim.pool} pass={0} top={0} notScored={0} suggested={0} shortlisted={0} onSeeEliminated={() => setElimOpen(o => !o)} eliminatedOpen={elimOpen} />
           <div className="rounded-2xl border border-border bg-card">
             <EmptyState icon={<Filter />} title="No one passes"
               body="No candidates pass all must-haves. 23 fail only on location."
-              action={<div className="flex gap-2"><Button onClick={() => setElimOpen(true)}>See them</Button><Button variant="ghost" icon={<Pencil />} onClick={() => navigate(`/roles/${id}/edit`)}>Edit must-haves</Button></div>} />
+              action={<div className="flex gap-2"><Button onClick={() => setElimOpen(true)}>See them</Button><Button variant="ghost" icon={<Pencil />} onClick={() => navigate(`/roles/${id}/edit`)}>Edit requirements</Button></div>} />
           </div>
           {eliminatedView}
         </div>
@@ -698,6 +731,9 @@ function RoleView({ role }: { role: Role }) {
           pool={elim.pool}
           pass={passCount}
           top={allScoredCount}
+          notScored={unscoredRows.length}
+          suggested={suggestedCount}
+          shortlisted={shortlisted.length}
           onSeeEliminated={() => setElimOpen(o => !o)}
           eliminatedOpen={elimOpen}
         />
@@ -708,20 +744,15 @@ function RoleView({ role }: { role: Role }) {
           <SelectionBar
             count={sel.selected.length}
             shown={selectableIds.length}
-            matching={filteredMatches.filter(m => m.status !== 'rejected').length}
+            matching={activeFilteredMatches.filter(m => m.status !== 'rejected').length}
             onSelectAllShown={() => sel.selectAll(selectableIds)}
             onClear={sel.clear}
             note={alreadyShortlistedCount > 0 ? `${alreadyShortlistedCount} already shortlisted` : undefined}
           >
-            {selectedUnscoredIds.length > 0 && (
-              <Button variant="outline" size="sm" onClick={() => { app.skipForScoring(selectedUnscoredIds, true); sel.clear() }}>
-                Skip for scoring
-              </Button>
-            )}
             <Button variant="primary" size="sm" icon={<Check />} kbd="S" disabled={!eligibleForShortlist.length} onClick={handleBulkShortlist}>
               Shortlist
             </Button>
-            <GatedButton perm="reject" variant="outline" size="sm" icon={<X />} kbd="E" disabled={!eligibleForReject.length} onClick={() => setBatchRejectOpen(true)}>
+            <GatedButton perm="reject" variant="outline" size="sm" icon={<X />} kbd="X" disabled={!eligibleForReject.length} onClick={() => setBatchRejectOpen(true)}>
               Reject
             </GatedButton>
           </SelectionBar>
@@ -731,7 +762,7 @@ function RoleView({ role }: { role: Role }) {
             rows={all}
             state={filters}
             onChange={setFilters}
-            count={filteredMatches.length}
+            count={activeFilteredMatches.length}
             countLabel="match"
             right={<ShortcutHint onOpen={() => setShortcutsOpen(true)} />}
           />
@@ -752,10 +783,10 @@ function RoleView({ role }: { role: Role }) {
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3">
               <div className="space-y-0.5">
                 <div className="text-sm font-medium text-foreground">
-                  <span className="font-mono tnum">{unscoredRows.length}</span> stage-1 passer{unscoredRows.length === 1 ? '' : 's'} · not scored with AI yet
+                  Not scored ({unscoredRows.length})
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Sorted by similarity to the role. Prune with filters or skip rows before spending AI scores.
+                  Sorted by similarity to the JD. Not a score. Prune with filters or reject (X) before spending AI scores.
                 </p>
               </div>
               <ScoreControl unscored={totalUnscoredPool || unscoredRows.length} onScore={n => triggerScore(n)} />
@@ -772,7 +803,7 @@ function RoleView({ role }: { role: Role }) {
             </div>
           </div>
         ) : (
-          /* Scored state: ranked scored rows on top + collapsible Not scored (N) + collapsible Skipped (N) */
+          /* Scored state: ranked scored rows on top + collapsible Not scored (N) */
           <div className="space-y-4">
             <div className="space-y-2" aria-label="Ranked matches">
               {scoredRows.length > 0 ? (
@@ -795,7 +826,7 @@ function RoleView({ role }: { role: Role }) {
                   >
                     {unscoredOpen ? <ChevronDown className="size-4 text-muted-foreground" /> : <ChevronRight className="size-4 text-muted-foreground" />}
                     <span>Not scored ({unscoredRows.length})</span>
-                    <span className="text-xs font-normal text-muted-foreground">· passed must-haves, sorted by similarity · earlier scores kept</span>
+                    <span className="text-xs font-normal text-muted-foreground">· Sorted by similarity to the JD. Not a score.</span>
                   </button>
                   <ScoreControl unscored={unscoredRows.length} more onScore={n => triggerScore(n)} />
                 </div>
@@ -809,36 +840,37 @@ function RoleView({ role }: { role: Role }) {
           </div>
         )}
 
-        {/* Collapsible Skipped (N) section when any rows are skipped */}
-        {skippedRows.length > 0 && (
-          <section className="rounded-2xl border border-border bg-gray-100 p-1">
-            <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
-              <button
-                type="button"
-                aria-expanded={skippedOpen}
-                onClick={() => setSkippedOpen(o => !o)}
-                className="inline-flex items-center gap-2 text-left text-sm font-semibold text-foreground"
-              >
-                {skippedOpen ? <ChevronDown className="size-4 text-muted-foreground" /> : <ChevronRight className="size-4 text-muted-foreground" />}
-                <span>Skipped ({skippedRows.length})</span>
-                <span className="text-xs font-normal text-muted-foreground">· excluded from AI scoring</span>
-              </button>
-              <Button variant="ghost" size="sm" icon={<RotateCcw />} onClick={() => app.skipForScoring(skippedRows.map(m => m.id), false)}>
-                Restore
-              </Button>
+        {/* v0.4 · §7.4 / C10 Collapsed Not interested (N) group */}
+        {notInterestedRows.length > 0 && (
+          <details className="group rounded-2xl border border-border bg-gray-100 p-1">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-sm font-semibold text-foreground select-none">
+              <span className="inline-flex items-center gap-2">
+                <ChevronRight className="size-4 text-muted-foreground transition-transform group-open:rotate-90" />
+                <span>Not interested ({notInterestedRows.length})</span>
+                <span className="text-xs font-normal text-muted-foreground">· never suggested again for this role</span>
+              </span>
+            </summary>
+            <div className="space-y-2 rounded-xl border border-border bg-card p-2">
+              {notInterestedRows.map(m => renderRow(m))}
             </div>
-            {skippedOpen && (
-              <div className="space-y-2 rounded-xl border border-border bg-card p-2">
-                {skippedRows.map(m => renderRow(m, { forceUnscored: true, skipped: true }))}
-              </div>
-            )}
-          </section>
+          </details>
         )}
 
         <span className="sr-only" aria-live="polite">{!running && view === 'ranked' ? `Ranking finished: ${scoredRows.length} scored candidates` : ''}</span>
       </div>
     )
   })()
+
+  const focusedOrSelectedCandidateId = useMemo(() => {
+    if (sel.selected.length > 0) {
+      const m = all.find(x => x.id === sel.selected[0])
+      if (m) return m.candidateId
+    }
+    if (focusIdx >= 0 && focusable[Math.min(focusIdx, focusable.length - 1)]) {
+      return focusable[Math.min(focusIdx, focusable.length - 1)].candidateId
+    }
+    return all[0]?.candidateId ?? 'priya'
+  }, [sel.selected, focusIdx, focusable, all])
 
   return (
     <ScrollPage>
@@ -854,10 +886,12 @@ function RoleView({ role }: { role: Role }) {
           <Select aria-label="Role status" value={role.status} onChange={changeStatus} options={['Open', 'On hold', 'Closed']} />
           <VersionChip label={`JD v${role.jdVersion}`} versions={versions} onCompare={() => setCompareOpen(true)} />
           <Button variant="outline" icon={<Pencil />} onClick={() => navigate(`/roles/${id}/edit`)}>Edit role</Button>
-          <Menu width={210}
+          <Menu width={240}
             trigger={({ toggle }) => <Button variant="ghost" size="icon" aria-label="More role actions" onClick={toggle} icon={<MoreHorizontal />} />}
             items={[
-              { label: 'Add client ask', icon: <MessageSquarePlus />, onSelect: () => setAddAskOpen(true) },
+              { label: 'Add requirement', icon: <MessageSquarePlus />, onSelect: () => setAddAskOpen(true) },
+              { label: 'Mark candidate not interested…', icon: <UserX />, onSelect: () => setNotInterestedCandId(focusedOrSelectedCandidateId) },
+              { separator: true, label: '' },
               { label: 'Force rerun', icon: <RefreshCw />, onSelect: () => setRerunOpen('force') },
             ]} />
         </div>
@@ -878,7 +912,8 @@ function RoleView({ role }: { role: Role }) {
           onReorder={reorder}
           onRemove={m => doUndo(m)}
           onPreview={cid => { setPreviewFrom('shortlist'); setPreviewId(cid) }}
-          onCopyEmail={cids => setEmailCandidateIds(cids)}
+          onOpenEmail={(kind, cids) => { setEmailInitialKind(kind); setEmailCandidateIds(cids) }}
+          onMarkNotInterested={cid => setNotInterestedCandId(cid)}
           onGoMatches={() => setTab('matches')} />
       )}
       {tab === 'details' && <DetailsTab role={role} onAddAsk={() => setAddAskOpen(true)} />}
@@ -939,7 +974,14 @@ function RoleView({ role }: { role: Role }) {
         onConfirm={opts => startRun('rerun', opts)}
       />
 
-      <AddClientAskDialog open={addAskOpen} onClose={() => setAddAskOpen(false)} roleId={id} />
+      <AddRequirementDialog open={addAskOpen} onClose={() => setAddAskOpen(false)} roleId={id} />
+
+      <NotInterestedDialog
+        open={!!notInterestedCandId}
+        onClose={() => setNotInterestedCandId(null)}
+        candidateId={notInterestedCandId ?? ''}
+        roleIds={[id]}
+      />
 
       <ShortcutSheet open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
@@ -952,6 +994,7 @@ function RoleView({ role }: { role: Role }) {
         onClose={() => setEmailCandidateIds(null)}
         candidateIds={emailCandidateIds ?? shortlisted.map(m => m.candidateId)}
         roleId={id}
+        initialKind={emailInitialKind}
       />
 
       <Dialog open={compareOpen} onClose={() => setCompareOpen(false)} width={560}
@@ -1031,16 +1074,23 @@ function EliminatedView({ pool, pass, rules, rows, included, onInclude, onClose,
   )
 }
 
-/* ---------- Shortlist tab (T1, T3, T6) ---------- */
-function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onCopyEmail, onGoMatches }: {
-  role: Role; items: Match[]; onReorder: (ids: string[]) => void; onRemove: (m: Match) => void; onPreview: (cid: string) => void
-  onCopyEmail: (candidateIds: string[]) => void; onGoMatches: () => void
+/* ---------- Shortlist tab (§7.5, C2, C3, C4, N26, N27, D-09) ---------- */
+function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onOpenEmail, onMarkNotInterested, onGoMatches }: {
+  role: Role
+  items: Match[]
+  onReorder: (ids: string[]) => void
+  onRemove: (m: Match) => void
+  onPreview: (cid: string) => void
+  onOpenEmail: (kind: EmailDraftKind, candidateIds: string[]) => void
+  onMarkNotInterested: (candidateId: string) => void
+  onGoMatches: () => void
 }) {
   const app = useApp()
   const navigate = useNavigate()
   const [drag, setDrag] = useState<number | null>(null)
   const [over, setOver] = useState<number | null>(null)
   const [sourceResumeByCandidate, setSourceResumeByCandidate] = useState<Record<string, string>>({})
+  const [gmailDraftsOpen, setGmailDraftsOpen] = useState(false)
 
   const orderedIds = useMemo(() => items.map(m => m.id), [items])
   const sel = useListSelection(orderedIds)
@@ -1064,6 +1114,26 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onCopyEmail
     onReorder(next)
   }
 
+  const copyOutreachSheetRows = () => {
+    const header = ['Order', 'Candidate', 'Title', 'Location', 'Recommendation', 'Candidate side', isClient ? 'Client side' : 'Prospect side', 'Role', 'Company'].join('\t')
+    const lines = activeItems.map((m, idx) => {
+      const c = app.candidate(m.candidateId)
+      return [
+        String(idx + 1),
+        c?.name ?? m.candidateId,
+        c?.headline ?? '',
+        c ? candidateLocation(c) : '',
+        m.recommendation ?? (m.band === 'Strong' ? 'Strong' : m.band === 'Good' ? 'Mild' : 'Not recommended'),
+        m.alignment?.candidateSide ?? 'not-asked',
+        isClient ? (m.alignment?.clientSide ?? 'not-sent') : (m.alignment?.prospectSide ?? 'not-pitched'),
+        role.title,
+        role.company,
+      ].join('\t')
+    })
+    navigator.clipboard?.writeText([header, ...lines].join('\n')).catch(() => {})
+    app.toast(`Copied ${activeItems.length} row${activeItems.length === 1 ? '' : 's'} for outreach sheet`)
+  }
+
   if (!items.length) {
     return (
       <div className="rounded-2xl border border-border bg-card">
@@ -1081,35 +1151,61 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onCopyEmail
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          {sel.selected.length > 0 ? (
-            <>
-              <span className="font-mono text-foreground tnum">{sel.selected.length}</span> of <span className="font-mono text-foreground tnum">{items.length}</span> selected
-              <Button variant="link" className="text-xs" onClick={sel.clear}>Clear</Button>
-            </>
-          ) : (
-            <><span className="font-mono text-foreground tnum">{items.length}</span> shortlisted · drag to set the order clients see</>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+      {sel.selected.length > 0 ? (
+        <SelectionBar
+          count={sel.selected.length}
+          shown={items.length}
+          onSelectAllShown={() => sel.selectAll(orderedIds)}
+          onClear={sel.clear}
+        >
           {isClient && (
-            <GatedButton perm="genIdentity" variant="primary" icon={<FileText />} onClick={editable}>
+            <GatedButton perm="genIdentity" variant="primary" size="sm" icon={<FileText />} onClick={editable}>
               Prepare editable resumes
             </GatedButton>
           )}
-          <Button variant={isClient ? 'outline' : 'primary'} icon={<Sparkles />} onClick={masked}>
+          <Button variant={isClient ? 'outline' : 'primary'} size="sm" icon={<Sparkles />} onClick={masked}>
             Generate masked resumes
           </Button>
-          <Button variant="outline" icon={<Mail />} onClick={() => onCopyEmail(activeIds)}>
-            Copy email text
+          <Button variant="outline" size="sm" icon={<Mail />} onClick={() => onOpenEmail(isClient ? 'shortlist' : 'pitch', activeIds)}>
+            Draft emails / prompts
           </Button>
-          <Button variant="outline" icon={<Download />} disabled={!readyCount} title={readyCount ? undefined : 'No resumes generated yet'}
-            onClick={() => { app.toast(`Downloaded ${readyCount} resume${readyCount === 1 ? '' : 's'} as one ZIP`); app.log({ what: `Downloaded ${readyCount} resumes (ZIP)`, record: `${role.title} — ${role.company}`, recordHref: `/roles/${role.id}`, kind: 'Outputs' }) }}>
-            Download
+          <Button variant="outline" size="sm" icon={<Send />} onClick={() => setGmailDraftsOpen(true)}>
+            Create Gmail drafts
           </Button>
+          <Button variant="outline" size="sm" icon={<Table2 />} onClick={copyOutreachSheetRows}>
+            Copy rows for outreach sheet
+          </Button>
+        </SelectionBar>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="font-mono text-foreground tnum">{items.length}</span> shortlisted · drag to set the order clients see
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {isClient && (
+              <GatedButton perm="genIdentity" variant="primary" icon={<FileText />} onClick={editable}>
+                Prepare editable resumes
+              </GatedButton>
+            )}
+            <Button variant={isClient ? 'outline' : 'primary'} icon={<Sparkles />} onClick={masked}>
+              Generate masked resumes
+            </Button>
+            <Button variant="outline" icon={<Mail />} onClick={() => onOpenEmail(isClient ? 'shortlist' : 'pitch', activeIds)}>
+              Draft emails / prompts
+            </Button>
+            <Button variant="outline" icon={<Send />} onClick={() => setGmailDraftsOpen(true)}>
+              Create Gmail drafts
+            </Button>
+            <Button variant="outline" icon={<Table2 />} onClick={copyOutreachSheetRows}>
+              Copy rows for outreach sheet
+            </Button>
+            <Button variant="outline" icon={<Download />} disabled={!readyCount} title={readyCount ? undefined : 'No resumes generated yet'}
+              onClick={() => { app.toast(`Downloaded ${readyCount} resume${readyCount === 1 ? '' : 's'} as one ZIP`); app.log({ what: `Downloaded ${readyCount} resumes (ZIP)`, record: `${role.title} — ${role.company}`, recordHref: `/roles/${role.id}`, kind: 'Outputs' }) }}>
+              Download
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       {missingMasked.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-secondary/60 px-3.5 py-2 text-xs">
@@ -1136,8 +1232,8 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onCopyEmail
             onChange={v => (v ? sel.selectAll() : sel.clear())}
           />
           <span className="eyebrow w-12 text-[10px] text-gray-1000">Order</span>
-          <span className="eyebrow flex-1 text-[10px] text-gray-1000">Candidate</span>
-          <span className="eyebrow w-[260px] text-[10px] text-gray-1000">Outputs</span>
+          <span className="eyebrow flex-1 text-[10px] text-gray-1000">Candidate &amp; alignment</span>
+          <span className="eyebrow w-[240px] text-[10px] text-gray-1000">Outputs</span>
           <span className="w-[220px]" />
         </li>
         {items.map((m, i) => {
@@ -1151,7 +1247,7 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onCopyEmail
               onDragOver={e => { e.preventDefault(); setOver(i) }}
               onDrop={e => { e.preventDefault(); if (drag !== null) move(drag, i); setDrag(null); setOver(null) }}
               onDragEnd={() => { setDrag(null); setOver(null) }}
-              className={cn('flex flex-wrap items-center gap-4 border-b border-border px-4 py-3 transition-colors last:border-0',
+              className={cn('flex flex-wrap items-center gap-4 border-b border-border px-4 py-3.5 transition-colors last:border-0',
                 sel.isSelected(m.id) && 'bg-secondary/60',
                 drag === i && 'opacity-50', over === i && drag !== null && drag !== i && 'bg-muted')}>
               <span onClickCapture={e => { if (e.shiftKey) { e.stopPropagation(); e.preventDefault(); sel.toggle(m.id, true) } }}>
@@ -1161,28 +1257,39 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onCopyEmail
                 <GripVertical className="size-4 cursor-grab text-gray-800" aria-hidden />
                 <span className="font-mono text-xs text-gray-1000 tnum">{i + 1}</span>
               </div>
-              <div className="flex min-w-0 flex-1 items-center gap-3">
-                <Avatar initials={c.initials} size={32} />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{c.name}</div>
-                  <div className="truncate text-xs text-muted-foreground">{c.headline}</div>
-                </div>
-                {resumes.length > 1 && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] text-muted-foreground">Source resume</span>
-                    <Select
-                      aria-label={`Source resume for ${c.name}`}
-                      value={selectedResumeId}
-                      onChange={rid => {
-                        setSourceResumeByCandidate(s => ({ ...s, [c.id]: rid }))
-                        app.rescoreOnResume(m.id, rid)
-                      }}
-                      options={resumes.map(r => ({ value: r.id, label: r.label }))}
-                    />
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Avatar initials={c.initials} size={32} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{c.name}</div>
+                    <div className="truncate text-xs text-muted-foreground">{c.headline}</div>
                   </div>
-                )}
+                  {resumes.length > 1 && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] text-muted-foreground">Source resume</span>
+                      <Select
+                        aria-label={`Source resume for ${c.name}`}
+                        value={selectedResumeId}
+                        onChange={rid => {
+                          setSourceResumeByCandidate(s => ({ ...s, [c.id]: rid }))
+                          app.rescoreOnResume(m.id, rid)
+                        }}
+                        options={resumes.map(r => ({ value: r.id, label: r.label }))}
+                      />
+                    </div>
+                  )}
+                </div>
+                <AlignmentPills
+                  companyType={role.companyType}
+                  alignment={m.alignment}
+                  candidateName={c.name}
+                  onChangeSide={(side, val) => app.updateAlignment(m.id, side, val)}
+                  onDraftCandidate={() => onOpenEmail('interest-check', [m.candidateId])}
+                  onDraftClient={() => onOpenEmail(isClient ? 'profile-share' : 'pitch', [m.candidateId])}
+                  onMarkNotInterested={() => onMarkNotInterested(m.candidateId)}
+                />
               </div>
-              <div className="flex w-[260px] flex-wrap items-center gap-1.5">
+              <div className="flex w-[240px] flex-wrap items-center gap-1.5">
                 {types.map(t => {
                   const o = outFor(c.id, t)
                   return (
@@ -1208,23 +1315,30 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onCopyEmail
           )
         })}
       </ol>
+
+      <CreateGmailDraftsDialog
+        open={gmailDraftsOpen}
+        onClose={() => setGmailDraftsOpen(false)}
+        roleIds={[role.id]}
+        candidateIdsByRole={{ [role.id]: activeIds }}
+        mode="shortlist"
+      />
     </div>
   )
 }
 
-/* ---------- Details tab (T7, T9) ---------- */
+/* ---------- Details tab (§7.1, T7, T9) ---------- */
 function DetailsTab({ role, onAddAsk }: { role: Role; onAddAsk: () => void }) {
   const app = useApp()
   const navigate = useNavigate()
   const [openDiff, setOpenDiff] = useState<Record<string, boolean>>({})
 
-  const asks = app.asksFor(role.id)
+  const reqs = app.requirementsFor(role.id)
   const roleActivity = app.activity.filter(e => e.recordHref === `/roles/${role.id}`)
   const recentEntries = [...roleActivity, ...app.activity.filter(e => e.recordHref !== `/roles/${role.id}`)].slice(0, 5)
 
   const yn = (v: 'Yes' | 'No' | 'Unknown') => (v === 'Unknown' ? <span className="text-muted-foreground">Unknown</span> : v)
   const Text = ({ v }: { v?: string }) => (v ? <p className="text-sm leading-relaxed whitespace-pre-wrap">{v}</p> : <NotCaptured />)
-  const askTypeLabel = (type: string) => CLIENT_ASK_TYPES.find(t => t.value === type)?.label ?? type
   const initials = (who: string) => who.split(/\s+/).map(s => s[0]).join('').replace(/[^A-Z]/gi, '').slice(0, 2).toUpperCase()
 
   return (
@@ -1237,11 +1351,40 @@ function DetailsTab({ role, onAddAsk }: { role: Role; onAddAsk: () => void }) {
               <Fact label="Type"><CompanyTypeTag type={role.companyType} /></Fact>
               <Fact label="Source">{role.companySource}</Fact>
               <Fact label="Posting">{role.postingUrl ? <a href={role.postingUrl} target="_blank" rel="noreferrer" className="underline-offset-4 hover:underline">{role.postingUrl.replace(/^https?:\/\//, '')}</a> : <span className="text-muted-foreground">—</span>}</Fact>
+              <Fact label="Hiring contact">
+                {role.hiringContact ? (
+                  <span>
+                    {role.hiringContact.name}
+                    {role.hiringContact.email ? <span className="text-muted-foreground"> · {role.hiringContact.email}</span> : null}
+                  </span>
+                ) : (
+                  <NotCaptured />
+                )}
+              </Fact>
             </div>
           </BezelCard>
 
-          <BezelCard title="Must-haves" description="Candidates who fail any of these are eliminated before ranking.">
-            <div className="grid grid-cols-2 gap-4">
+          <BezelCard
+            title={<span className="flex items-center gap-2">Requirements <span className="font-mono text-xs font-normal text-muted-foreground tnum">({reqs.length})</span></span>}
+            action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={onAddAsk}>+ Add requirement</Button>}
+            description="Unified requirements from the JD, calls, emails, and manual edits. Toggle Eliminator (Stage 1) vs Nice to have (Stage 2)."
+          >
+            {reqs.length > 0 ? (
+              <div className="space-y-2">
+                {reqs.map(req => (
+                  <RequirementRow
+                    key={req.id}
+                    req={req}
+                    onToggleEffect={eff => app.toggleRequirementEffect(role.id, req.id, eff)}
+                    onRemove={() => app.removeRequirement(role.id, req.id)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No requirements captured yet.</p>
+            )}
+
+            <div className="mt-4 grid grid-cols-2 gap-4 rounded-xl border border-border bg-secondary/40 p-3">
               <Fact label="Minimum years"><span className="flex items-center gap-2"><span className="tnum">{role.minYears}+ yrs</span><SourceBadge kind="JD" /></span></Fact>
               <Fact label="Location"><span className="flex items-center gap-2">{role.location || <NotCaptured />}<SourceBadge kind="JD" /></span></Fact>
               <Fact label="Work mode"><span className="flex items-center gap-2">{role.workMode}<SourceBadge kind="JD" /></span></Fact>
@@ -1249,50 +1392,6 @@ function DetailsTab({ role, onAddAsk }: { role: Role; onAddAsk: () => void }) {
               <Fact label="Sponsorship offered">{yn(role.sponsorship)}</Fact>
               <Fact label="Visa transfer supported">{yn(role.transfer)}</Fact>
             </div>
-            <div className="mt-4 space-y-2">
-              <div className="eyebrow text-[10px] text-gray-1000">Must-have skills</div>
-              <div className="flex flex-wrap gap-1.5">{role.mustSkills.map(s => <Tag key={s} tone="dark">{s}</Tag>)}</div>
-            </div>
-          </BezelCard>
-
-          {/* T7 · Client asks card right after Must-haves */}
-          <BezelCard
-            title={<span className="flex items-center gap-2">Client asks <span className="font-mono text-xs font-normal text-muted-foreground tnum">{asks.length}</span></span>}
-            action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={onAddAsk}>Add client ask</Button>}
-            description="What the client said on calls, emails or chat outside the JD."
-          >
-            {asks.length > 0 ? (
-              <ul className="divide-y divide-border">
-                {asks.map(a => (
-                  <li key={a.id} className="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="text-sm font-medium text-foreground">{a.text}</div>
-                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                        <span className="rounded-md border border-border bg-secondary px-1.5 py-0.5 text-[11px] font-medium text-foreground">
-                          {askTypeLabel(a.type)}{a.column ? ` · ${a.column}` : ''}
-                        </span>
-                        <span>·</span>
-                        <span>{a.source}{a.saidBy ? ` · ${a.saidBy}` : ''} · {a.when}</span>
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`Remove client ask ${a.text}`}
-                      title="Remove client ask"
-                      onClick={() => app.removeClientAsk(a.id)}
-                      icon={<X />}
-                    />
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">No client asks captured yet.</p>
-            )}
-          </BezelCard>
-
-          <BezelCard title="Nice-to-haves">
-            <div className="flex flex-wrap gap-1.5">{role.niceSkills.length ? role.niceSkills.map(s => <Tag key={s}>{s}</Tag>) : <span className="text-sm text-muted-foreground">None</span>}</div>
           </BezelCard>
 
           <BezelCard title="Pay">

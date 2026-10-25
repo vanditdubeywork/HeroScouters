@@ -1,12 +1,13 @@
 import React, { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, Briefcase, CircleCheck, Copy, Lock, MoreHorizontal, Pause, Pencil, Plus, RefreshCw, Search, SearchX, Sparkles } from 'lucide-react'
+import { AlertTriangle, Briefcase, CircleCheck, Copy, Lock, Mail, MoreHorizontal, Pause, Pencil, Plus, RefreshCw, Search, SearchX, Send, Sparkles, Table2 } from 'lucide-react'
 import { ScrollPage, useTopBar } from '../shell/AppShell'
 import {
   Button, CompanyTypeTag, EmptyState, ExampleMark, Input, Menu, PageHeader, PillTabs, Select, cn,
 } from '../components/ui'
 import { Banner, DataTable, FilterChip, type Column } from '../components/hs'
-import { RerunDialog } from './Dialogs'
+import { SelectionBar, useListSelection } from '../components/v3'
+import { CreateGmailDraftsDialog, RerunDialog } from './Dialogs'
 import { useApp, useWireframeState } from '../store/AppStore'
 import { CATEGORIES, type Role, type RoleStatus } from '../data/types'
 
@@ -61,21 +62,23 @@ function MatchesStatus({ r }: { r: Role }) {
       </span>
     )
   }
-  if (r.matchStatus === 'not-run') {
+  if (r.matchStatus === 'not-run' || (r.scoredCount ?? 0) === 0) {
     return (
       <span className="inline-flex h-6 items-center gap-1.5 rounded-md border border-dashed border-gray-700 px-2 text-xs whitespace-nowrap text-muted-foreground">
         <span className="size-1.5 rounded-full border border-gray-800" />Not scored
       </span>
     )
   }
+  const isSuggestedOnly = (r.suggestedCount ?? 0) > 0 && r.scoredCount === r.suggestedCount
   return (
     <span className="inline-flex h-6 items-center gap-1.5 rounded-md border border-border bg-gray-100 px-2 text-xs whitespace-nowrap text-foreground">
-      <CircleCheck className="size-3.5 shrink-0 text-muted-foreground" />Scored
+      <CircleCheck className="size-3.5 shrink-0 text-muted-foreground" />
+      <span className="tnum">{isSuggestedOnly ? `${r.scoredCount} suggested` : `Scored (${r.scoredCount})`}</span>
     </span>
   )
 }
 
-const needsAction = (r: Role) => r.matchStatus === 'out-of-date' || r.matchStatus === 'not-run'
+const needsAction = (r: Role) => r.matchStatus === 'out-of-date' || r.matchStatus === 'not-run' || (r.scoredCount ?? 0) === 0
 
 export function RolesList() {
   const app = useApp()
@@ -90,6 +93,7 @@ export function RolesList() {
   const [category, setCategory] = useState('all')
   const [q, setQ] = useState('')
   const [rerunRole, setRerunRole] = useState<Role | null>(null)
+  const [pitchesOpen, setPitchesOpen] = useState(false)
 
   useTopBar([{ label: 'Roles' }])
 
@@ -110,6 +114,12 @@ export function RolesList() {
       .sort((a, b) => (Number(needsAction(b)) - Number(needsAction(a))) || agoMinutes(a.latestUpdate?.when ?? a.updated) - agoMinutes(b.latestUpdate?.when ?? b.updated))
   }, [roles, tab, type, category, q, attention])
 
+  const isEmpty = wf === 'empty'
+  const tableRows = wf === 'filtered' || wf === 'error' ? [] : rows
+  const sel = useListSelection(tableRows.map(r => r.id))
+  const selectedRoles = useMemo(() => tableRows.filter(r => sel.selected.includes(r.id)), [tableRows, sel.selected])
+  const prospectIds = useMemo(() => selectedRoles.filter(r => r.companyType === 'Prospect').map(r => r.id), [selectedRoles])
+
   const clearFilters = () => {
     setType(null); setCategory('all'); setQ(''); setTab('Open')
     if (attention) setParams({})
@@ -127,8 +137,22 @@ export function RolesList() {
     app.log({ what: `Duplicated role from ${r.title} — ${r.company}`, record: `${copy.title} — ${copy.company}`, recordHref: `/roles/${copy.id}`, kind: 'Roles' })
     app.toast(`Duplicated ${r.title}`, { action: { label: 'Edit', onClick: () => navigate(`/roles/${copy.id}/edit`) } })
   }
-  /** "Review (5 new)" — scored matches nobody has decided on yet */
-  const newCount = (r: Role) => matches.filter(m => m.roleId === r.id && m.scored && (m.status === 'new' || m.status === 'requalified')).length
+
+  const copyOutreachRows = () => {
+    const today = new Date().toISOString().slice(0, 10)
+    const tsv = selectedRoles
+      .map(r => [
+        r.company,
+        r.title,
+        r.hiringContact?.email ?? r.hiringContact?.name ?? 'Hiring team',
+        `${shortlistCount(r) || r.suggestedCount || 1} masked pitch profile(s) · https://heroscouter.com/p/${r.id}`,
+        today,
+      ].join('\t'))
+      .join('\n')
+    navigator.clipboard?.writeText(tsv).catch(() => {})
+    app.toast(`Copied ${sel.selected.length} rows for outreach sheet`)
+  }
+
   const lastWhen = (r: Role) => agoMinutes(r.latestUpdate?.when ?? r.updated)
   const stop = (e: React.MouseEvent) => e.stopPropagation()
 
@@ -164,15 +188,34 @@ export function RolesList() {
       ) : <span className="font-mono text-xs text-muted-foreground tnum">Updated {r.updated}</span>,
     },
     {
-      key: 'next', header: 'Next step', width: '236px', sortable: true, sortValue: r => (r.matchStatus === 'out-of-date' ? 0 : r.matchStatus === 'not-run' ? 1 : 2),
+      key: 'next', header: 'Next step', width: '280px', sortable: true, sortValue: r => (r.matchStatus === 'out-of-date' ? 0 : (r.matchStatus === 'not-run' || (r.scoredCount ?? 0) === 0) ? 1 : 2),
       render: r => {
-        const n = newCount(r)
+        const sc = shortlistCount(r)
+        const notScoredYet = r.matchStatus === 'not-run' || (r.scoredCount ?? 0) === 0
+        const readyToSend = !notScoredYet && r.matchStatus !== 'out-of-date' && sc >= 2 && (r.id === 'lumen-fse' || r.latestUpdate?.text.toLowerCase().includes('shortlist ready'))
         return (
-          <div className="flex items-center gap-2 whitespace-nowrap" onClick={stop}>
-            <MatchesStatus r={r} />
-            {r.matchStatus === 'out-of-date' && <Button variant="outline" size="sm" icon={<RefreshCw />} onClick={() => setRerunRole(r)}>Rerun</Button>}
-            {r.matchStatus === 'not-run' && <Button variant="outline" size="sm" icon={<Sparkles />} onClick={() => navigate(`/roles/${r.id}?tab=matches`)}>Score</Button>}
-            {r.matchStatus === 'up-to-date' && <Button variant="ghost" size="sm" onClick={() => navigate(`/roles/${r.id}?tab=matches`)}>{n ? <>Review (<span className="font-mono tnum">{n}</span> new)</> : 'Review'}</Button>}
+          <div className="flex items-center gap-1.5 whitespace-nowrap" onClick={stop}>
+            {!readyToSend && <MatchesStatus r={r} />}
+            {r.matchStatus === 'out-of-date' ? (
+              <Button variant="outline" size="sm" icon={<RefreshCw />} onClick={() => setRerunRole(r)}>Rerun</Button>
+            ) : notScoredYet ? (
+              <Button variant="outline" size="sm" icon={<Sparkles />} onClick={() => navigate(`/roles/${r.id}?tab=matches`)}>
+                Score <span className="font-mono tnum">{r.passCount}</span>
+              </Button>
+            ) : readyToSend ? (
+              <>
+                <Button variant="primary" size="sm" icon={<Send />} onClick={() => navigate(`/roles/${r.id}?tab=shortlist`)}>
+                  Send <span className="font-mono tnum">{sc}</span>
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => navigate(`/roles/${r.id}?tab=matches`)}>
+                  Review <span className="font-mono tnum">{r.scoredCount}</span>
+                </Button>
+              </>
+            ) : (
+              <Button variant="ghost" size="sm" onClick={() => navigate(`/roles/${r.id}?tab=matches`)}>
+                Review <span className="font-mono tnum">{r.scoredCount}</span>
+              </Button>
+            )}
           </div>
         )
       },
@@ -211,9 +254,6 @@ export function RolesList() {
     return `No ${tabWord}${kind}roles${cat}${search}.`
   }
 
-  const isEmpty = wf === 'empty'
-  const tableRows = wf === 'filtered' || wf === 'error' ? [] : rows
-
   return (
     <ScrollPage>
       <PageHeader
@@ -240,25 +280,46 @@ export function RolesList() {
             </Banner>
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <PillTabs value={tab} onChange={setTab}
-              tabs={(['Open', 'On hold', 'Closed', 'All'] as StatusTab[]).map(t => ({ value: t, label: t, count: tabCount(t) }))} />
-            <div className="flex flex-wrap items-center gap-2">
-              <FilterChip active={type === 'Client'} onClick={() => setType(t => (t === 'Client' ? null : 'Client'))}>Client</FilterChip>
-              <FilterChip active={type === 'Prospect'} onClick={() => setType(t => (t === 'Prospect' ? null : 'Prospect'))}>Prospect</FilterChip>
-              <Select aria-label="Category" value={category} onChange={setCategory}
-                options={[{ value: 'all', label: 'All categories' }, ...CATEGORIES.map(c => ({ value: c, label: c }))]} />
-              <div className="relative w-56">
-                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input aria-label="Search roles" placeholder="Search roles…" value={q} onChange={e => setQ(e.target.value)} className="h-8 pl-8" />
+          {sel.selected.length > 0 ? (
+            <SelectionBar
+              count={sel.selected.length}
+              shown={tableRows.length}
+              onSelectAllShown={() => sel.selectAll(tableRows.map(r => r.id))}
+              onClear={sel.clear}
+              note={prospectIds.length > 0 && prospectIds.length < sel.selected.length ? `${prospectIds.length} prospect role(s)` : undefined}
+            >
+              <Button variant="primary" size="sm" icon={<Mail />} onClick={() => setPitchesOpen(true)}>
+                Prepare pitches ({prospectIds.length || sel.selected.length})
+              </Button>
+              <Button variant="outline" size="sm" icon={<Table2 />} onClick={copyOutreachRows}>
+                Copy rows for outreach sheet
+              </Button>
+            </SelectionBar>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <PillTabs value={tab} onChange={setTab}
+                tabs={(['Open', 'On hold', 'Closed', 'All'] as StatusTab[]).map(t => ({ value: t, label: t, count: tabCount(t) }))} />
+              <div className="flex flex-wrap items-center gap-2">
+                <FilterChip active={type === 'Client'} onClick={() => setType(t => (t === 'Client' ? null : 'Client'))}>Client</FilterChip>
+                <FilterChip active={type === 'Prospect'} onClick={() => setType(t => (t === 'Prospect' ? null : 'Prospect'))}>Prospect</FilterChip>
+                <Select aria-label="Category" value={category} onChange={setCategory}
+                  options={[{ value: 'all', label: 'All categories' }, ...CATEGORIES.map(c => ({ value: c, label: c }))]} />
+                <div className="relative w-56">
+                  <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input aria-label="Search roles" placeholder="Search roles…" value={q} onChange={e => setQ(e.target.value)} className="h-8 pl-8" />
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           <DataTable
             columns={columns}
             rows={tableRows}
             loading={wf === 'loading'}
+            selectable
+            quietCheckbox
+            selected={sel.selected}
+            onSelectedChange={sel.setSelected}
             onRowClick={r => navigate(`/roles/${r.id}?tab=matches`)}
             rowActions={rowActions}
             empty={wf === 'error' ? <div className="px-4 py-10 text-center text-sm text-muted-foreground">Roles will appear here once they load.</div> : (
@@ -285,6 +346,13 @@ export function RolesList() {
           if (opts?.alsoScoreNew) app.scoreMatches(r.id, app.defaultScoreCount)
           app.toast(`Reran matching for ${r.title}`, { action: { label: 'Open', onClick: () => navigate(`/roles/${r.id}?tab=matches&reran=1`) } })
         }} />
+
+      <CreateGmailDraftsDialog
+        open={pitchesOpen}
+        onClose={() => { setPitchesOpen(false); sel.clear() }}
+        mode="prospect-pitches"
+        roleIds={prospectIds.length ? prospectIds : sel.selected}
+      />
     </ScrollPage>
   )
 }

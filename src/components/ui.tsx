@@ -163,19 +163,21 @@ export function Switch({ checked, onChange, label, 'aria-label': ariaLabel }: { 
 
 /** Segmented control (pill-strip pattern) */
 export function Segmented<T extends string>({ value, onChange, options, size = 'md', 'aria-label': ariaLabel }: {
-  value: T; onChange: (v: T) => void; options: (T | { value: T; label: React.ReactNode })[]; size?: 'md' | 'sm'; 'aria-label'?: string
+  value: T; onChange: (v: T) => void; options: (T | { value: T; label: React.ReactNode; disabled?: boolean; title?: string })[]; size?: 'md' | 'sm'; 'aria-label'?: string
 }) {
   return (
     <div role="radiogroup" aria-label={ariaLabel} className="inline-flex items-center gap-0.5 rounded-xl border border-border bg-secondary p-0.5">
       {options.map(o => {
         const v = typeof o === 'string' ? o : o.value
         const l = typeof o === 'string' ? o : o.label
+        const disabled = typeof o === 'string' ? false : o.disabled
+        const title = typeof o === 'string' ? undefined : o.title
         const active = v === value
         return (
           <button
-            key={v} type="button" role="radio" aria-checked={active}
-            onClick={() => onChange(v)}
-            className={cn('relative inline-flex items-center gap-1.5 rounded-lg px-3 text-xs font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40',
+            key={v} type="button" role="radio" aria-checked={active} disabled={disabled} title={title}
+            onClick={() => !disabled && onChange(v)}
+            className={cn('relative inline-flex items-center gap-1.5 rounded-lg px-3 text-xs font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-45',
               size === 'sm' ? 'h-6' : 'h-7',
               active ? 'border border-border bg-card text-foreground shadow-xs' : 'border border-transparent text-gray-900 hover:text-gray-1100')}
           >

@@ -11,18 +11,18 @@ import { BezelCard, ExampleMark, PageHeader, Tag, cn } from '../components/ui'
 const SCREENS: { id: string; name: string; to: string; priority: 'Must' | 'Should'; states: string[]; v3?: string }[] = [
   { id: 'S-01', name: 'App shell', to: '/roles', priority: 'Must', states: ['Expanded', 'Collapsed', 'Phone sheet', 'View as Admin / Recruiter / Associate'], v3: 'T5' },
   { id: 'S-02', name: 'Roles list (home)', to: '/roles', priority: 'Must', states: ['Latest update column', 'Next step: Score · Rerun · Review', 'Empty', 'Loading', 'Error'], v3: 'T9' },
-  { id: 'S-03', name: 'New / edit role', to: '/roles/new', priority: 'Must', states: ['Empty source', 'Extracting', 'Extracted + live pass count', 'Client asks card', 'Edit mode → D-03'], v3: 'T7' },
-  { id: 'S-04', name: 'Role page · Matches', to: '/roles/brightdesk-gmm', priority: 'Must', states: ['Not scored', 'Scoring', 'Scored + Not scored (N)', 'Selection bar', 'D-06', 'Out of date', 'After rerun', 'Eliminated'], v3: 'T1 · T2 · T4' },
-  { id: 'S-04', name: 'Role page · Shortlist + Details', to: '/roles/lumen-fse?tab=shortlist', priority: 'Must', states: ['Bulk subset', 'Generate (4)', 'Source resume', 'Client asks', 'Recent activity'], v3: 'T1 · T7 · T9' },
-  { id: 'S-05', name: 'Candidates list (pool)', to: '/candidates', priority: 'Must', states: ['Filter bar (OR in · AND across)', 'Picker open', 'Columns menu', 'Bulk selection', 'No results', 'Phone'], v3: 'T4' },
+  { id: 'S-03', name: 'New / edit role', to: '/roles/new', priority: 'Must', states: ['Empty source', 'Extracting', 'Requirement effect: Eliminates vs Improves score', 'Auto-suggest top 5 on save', 'Edit mode → D-03'], v3: 'v0.4 · N24 · C5 · C6' },
+  { id: 'S-04', name: 'Role page · Matches', to: '/roles/brightdesk-gmm', priority: 'Must', states: ['Auto-suggested (5)', 'Strong / Mild / Not recommended', 'Create Gmail drafts → D-09', 'Selection bar', 'Out of date', 'Eliminated'], v3: 'v0.4 · N24 · N25 · C7' },
+  { id: 'S-04', name: 'Role page · Shortlist + Details', to: '/roles/lumen-fse?tab=shortlist', priority: 'Must', states: ['Interest status + Not interested → D-10', 'Create Gmail drafts → D-09', 'Generate (4)', 'Requirements (Eliminates / Improves score)', 'Recent activity'], v3: 'v0.4 · N25 · N26' },
+  { id: 'S-05', name: 'Candidates list (pool)', to: '/candidates', priority: 'Must', states: ['Availability filter & column', 'Filter bar (OR in · AND across)', 'Columns menu', 'Bulk selection', 'No results', 'Phone'], v3: 'v0.4 · N27' },
   { id: 'S-06', name: 'New candidate', to: '/candidates/new', priority: 'Must', states: ['Empty', 'Extracting', 'Extracted', 'Duplicate → D-07', 'Failed'], v3: 'T3' },
-  { id: 'S-07', name: 'Candidate profile', to: '/candidates/priya?tab=resumes', priority: 'Must', states: ['Two resumes', 'D-07 update or another', 'Signed take', 'Matching roles', 'Resumes', 'History'], v3: 'T3 · T8' },
-  { id: 'S-08', name: 'Candidate preview (panel)', to: '/roles/northwind-spm', priority: 'Must', states: ['From role (with band)', 'From list'] },
-  { id: 'S-09', name: 'Masked resume builder', to: '/resumes/masked?candidates=priya&role=northwind-spm', priority: 'Must', states: ['Refine diff', 'Refine blocked', 'Revisions', 'Source resume', 'Signed / draft take', 'Identifiers found'], v3: 'T3 · T6 · T8' },
-  { id: 'S-10', name: 'Editable resume review', to: '/resumes/editable?role=northwind-spm&candidates=priya,jordant', priority: 'Should', states: ['Editable + refine', 'Send as-is', 'Associate (gated)'], v3: 'T6' },
-  { id: 'S-11', name: 'Resumes library', to: '/resumes', priority: 'Should', states: ['Source · Prompt · Revisions', 'Empty', 'Loading'], v3: 'T3 · T6' },
+  { id: 'S-07', name: 'Candidate profile', to: '/candidates/priya?tab=resumes', priority: 'Must', states: ['Availability + pause switch', 'Role interest history', 'Create Gmail drafts → D-09', 'Signed take', 'Matching roles', 'Resumes'], v3: 'v0.4 · N25 · N26 · N27' },
+  { id: 'S-08', name: 'Candidate preview (panel)', to: '/roles/northwind-spm', priority: 'Must', states: ['From role (recommendation + band)', 'From list'] },
+  { id: 'S-09', name: 'Masked resume builder', to: '/resumes/masked?candidates=priya&role=northwind-spm', priority: 'Must', states: ['Creative vs Traditional style', 'PDF vs Web link + revoke', 'Refine diff', 'Source resume', 'Signed / draft take'], v3: 'v0.4 · N28 · C12' },
+  { id: 'S-10', name: 'Editable resume review', to: '/resumes/editable?role=northwind-spm&candidates=priya,jordant', priority: 'Should', states: ['Traditional vs Creative style', 'PDF / DOCX / Web link + revoke', 'Editable + refine', 'Send as-is', 'Associate (gated)'], v3: 'v0.4 · N28 · C12' },
+  { id: 'S-11', name: 'Resumes library', to: '/resumes', priority: 'Should', states: ['Style column (Creative / Traditional)', 'Delivery & 1-click link revoke', 'Source · Prompt · Revisions', 'Empty', 'Loading'], v3: 'v0.4 · N28 · C12' },
   { id: 'S-12', name: 'Activity log', to: '/activity', priority: 'Should', states: ['Batch events', 'Empty', 'Filtered'] },
-  { id: 'S-13', name: 'Settings', to: '/settings?tab=prompts', priority: 'Should', states: ['Matching', 'Skill list + Domains', 'Prompts (N23)', 'Templates', 'Team & access', 'My profile'], v3: 'T5' },
+  { id: 'S-13', name: 'Settings', to: '/settings?tab=prompts', priority: 'Should', states: ['Matching (Auto-suggest count + Effect table)', 'Prompts + Probe 1 (§8.1)', 'Templates + Defaults + Probe 2 (§8.2)', 'Skill list + Domains', 'Team & access'], v3: 'v0.4 · C5 · C6 · C12 · §8' },
   { id: 'S-14', name: 'Command palette (⌘K)', to: '/roles', priority: 'Should', states: ['Results', 'No matches'] },
 ]
 
@@ -34,7 +34,9 @@ const DIALOGS = [
   { id: 'D-05', name: 'Leave without saving', where: 'S-03 Cancel with edits' },
   { id: 'D-06', name: 'Confirm assumed must-haves', where: 'S-04 bulk Shortlist' },
   { id: 'D-07', name: 'Update or another resume', where: 'S-07 ⋯ Upload resume · S-06 duplicate' },
-  { id: 'D-08', name: 'Add client ask', where: 'S-04 ⋯ · S-03 Client asks card' },
+  { id: 'D-08', name: 'Add requirement (Eliminates vs Improves score)', where: 'S-04 ⋯ · S-03 Requirements card' },
+  { id: 'D-09', name: 'Create Gmail drafts (5 kinds · Probe 1)', where: 'S-04 Shortlist / selection bar · S-07 header' },
+  { id: 'D-10', name: 'Not interested reason (candidate vs role)', where: 'S-04 Shortlist interest pill · S-07 Matching roles' },
 ]
 
 const PRINCIPLES = [
@@ -57,7 +59,7 @@ export function WireframeIndex() {
   useTopBar([{ label: 'Screen index' }])
   return (
     <ScrollPage className="max-w-6xl">
-      <PageHeader title="HeroScouter Talent Engine · Wireframes" meta="V03 · PRD v0.3 implementation round 1 · 14 screens · 8 dialogs · 12 walkthroughs">
+      <PageHeader title="HeroScouter Talent Engine · Wireframes" meta="V04 · PRD v0.4 · 14 screens · 10 dialogs · 17 walkthroughs">
         <p className="max-w-2xl pt-1 text-sm text-muted-foreground">
           Clickable mid-fidelity wireframes built on the Rightfit design system with example data from the design doc (§16).
           Use the <span className="font-medium text-foreground">Wireframe</span> pill at the bottom of any screen to switch states or start a walkthrough.
@@ -84,7 +86,7 @@ export function WireframeIndex() {
           {SCREENS.map((s, i) => (
             <Link key={i} to={s.to} className="grid grid-cols-[64px_minmax(0,220px)_minmax(0,1fr)_auto] items-center gap-4 px-4 py-3 text-sm transition-colors hover:bg-muted/60">
               <span className="font-mono text-xs text-gray-1000">{s.id}</span>
-              <span className="flex flex-col gap-0.5"><span className="font-medium">{s.name}</span>{s.v3 && <span className="font-mono text-[10px] text-gray-1000">v0.3 · {s.v3}</span>}</span>
+              <span className="flex flex-col gap-0.5"><span className="font-medium">{s.name}</span>{s.v3 && <span className="font-mono text-[10px] text-gray-1000">{s.v3}</span>}</span>
               <span className="flex flex-wrap gap-1.5">{s.states.map(st => <Tag key={st} tone="outline">{st}</Tag>)}</span>
               <span className={cn('eyebrow text-[10px]', s.priority === 'Must' ? 'text-foreground' : 'text-gray-1000')}>{s.priority}</span>
             </Link>
@@ -116,8 +118,9 @@ export function WireframeIndex() {
       <BezelCard icon={<Sparkles />} title="Visual language legend">
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="inline-flex h-[22px] items-center rounded-md border border-primary bg-primary px-2 text-[11px] text-primary-foreground btn-type">Strong</span>
-          <span className="inline-flex h-[22px] items-center rounded-md border border-gray-1100 px-2 text-[11px] btn-type">Good</span>
-          <span className="inline-flex h-[22px] items-center rounded-md border border-dashed border-gray-800 px-2 text-[11px] text-gray-1100 btn-type">Stretch</span>
+          <span className="inline-flex h-[22px] items-center rounded-md border border-gray-1100 px-2 text-[11px] btn-type">Mild</span>
+          <span className="inline-flex h-[22px] items-center rounded-md border border-dashed border-gray-800 px-2 text-[11px] text-gray-1100 btn-type">Not recommended</span>
+          <span className="inline-flex h-[22px] items-center gap-1 rounded-md border border-iris/35 bg-iris/[0.08] px-2 text-[11px] text-iris btn-type">✦ Suggested</span>
           <span className="mx-2 h-4 w-px bg-border" />
           <span className="inline-flex h-6 items-center gap-1 rounded-md border border-border px-1.5">✓ Evidence</span>
           <span className="inline-flex h-6 items-center gap-1 rounded-md border border-info/40 bg-info/[0.06] px-1.5 text-[#0e7490]">◇ Predicted skill</span>

@@ -3,9 +3,11 @@ import * as mock from '../data/mock'
 import type {
   Match, Role, Candidate, ResumeOutput, LogEntry, RoleMatchForCandidate, LogKind,
   TeamMember, Permission, AccessRole, Resume, ClientAsk, Take, PromptDef, OutputRevision, MatchChip, Band,
+  RoleRequirement, RequirementEffect, NotInterestedReason, CandidateSideState, ClientSideState, ProspectSideState,
+  OutputStyle, OutputDelivery, EmailDraftRecord, Recommendation,
 } from '../data/types'
 
-/* ---------- v0.3 · T5 access matrix (PRD §7.5) ---------- */
+/* ---------- v0.4 · §7.8 access matrix ---------- */
 export const PERMISSIONS: Record<Permission, AccessRole[]> = {
   addRecords: ['Admin', 'Recruiter', 'Associate'],
   editFacts: ['Admin', 'Recruiter'],
@@ -17,15 +19,26 @@ export const PERMISSIONS: Record<Permission, AccessRole[]> = {
   copyMasked: ['Admin', 'Recruiter', 'Associate'],
   copyFull: ['Admin', 'Recruiter'],
   signTake: ['Admin', 'Recruiter', 'Associate'],
+  drafts: ['Admin', 'Recruiter', 'Associate'],
   exportCsv: ['Admin'],
   settings: ['Admin'],
   delete: ['Admin'],
 }
 const PERMISSION_VERB: Record<Permission, string> = {
-  addRecords: 'add records', editFacts: 'edit facts and must-haves', score: 'score with AI', shortlist: 'shortlist',
-  reject: 'reject', genMasked: 'generate masked resumes', genIdentity: 'generate editable or as-is resumes',
-  copyMasked: 'copy masked lists', copyFull: 'copy full lists', signTake: 'sign takes', exportCsv: 'export CSV',
-  settings: 'change Settings', delete: 'delete records',
+  addRecords: 'add records',
+  editFacts: 'edit requirements and candidate facts',
+  score: 'score with AI',
+  shortlist: 'shortlist',
+  reject: 'reject',
+  genMasked: 'generate masked resumes',
+  genIdentity: 'generate editable or as-is resumes',
+  copyMasked: 'copy masked lists',
+  copyFull: 'copy full lists',
+  signTake: 'sign their own take',
+  drafts: 'draft outreach and create Gmail drafts',
+  exportCsv: 'export CSV',
+  settings: 'change Settings',
+  delete: 'delete records',
 }
 /** "Recruiters and Admins can reject" */
 export function whoCanText(p: Permission) {
@@ -34,8 +47,9 @@ export function whoCanText(p: Permission) {
   const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
   return `${list} can ${PERMISSION_VERB[p]}`
 }
-/** Default number to score (Decision #2) and per-run cap (Decision #13) */
-export const SCORE_OPTIONS = [5, 10, 25, 50] as const
+/** v0.4 · §7.2: 25 or fewer remaining scores them all; >25 offers 10 · 25 · 50 · All (cap 50 per run) */
+export const SCORE_OPTIONS = [10, 25, 50] as const
+export const SCORE_AUTO_THRESHOLD = 25
 export const SCORE_RUN_CAP = 50
 
 /* ==========================================================================
@@ -44,6 +58,16 @@ export const SCORE_RUN_CAP = 50
 
 export interface Toast { id: number; message: string; undo?: () => void; action?: { label: string; onClick: () => void } }
 
+export interface ProposedProfileUpdate {
+  candidateId: string
+  candidateName: string
+  field: string
+  from: string
+  to: string
+  reason: NotInterestedReason
+  apply: () => void
+}
+
 interface AppState {
   roles: Role[]
   candidates: Candidate[]
@@ -51,9 +75,7 @@ interface AppState {
   rolesForCandidate: Record<string, RoleMatchForCandidate[]>
   outputs: ResumeOutput[]
   activity: LogEntry[]
-  /** Candidate IDs added to a role's ranking via "Include anyway" */
   included: Record<string, string[]>
-  /** Candidate askList additions via "Add to ask list" */
   askAdds: Record<string, string[]>
   showScore: boolean
   needsAttention: boolean
@@ -66,6 +88,13 @@ interface AppState {
   prompts: PromptDef[]
   defaultScoreCount: number
   domains: string[]
+  /* v0.4 */
+  autoSuggestCount: number
+  defaultStyle: { prospect: OutputStyle; client: OutputStyle }
+  defaultDelivery: { prospect: OutputDelivery; client: OutputDelivery }
+  emailDrafts: EmailDraftRecord[]
+  probe1Stats: { inProductCount: number; inProductMedianRounds: number; claudeCount: number; claudeMedianRounds: number }
+  probe2Stats: { creativeSends: number; creativeInterested: number; traditionalSends: number; traditionalInterested: number }
 }
 
 interface AppApi extends AppState {
@@ -99,53 +128,66 @@ interface AppApi extends AppState {
   candidate: (id: string) => Candidate | undefined
 
   /* ---------- v0.3 ---------- */
-  /** T5 · who is signed in (switchable from the sidebar user menu in the wireframe) */
   currentUser: TeamMember
   setCurrentUser: (id: string) => void
   can: (p: Permission) => boolean
   updateTeamMember: (id: string, patch: Partial<TeamMember>) => void
   member: (id: string) => TeamMember | undefined
 
-  /** T1 · bulk decisions, one undo per batch. Returns how many were skipped (already decided). */
   shortlistMany: (matchIds: string[], opts?: { onOpenShortlist?: () => void }) => { done: number; skipped: number }
   rejectMany: (matchIds: string[], reason: string) => { done: number; skipped: number }
 
-  /** T2 · score in rounds */
   skipForScoring: (matchIds: string[], skip: boolean) => void
   scoreMatches: (roleId: string, n: number, opts?: { matchIds?: string[] }) => number
   setDefaultScoreCount: (n: number) => void
 
-  /** T3 · resumes */
   resumesFor: (candidateId: string) => Resume[]
   addResume: (r: Omit<Resume, 'id'>) => string
   addResumeVersion: (resumeId: string, file: string, changesApplied: number) => void
   setPrimaryResume: (candidateId: string, resumeId: string) => void
   rescoreOnResume: (matchId: string, resumeId: string) => void
 
-  /** T7 · client asks */
   asksFor: (roleId: string) => ClientAsk[]
   addClientAsk: (a: Omit<ClientAsk, 'id' | 'addedBy'>) => void
   removeClientAsk: (id: string) => void
 
-  /** T8 · takes */
   takeFor: (candidateId: string, roleId?: string | null) => Take | undefined
   saveTakeDraft: (candidateId: string, text: string, opts?: { roleId?: string | null; draftedByAI?: boolean }) => void
   approveTake: (takeId: string) => void
 
-  /** T5 · prompts */
   savePromptVersion: (id: string, text: string, note?: string) => void
   restorePromptVersion: (id: string, v: number) => void
 
-  /** T6 · output revisions */
   addOutputRevision: (outputId: string, rev: Omit<OutputRevision, 'n' | 'createdBy' | 'at'>) => void
-
-  /** T4 · domain list (Settings → Skill list) */
   setDomains: (d: string[]) => void
+
+  /* ---------- v0.4 ---------- */
+  /** §7.1 Unified role requirements */
+  requirementsFor: (roleId: string) => RoleRequirement[]
+  addRequirement: (roleId: string, req: Omit<RoleRequirement, 'id' | 'roleId' | 'addedBy'>) => void
+  toggleRequirementEffect: (roleId: string, reqId: string, effect: RequirementEffect) => void
+  removeRequirement: (roleId: string, reqId: string) => void
+  setAutoSuggestCount: (n: number) => void
+
+  /** §7.4 Mark "Not interested" per role (C10 / F-24) */
+  markNotInterested: (candidateId: string, roleIds: string[], reason: NotInterestedReason) => ProposedProfileUpdate | null
+  undoNotInterested: (candidateId: string, roleId: string) => void
+
+  /** §7.5 Alignment pills (C2 / F-22) */
+  updateAlignment: (matchId: string, side: 'candidate' | 'client' | 'prospect', value: CandidateSideState | ClientSideState | ProspectSideState) => void
+
+  /** §7.6 Delivery & Style (C12 / Probe 2) */
+  toggleOutputLink: (outputId: string, active: boolean) => void
+  setDefaultStyle: (patch: Partial<{ prospect: OutputStyle; client: OutputStyle }>) => void
+  setDefaultDelivery: (patch: Partial<{ prospect: OutputDelivery; client: OutputDelivery }>) => void
+
+  /** §7.7 Email drafting & Gmail handoff (C3 / C4 / Probe 1) */
+  recordEmailDraft: (draft: Omit<EmailDraftRecord, 'id'>) => string
 }
 
 const Ctx = createContext<AppApi | null>(null)
 let toastSeq = 1
-let idSeq = 100
+let idSeq = 200
 
 export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AppState>(() => ({
@@ -157,7 +199,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     activity: mock.activity,
     included: {},
     askAdds: {},
-    showScore: true,
+    showScore: false, // v0.4 §7.2: no numeric score on screen
     needsAttention: true,
     team: mock.team,
     currentUserId: 'purvesh',
@@ -167,6 +209,12 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     prompts: mock.prompts,
     defaultScoreCount: 10,
     domains: ['B2B SaaS', 'Payments/Fintech', 'Healthtech', 'Marketplace', 'Consumer', 'DevTools', 'AI/ML', 'E-commerce', 'Edtech', 'Enterprise'],
+    autoSuggestCount: 5,
+    defaultStyle: { prospect: 'creative', client: 'traditional' },
+    defaultDelivery: { prospect: 'link', client: 'pdf' },
+    emailDrafts: [],
+    probe1Stats: { inProductCount: 18, inProductMedianRounds: 1.5, claudeCount: 14, claudeMedianRounds: 2.4 },
+    probe2Stats: { creativeSends: 24, creativeInterested: 8, traditionalSends: 26, traditionalInterested: 9 },
   }))
   const [toasts, setToasts] = useState<Toast[]>([])
   const prevStatus = useRef<Record<string, Match['status']>>({})
@@ -197,13 +245,28 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       return c ? [mock.defaultResumeFor(c)] : []
     }
     const setMatchStatus: AppApi['setMatchStatus'] = (matchId, status, rejectReason) =>
-      setState(s => ({ ...s, matches: s.matches.map(m => m.id === matchId ? { ...m, status, rejectReason: status === 'rejected' ? rejectReason : m.rejectReason } : m) }))
+      setState(s => ({
+        ...s,
+        matches: s.matches.map(m => m.id === matchId ? {
+          ...m,
+          status,
+          rejectReason: status === 'rejected' ? rejectReason : m.rejectReason,
+          alignment: status === 'shortlisted' && !m.alignment
+            ? { candidateSide: 'not-asked', clientSide: 'not-sent', prospectSide: 'not-pitched', updatedBy: currentUser.displayName, at: 'Just now' }
+            : m.alignment,
+        } : m),
+      }))
 
     const matchLabel = (matchId: string) => {
       const m = state.matches.find(x => x.id === matchId)
       const c = m && candidate(m.candidateId)
       const r = m && role(m.roleId)
       return { m, c, r }
+    }
+
+    const requirementsFor = (roleId: string): RoleRequirement[] => {
+      const r = role(roleId)
+      return r?.requirements ?? []
     }
 
     return {
@@ -214,7 +277,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         prevStatus.current[matchId] = m.status
         setMatchStatus(matchId, 'shortlisted')
         setState(s => ({ ...s, roles: s.roles.map(x => x.id === m.roleId ? { ...x, shortlisted: x.shortlisted + 1 } : x) }))
-        log({ what: `Shortlisted ${c?.name}`, record: `${r?.title} — ${r?.company}`, recordHref: `/roles/${m.roleId}`, kind: 'Decisions' })
+        log({ what: `Shortlisted ${c?.name}${!m.scored ? ' (not scored)' : ''}`, record: `${r?.title} — ${r?.company}`, recordHref: `/roles/${m.roleId}`, kind: 'Decisions' })
         toast(`Shortlisted ${c?.name}`, { undo: () => { setMatchStatus(matchId, prevStatus.current[matchId] ?? 'new'); setState(s => ({ ...s, roles: s.roles.map(x => x.id === m.roleId ? { ...x, shortlisted: Math.max(0, x.shortlisted - 1) } : x) })) } })
       },
       reject: (matchId, reason) => {
@@ -226,7 +289,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         toast(`Rejected ${c?.name}`, { undo: () => setMatchStatus(matchId, prevStatus.current[matchId] ?? 'new') })
       },
       undoDecision: matchId => setMatchStatus(matchId, 'new'),
-      reorderShortlist: (roleId, ordered) => setState(s => {
+      reorderShortlist: (_roleId, ordered) => setState(s => {
         const rank = new Map(ordered.map((id, i) => [id, i]))
         const others = s.matches.filter(m => !rank.has(m.id))
         const sorted = s.matches.filter(m => rank.has(m.id)).sort((a, b) => rank.get(a.id)! - rank.get(b.id)!)
@@ -245,19 +308,19 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
           roles: s.roles.map(x => x.id === roleId ? { ...x, matchStatus: 'up-to-date', outOfDateReason: undefined, updated: 'Just now' } : x),
           matches: s.matches.map(m => {
             if (m.roleId !== roleId) return m
+            if (m.status === 'not-interested') return m // C10: never suggested again
             const delta = roleId === 'northwind-spm' ? mock.northwindAfterRerun[m.id] : undefined
-            // Rejected candidates who re-rank into the top 5 become Re-qualified (rejection reason kept)
             if (delta === 'requalified') return { ...m, delta, status: 'requalified', rank: 5 }
             if (m.id === 'm5' && roleId === 'northwind-spm') return { ...m, rank: 6, delta: undefined }
             return { ...m, delta }
           }),
         }))
-        log({ what: `Matching rerun · ${r?.passCount} re-ranked`, record: `${r?.title} — ${r?.company}`, recordHref: `/roles/${roleId}`, kind: 'Reruns' })
+        log({ what: `Re-scored ${r?.scoredCount ?? 7} candidates`, record: `${r?.title} — ${r?.company}`, recordHref: `/roles/${roleId}`, kind: 'Reruns' })
       },
       findMatches: roleId => {
         const r = role(roleId)
         setState(s => ({ ...s, roles: s.roles.map(x => x.id === roleId ? { ...x, matchStatus: 'up-to-date', updated: 'Just now' } : x) }))
-        log({ what: `Matching run 1 · ${r?.passCount} ranked · top 5 shown`, record: `${r?.title} — ${r?.company}`, recordHref: `/roles/${roleId}`, kind: 'Reruns' })
+        log({ what: `Auto-scan · ${r?.passCount} not eliminated · ${state.autoSuggestCount} suggested`, record: `${r?.title} — ${r?.company}`, recordHref: `/roles/${roleId}`, kind: 'Reruns' })
       },
       includeAnyway: (roleId, candidateId, note) => {
         const r = role(roleId); const c = candidate(candidateId)
@@ -265,13 +328,13 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
           ...s,
           included: { ...s.included, [roleId]: [...(s.included[roleId] ?? []), candidateId] },
           matches: [...s.matches, {
-            id: `inc-${roleId}-${candidateId}`, roleId, candidateId, rank: 99, band: 'Stretch', score: 55, status: 'new', scored: false, similarity: 0,
-            reason: `Included anyway by Vandit D.${note ? ` — “${note}”` : ''}. Ranked with everyone else.`,
-            chips: [{ kind: 'gap', label: 'Fails a must-have (override)' }],
+            id: `inc-${roleId}-${candidateId}`, roleId, candidateId, rank: 99, band: 'Stretch', recommendation: 'Mild', score: 55, status: 'new', scored: false, similarity: 0,
+            reason: `Included anyway by ${currentUser.displayName}${note ? ` — “${note}”` : ''}. Placed in Not scored.`,
+            chips: [{ kind: 'gap', label: 'Fails an eliminator (override)' }],
           }],
         }))
         log({ what: `Included ${c?.name} anyway${note ? ` · “${note}”` : ''}`, record: `${r?.title} — ${r?.company}`, recordHref: `/roles/${roleId}`, kind: 'Overrides' })
-        toast(`Included ${c?.name} in ranking`)
+        toast(`Included ${c?.name} in Not scored`)
       },
       addToAskList: (candidateId, question) => {
         setState(s => ({ ...s, askAdds: { ...s.askAdds, [candidateId]: [...(s.askAdds[candidateId] ?? []), question] } }))
@@ -283,7 +346,16 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       })),
       addOutputs: list => setState(s => ({
         ...s,
-        outputs: [...list.map(o => ({ ...o, id: `o${idSeq++}`, created: 'Just now', createdBy: currentUser.displayName })), ...s.outputs],
+        outputs: [...list.map(o => ({
+          ...o,
+          id: `o${idSeq++}`,
+          created: 'Just now',
+          createdBy: currentUser.displayName,
+          style: o.style ?? (o.type === 'Masked' ? s.defaultStyle.prospect : s.defaultStyle.client),
+          delivery: o.delivery ?? (o.type === 'Masked' ? s.defaultDelivery.prospect : s.defaultDelivery.client),
+          shareUrl: o.shareUrl ?? `https://heroscouter.com/p/${o.candidateId}-${idSeq}`,
+          linkActive: o.linkActive ?? true,
+        })), ...s.outputs],
       })),
       setShowScore: v => setState(s => ({ ...s, showScore: v })),
       setNeedsAttention: v => setState(s => ({ ...s, needsAttention: v })),
@@ -297,7 +369,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
 
       shortlistMany: (ids, opts) => {
         const targets = state.matches.filter(m => ids.includes(m.id))
-        const eligible = targets.filter(m => m.status !== 'shortlisted' && m.status !== 'rejected')
+        const eligible = targets.filter(m => m.status !== 'shortlisted' && m.status !== 'rejected' && m.status !== 'not-interested')
         const skipped = targets.length - eligible.length
         if (!eligible.length) return { done: 0, skipped }
         const prev = new Map(eligible.map(m => [m.id, m.status]))
@@ -305,7 +377,11 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         const r = role(roleId)
         setState(s => ({
           ...s,
-          matches: s.matches.map(m => prev.has(m.id) ? { ...m, status: 'shortlisted' } : m),
+          matches: s.matches.map(m => prev.has(m.id) ? {
+            ...m,
+            status: 'shortlisted',
+            alignment: m.alignment ?? { candidateSide: 'not-asked', clientSide: 'not-sent', prospectSide: 'not-pitched', updatedBy: currentUser.displayName, at: 'Just now' },
+          } : m),
           roles: s.roles.map(x => x.id === roleId ? { ...x, shortlisted: x.shortlisted + eligible.length } : x),
         }))
         log({ what: `Shortlisted ${eligible.length} in bulk`, record: `${r?.title} — ${r?.company}`, recordHref: `/roles/${roleId}`, kind: 'Decisions',
@@ -323,7 +399,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       },
       rejectMany: (ids, reason) => {
         const targets = state.matches.filter(m => ids.includes(m.id))
-        const eligible = targets.filter(m => m.status !== 'rejected')
+        const eligible = targets.filter(m => m.status !== 'rejected' && m.status !== 'not-interested')
         const skipped = targets.length - eligible.length
         if (!eligible.length) return { done: 0, skipped }
         const prev = new Map(eligible.map(m => [m.id, { status: m.status, reason: m.rejectReason }]))
@@ -350,14 +426,11 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
 
       skipForScoring: (ids, skip) => {
         setState(s => ({ ...s, matches: s.matches.map(m => ids.includes(m.id) ? { ...m, skipped: skip } : m) }))
-        toast(skip ? `Skipped ${ids.length} for scoring` : `Restored ${ids.length} for scoring`, {
-          undo: () => setState(s => ({ ...s, matches: s.matches.map(m => ids.includes(m.id) ? { ...m, skipped: !skip } : m) })),
-        })
       },
       scoreMatches: (roleId, n, opts) => {
         const r = role(roleId)
         const pool = state.matches
-          .filter(m => m.roleId === roleId && !m.scored && !m.skipped && m.status !== 'rejected' && (!opts?.matchIds || opts.matchIds.includes(m.id)))
+          .filter(m => m.roleId === roleId && !m.scored && !m.skipped && m.status !== 'rejected' && m.status !== 'not-interested' && (!opts?.matchIds || opts.matchIds.includes(m.id)))
           .sort((a, b) => a.similarity - b.similarity)
           .slice(0, Math.min(n, SCORE_RUN_CAP))
         if (!pool.length) return 0
@@ -384,7 +457,6 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       addResume: r => {
         const id = `res-${r.candidateId}-${idSeq++}`
         setState(s => {
-          // Materialise the implicit default resume first so the candidate ends up with 2 cards
           const existing = s.resumes.filter(x => x.candidateId === r.candidateId)
           const c = s.candidates.find(x => x.id === r.candidateId)
           const base = existing.length || !c ? [] : [mock.defaultResumeFor(c)]
@@ -423,9 +495,10 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         if (!m) return
         const res = resumesFor(m.candidateId).find(x => x.id === resumeId)
         const better: Band = m.band === 'Stretch' ? 'Good' : 'Strong'
+        const betterRec: Recommendation = m.recommendation === 'Not recommended' ? 'Mild' : 'Strong'
         setState(s => ({
           ...s,
-          matches: s.matches.map(x => x.id === matchId ? { ...x, scoredOnResumeId: resumeId, band: better, score: Math.min(95, x.score + 6) } : x),
+          matches: s.matches.map(x => x.id === matchId ? { ...x, scoredOnResumeId: resumeId, band: better, recommendation: betterRec, score: Math.min(95, x.score + 6) } : x),
           roles: s.roles.map(x => x.id === m.roleId ? { ...x, aiScoresUsed: x.aiScoresUsed + 1 } : x),
         }))
         log({ what: `Re-scored ${candidate(m.candidateId)?.name} on ${res?.label} resume · 1 AI score`, record: role(m.roleId)?.title ?? '', recordHref: `/roles/${m.roleId}`, kind: 'Reruns' })
@@ -436,17 +509,30 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       addClientAsk: a => {
         const r = role(a.roleId)
         const affects = a.type !== 'context'
+        const reqEffect: RequirementEffect = a.type === 'must-column' ? 'eliminates' : 'improves'
+        const newReq: RoleRequirement = {
+          id: `req-${idSeq++}`,
+          roleId: a.roleId,
+          text: a.text,
+          source: a.source,
+          saidBy: a.saidBy,
+          when: a.when,
+          effect: reqEffect,
+          column: a.column as RoleRequirement['column'],
+          addedBy: currentUser.displayName,
+        }
         setState(s => ({
           ...s,
           clientAsks: [...s.clientAsks, { ...a, id: `ask-${idSeq++}`, addedBy: currentUser.displayName }],
           roles: s.roles.map(x => x.id === a.roleId ? {
             ...x,
-            ...(affects && x.scoredCount > 0 ? { matchStatus: 'out-of-date' as const, outOfDateReason: `Client ask added: “${a.text}”.` } : {}),
-            latestUpdate: { text: `Client ask: ${a.text}`, who: currentUser.displayName.split(' ')[0], when: 'Just now' },
+            requirements: [...(x.requirements ?? []), newReq],
+            ...(affects && x.scoredCount > 0 ? { matchStatus: 'out-of-date' as const, outOfDateReason: `Requirement added: “${a.text}”.` } : {}),
+            latestUpdate: { text: `Requirement added: ${a.text}`, who: currentUser.displayName.split(' ')[0], when: 'Just now' },
           } : x),
         }))
-        log({ what: `Added client ask · ${a.text}${a.saidBy ? ` (${a.source} · ${a.saidBy})` : ''}`, record: `${r?.title} — ${r?.company}`, recordHref: `/roles/${a.roleId}`, kind: 'Roles' })
-        toast(affects && (r?.scoredCount ?? 0) > 0 ? 'Client ask added · matches are out of date' : 'Client ask added')
+        log({ what: `Added requirement · ${a.text}${a.saidBy ? ` (${a.source} · ${a.saidBy})` : ''}`, record: `${r?.title} — ${r?.company}`, recordHref: `/roles/${a.roleId}`, kind: 'Roles' })
+        toast(affects && (r?.scoredCount ?? 0) > 0 ? 'Requirement added · scores flagged out of date' : 'Requirement added')
       },
       removeClientAsk: id => setState(s => ({ ...s, clientAsks: s.clientAsks.filter(a => a.id !== id) })),
 
@@ -464,7 +550,6 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
             editedSinceSigning: t.status === 'signed' ? true : t.editedSinceSigning,
           } : t) }
         }
-        // Someone else's take: "Write your own" replaces it for this output (role-specific) or the general take
         const others = existing ? s.takes.filter(t => t.id !== existing.id) : s.takes
         return { ...s, takes: [...others, {
           id: `take-${idSeq++}`, candidateId, roleId, text, status: 'draft', authorId: s.currentUserId,
@@ -508,16 +593,268 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       })),
 
       setDomains: d => setState(s => ({ ...s, domains: d })),
+
+      /* ================= v0.4 ================= */
+      requirementsFor,
+      addRequirement: (roleId, req) => {
+        const r = role(roleId)
+        const newReq: RoleRequirement = { ...req, id: `req-${idSeq++}`, roleId, addedBy: currentUser.displayName, when: req.when ?? 'Just now' }
+        setState(s => ({
+          ...s,
+          roles: s.roles.map(x => x.id === roleId ? {
+            ...x,
+            requirements: [...(x.requirements ?? []), newReq],
+            ...(req.effect === 'eliminates' ? { passCount: Math.max(8, x.passCount - 4) } : {}),
+            ...(x.scoredCount > 0 ? { matchStatus: 'out-of-date' as const, outOfDateReason: `Requirement added (${req.effect === 'eliminates' ? 'Eliminates' : 'Improves score'}): “${req.text}”.` } : {}),
+            latestUpdate: { text: `Requirement added: ${req.text}`, who: currentUser.displayName.split(' ')[0], when: 'Just now' },
+          } : x),
+        }))
+        log({ what: `Added requirement (${req.effect === 'eliminates' ? 'Eliminates' : 'Improves score'}) · ${req.text}`, record: `${r?.title} — ${r?.company}`, recordHref: `/roles/${roleId}`, kind: 'Roles' })
+        toast(req.effect === 'eliminates' ? 'Requirement added · Stage 1 re-ran for free' : 'Requirement added · checked during scoring')
+      },
+      toggleRequirementEffect: (roleId, reqId, effect) => {
+        const r = role(roleId)
+        const target = r?.requirements?.find(q => q.id === reqId)
+        setState(s => ({
+          ...s,
+          roles: s.roles.map(x => x.id === roleId ? {
+            ...x,
+            requirements: (x.requirements ?? []).map(q => q.id === reqId ? { ...q, effect } : q),
+            passCount: effect === 'eliminates' ? Math.max(8, x.passCount - 5) : x.passCount + 5,
+            ...(x.scoredCount > 0 ? { matchStatus: 'out-of-date' as const, outOfDateReason: `Changed “${target?.text ?? 'requirement'}” to ${effect === 'eliminates' ? 'Eliminates' : 'Improves score'}.` } : {}),
+            latestUpdate: { text: `${target?.text ?? 'Requirement'} → ${effect === 'eliminates' ? 'Eliminates' : 'Improves score'}`, who: currentUser.displayName.split(' ')[0], when: 'Just now' },
+          } : x),
+        }))
+        toast(`Set to ${effect === 'eliminates' ? 'Eliminates (stage 1 re-ran)' : 'Improves score'}`)
+      },
+      removeRequirement: (roleId, reqId) => {
+        setState(s => ({
+          ...s,
+          roles: s.roles.map(x => x.id === roleId ? {
+            ...x,
+            requirements: (x.requirements ?? []).filter(q => q.id !== reqId),
+          } : x),
+        }))
+        toast('Requirement removed')
+      },
+      setAutoSuggestCount: n => setState(s => ({ ...s, autoSuggestCount: n })),
+
+      markNotInterested: (candidateId, roleIds, reason) => {
+        const c = candidate(candidateId)
+        if (!c || !roleIds.length) return null
+        setState(s => ({
+          ...s,
+          matches: s.matches.map(m => m.candidateId === candidateId && roleIds.includes(m.roleId)
+            ? { ...m, status: 'not-interested', notInterestedReason: reason }
+            : m),
+          rolesForCandidate: {
+            ...s.rolesForCandidate,
+            [candidateId]: (s.rolesForCandidate[candidateId] ?? []).map(rm =>
+              roleIds.includes(rm.roleId) ? { ...rm, status: 'not-interested', notInterestedReason: reason } : rm
+            ),
+          },
+        }))
+        const roleNames = roleIds.map(id => role(id)?.company ?? id).join(', ')
+        log({
+          what: `Marked ${c.name} not interested in ${roleIds.length === 1 ? roleNames : `${roleIds.length} roles (${roleNames})`} · ${reason}`,
+          record: c.name,
+          recordHref: `/candidates/${candidateId}`,
+          kind: 'Decisions',
+        })
+        toast(`Marked not interested (${reason})`, {
+          undo: () => setState(s => ({
+            ...s,
+            matches: s.matches.map(m => m.candidateId === candidateId && roleIds.includes(m.roleId)
+              ? { ...m, status: 'new', notInterestedReason: undefined }
+              : m),
+            rolesForCandidate: {
+              ...s.rolesForCandidate,
+              [candidateId]: (s.rolesForCandidate[candidateId] ?? []).map(rm =>
+                roleIds.includes(rm.roleId) ? { ...rm, status: 'new', notInterestedReason: undefined } : rm
+              ),
+            },
+          })),
+        })
+
+        // C10 / US-51: If the reason is a preference (Pay, Location, Role type, Company), propose a profile update!
+        if (reason === 'Pay') {
+          const nextPay = '$190k–$215k'
+          return {
+            candidateId,
+            candidateName: c.name,
+            field: 'Minimum pay expectation',
+            from: c.pay ?? 'Not captured',
+            to: nextPay,
+            reason,
+            apply: () => {
+              setState(s => ({
+                ...s,
+                candidates: s.candidates.map(x => x.id === candidateId ? { ...x, pay: nextPay, fieldSources: { ...x.fieldSources, pay: 'EDITED' } } : x),
+              }))
+              log({ what: `Updated ${c.name} pay expectation after declining role(s) on Pay`, record: c.name, recordHref: `/candidates/${candidateId}`, kind: 'Candidates', before: c.pay ?? 'Not captured', after: nextPay })
+              toast(`Updated ${c.name}’s pay expectation to ${nextPay}`)
+            },
+          }
+        }
+        if (reason === 'Location') {
+          const nextReloc = 'No'
+          return {
+            candidateId,
+            candidateName: c.name,
+            field: 'Open to relocate',
+            from: c.relocate ?? 'Not captured',
+            to: `${nextReloc} (${c.metro ?? 'local'} only)`,
+            reason,
+            apply: () => {
+              setState(s => ({
+                ...s,
+                candidates: s.candidates.map(x => x.id === candidateId ? { ...x, relocate: 'No', fieldSources: { ...x.fieldSources, relocate: 'EDITED' } } : x),
+              }))
+              log({ what: `Updated ${c.name} relocation preference to No`, record: c.name, recordHref: `/candidates/${candidateId}`, kind: 'Candidates', before: String(c.relocate ?? 'Not captured'), after: 'No' })
+              toast(`Updated ${c.name}’s relocation preference`)
+            },
+          }
+        }
+        if (reason === 'Role type') {
+          return {
+            candidateId,
+            candidateName: c.name,
+            field: 'Target sub-category',
+            from: `${c.category} · ${c.subcategory}`,
+            to: `${c.category} · Core IC/Lead only`,
+            reason,
+            apply: () => {
+              toast(`Updated ${c.name}’s role preference`)
+            },
+          }
+        }
+        if (reason === 'Company') {
+          const nextPrefs = [...(c.companyPrefs ?? ['Series B+']), 'No early-stage seed']
+          return {
+            candidateId,
+            candidateName: c.name,
+            field: 'Company preferences',
+            from: (c.companyPrefs ?? []).join(', ') || 'Not captured',
+            to: nextPrefs.join(', '),
+            reason,
+            apply: () => {
+              setState(s => ({
+                ...s,
+                candidates: s.candidates.map(x => x.id === candidateId ? { ...x, companyPrefs: nextPrefs } : x),
+              }))
+              toast(`Updated ${c.name}’s company stage preferences`)
+            },
+          }
+        }
+        return null
+      },
+
+      undoNotInterested: (candidateId, roleId) => {
+        setState(s => ({
+          ...s,
+          matches: s.matches.map(m => m.candidateId === candidateId && m.roleId === roleId ? { ...m, status: 'new', notInterestedReason: undefined } : m),
+          rolesForCandidate: {
+            ...s.rolesForCandidate,
+            [candidateId]: (s.rolesForCandidate[candidateId] ?? []).map(rm => rm.roleId === roleId ? { ...rm, status: 'new', notInterestedReason: undefined } : rm),
+          },
+        }))
+        toast('Restored candidate to role')
+      },
+
+      updateAlignment: (matchId, side, value) => {
+        const { m, c, r } = matchLabel(matchId)
+        if (!m) return
+        setState(s => ({
+          ...s,
+          matches: s.matches.map(x => {
+            if (x.id !== matchId) return x
+            const base = x.alignment ?? { candidateSide: 'not-asked', clientSide: 'not-sent', prospectSide: 'not-pitched', updatedBy: currentUser.displayName, at: 'Just now' }
+            const next: Match['alignment'] = {
+              ...base,
+              ...(side === 'candidate' ? { candidateSide: value as CandidateSideState } : {}),
+              ...(side === 'client' ? { clientSide: value as ClientSideState } : {}),
+              ...(side === 'prospect' ? { prospectSide: value as ProspectSideState } : {}),
+              updatedBy: currentUser.displayName,
+              at: 'Just now',
+            }
+            return {
+              ...x,
+              alignment: next,
+              ...(side === 'candidate' && value === 'not-interested' ? { status: 'not-interested', notInterestedReason: 'Other' as const } : {}),
+            }
+          }),
+        }))
+        log({
+          what: `Alignment updated (${side}: ${value}) for ${c?.name}`,
+          record: `${r?.title} — ${r?.company}`,
+          recordHref: `/roles/${m.roleId}?tab=shortlist`,
+          kind: 'Decisions',
+        })
+        toast(`Updated ${side} alignment: ${value.replace('-', ' ')}`)
+      },
+
+      toggleOutputLink: (outputId, active) => {
+        setState(s => ({
+          ...s,
+          outputs: s.outputs.map(o => o.id === outputId ? { ...o, linkActive: active } : o),
+        }))
+        toast(active ? 'Web link enabled' : 'Web link switched off')
+      },
+
+      setDefaultStyle: patch => setState(s => ({ ...s, defaultStyle: { ...s.defaultStyle, ...patch } })),
+      setDefaultDelivery: patch => setState(s => ({ ...s, defaultDelivery: { ...s.defaultDelivery, ...patch } })),
+
+      recordEmailDraft: draft => {
+        const id = `em-${idSeq++}`
+        setState(s => {
+          const isInProd = draft.method === 'in-product'
+          const p1 = {
+            ...s.probe1Stats,
+            inProductCount: s.probe1Stats.inProductCount + (isInProd ? 1 : 0),
+            claudeCount: s.probe1Stats.claudeCount + (!isInProd ? 1 : 0),
+          }
+          // Automatically advance alignment pills on shortlisted rows when an email or Gmail draft is created!
+          const nextMatches = s.matches.map(m => {
+            if (draft.roleId && m.roleId === draft.roleId && draft.candidateIds.includes(m.candidateId)) {
+              const base = m.alignment ?? { candidateSide: 'not-asked', clientSide: 'not-sent', prospectSide: 'not-pitched', updatedBy: currentUser.displayName, at: 'Just now' }
+              if (draft.kind === 'interest-check' || draft.kind === 'roles-for-you') {
+                return { ...m, alignment: { ...base, candidateSide: base.candidateSide === 'not-asked' ? 'asked' : base.candidateSide, updatedBy: currentUser.displayName, at: 'Just now' } }
+              }
+              if (draft.kind === 'profile-share' || draft.kind === 'shortlist') {
+                return { ...m, alignment: { ...base, clientSide: base.clientSide === 'not-sent' ? 'sent' : base.clientSide, updatedBy: currentUser.displayName, at: 'Just now' } }
+              }
+              if (draft.kind === 'pitch') {
+                return { ...m, alignment: { ...base, prospectSide: base.prospectSide === 'not-pitched' ? 'pitched' : base.prospectSide, updatedBy: currentUser.displayName, at: 'Just now' } }
+              }
+            }
+            return m
+          })
+          return {
+            ...s,
+            emailDrafts: [{ ...draft, id }, ...s.emailDrafts],
+            probe1Stats: p1,
+            matches: nextMatches,
+          }
+        })
+        log({
+          what: `${draft.gmailDraftId ? 'Created Gmail draft' : draft.method === 'copied-prompt' ? 'Copied prompt for Claude' : 'Drafted email'} (${draft.kind}) to ${draft.recipientName}`,
+          record: draft.subject,
+          recordHref: draft.roleId ? `/roles/${draft.roleId}?tab=shortlist` : '/roles',
+          kind: 'Outputs',
+        })
+        return id
+      },
     }
   }, [state, toasts, toast, dismissToast, log])
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>
 }
 
-/** v0.3 · T2 — deterministic placeholder for an AI score (wireframe only) */
+/** v0.4 · §7.2 — deterministic synthesis for an AI score (no numeric score on screen; returns requirementsMet, greenFlags, redFlags, recommendation) */
 function synthScore(c: Candidate | undefined, r: Role | undefined, i: number, rank: number, run: number): Partial<Match> {
   const score = Math.max(52, 82 - i * 3 - (c?.completeness && c.completeness < 60 ? 6 : 0))
   const band: Band = score >= 80 ? 'Strong' : score >= 70 ? 'Good' : 'Stretch'
+  const recommendation: Recommendation = score >= 80 ? 'Strong' : score >= 68 ? 'Mild' : 'Not recommended'
   const chips: MatchChip[] = []
   if (c?.years != null) chips.push({ kind: 'evidence', label: `${c.years} yrs` })
   if (c?.metro) chips.push({ kind: 'evidence', label: c.metro })
@@ -526,10 +863,18 @@ function synthScore(c: Candidate | undefined, r: Role | undefined, i: number, ra
   const skill = r?.mustSkills[0]
   if (skill) chips.push(c?.skills.includes(skill) ? { kind: 'evidence', label: skill } : { kind: 'predicted', label: skill, detail: 'from adjacent skills' })
   if (c && r && c.category !== r.category) chips.push({ kind: 'gap', label: `${c.category}, not ${r.category}` })
+
+  const raw: Match = {
+    id: 'tmp', roleId: r?.id ?? '', candidateId: c?.id ?? '', rank, band, recommendation, score,
+    reason: c ? `${c.headline.split('·')[0].trim()} with ${c.years ?? 'unknown'} years; evaluated against ${r?.requirements?.length ?? 4} role requirements.` : 'Evaluated against role requirements.',
+    chips, status: 'new', scored: true, similarity: rank,
+  }
+  const v4 = mock.buildDefaultScoring(raw, c, r)
   return {
     scored: true, scoredInRun: run, rank, band, score,
-    reason: c ? `${c.headline.split('·')[0].trim()} with ${c.years ?? 'unknown'} years; ranked on evidence from the resume.` : 'Ranked on evidence.',
+    reason: raw.reason,
     chips, delta: 'new',
+    ...v4,
   }
 }
 
@@ -541,7 +886,6 @@ export function useApp() {
 
 /* ==========================================================================
    Wireframe state registry — powers the bottom-left state switcher.
-   A screen calls useWireframeState('S-04', [...states]) and gets [state, set].
    ========================================================================== */
 
 export interface WfState { id: string; label: string }
@@ -573,10 +917,6 @@ export function useWireframe() {
   return v
 }
 
-/**
- * Register a screen's reviewable states. Returns [state, setState].
- * `key` lets one screen register under a sub-ID (e.g. 'S-04 · Matches').
- */
 export function useWireframeState(screenId: string, title: string, states: WfState[], initial?: string): [string, (v: string) => void] {
   const wf = useWireframe()
   const statesKey = states.map(s => s.id).join('|')

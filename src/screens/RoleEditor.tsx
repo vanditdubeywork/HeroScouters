@@ -1,15 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { AlertTriangle, Building2, FileAudio, FileText, Link2, MessageSquarePlus, Plus, Sparkles, Upload, Users, X } from 'lucide-react'
+import { AlertTriangle, Building2, FileAudio, FileText, Link2, ListChecks, Plus, Sparkles, Upload, Users } from 'lucide-react'
 import { SplitPane, useTopBar } from '../shell/AppShell'
 import {
-  BezelCard, Button, EmptyState, ExampleMark, Field, Input, Segmented, Select, Switch, Tag, Textarea, cn,
+  BezelCard, Button, EmptyState, ExampleMark, Field, Input, Segmented, Select, Switch, Textarea,
 } from '../components/ui'
 import { AIStepper, Banner, InfoNote, NotCaptured, SourceBadge, useStepper } from '../components/hs'
-import { AddClientAskDialog, LeaveDialog, ProposedChangesDialog } from './Dialogs'
+import { RequirementRow } from '../components/v3'
+import { AddRequirementDialog, LeaveDialog, ProposedChangesDialog } from './Dialogs'
 import { useApp, useWireframeState } from '../store/AppStore'
 import { POOL_SIZE, jdChangesNorthwind, roles as mockRoles } from '../data/mock'
-import { CATEGORIES, CLIENT_ASK_TYPES, SUBCATEGORIES, type Category, type ProposedChange, type Role, type SourceKind, type WorkMode } from '../data/types'
+import { CATEGORIES, SUBCATEGORIES, type Category, type ProposedChange, type Role, type SourceKind, type WorkMode } from '../data/types'
 
 /* ==========================================================================
    S-03 · New / edit role (split pane)
@@ -45,6 +46,8 @@ type Sources = Partial<Record<DraftKey, SourceKind>>
 interface SourceState {
   company: string
   companyType: 'Client' | 'Prospect'
+  contactName: string
+  contactEmail: string
   tab: JdTab
   jdText: string
   fileName: string
@@ -57,7 +60,7 @@ interface SourceState {
 }
 
 const EMPTY_SOURCE: SourceState = {
-  company: '', companyType: 'Client', tab: 'paste', jdText: '', fileName: '', url: '',
+  company: '', companyType: 'Client', contactName: '', contactEmail: '', tab: 'paste', jdText: '', fileName: '', url: '',
   noJdTitle: '', noJdCategory: '', noJdLines: '', callLink: '', research: '',
 }
 
@@ -78,7 +81,9 @@ Pay: $170k–$190k base + equity
 Interview process: Recruiter screen → HM (45 min) → product case → team loop (3) → founder chat`
 
 const EXAMPLE_SOURCE: SourceState = {
-  ...EMPTY_SOURCE, company: 'Northwind Pay', companyType: 'Client', jdText: EXAMPLE_JD,
+  ...EMPTY_SOURCE, company: 'Northwind Pay', companyType: 'Client',
+  contactName: 'Sean Ellis', contactEmail: 'sean@northwindpay.com',
+  jdText: EXAMPLE_JD,
   callLink: 'https://fathom.video/share/northwind-pay-intake',
   research: 'Hiring manager: Dana K., VP Product (ex-Plaid). Founders: two ex-Square engineers. Raised Series B, $40M, 2025.',
 }
@@ -191,6 +196,7 @@ function draftFromRole(r: Role): { draft: Draft; sources: Sources } {
 function sourceFromRole(r: Role): SourceState {
   return {
     ...EMPTY_SOURCE, company: r.company, companyType: r.companyType,
+    contactName: r.hiringContact?.name ?? '', contactEmail: r.hiringContact?.email ?? '',
     tab: r.companySource === 'Public posting URL' ? 'url' : r.companySource === 'No JD' ? 'none' : 'paste',
     jdText: r.jdText ?? '', url: r.postingUrl ?? '', noJdTitle: r.title, noJdCategory: r.category,
     research: r.research ?? '', callLink: r.whatGood ? 'https://fathom.video/share/intake-call' : '',
@@ -198,17 +204,17 @@ function sourceFromRole(r: Role): SourceState {
 }
 
 /* ---------- Live pass count (stage-1 elimination is instant, so this is cheap) ---------- */
-function passFactor(d: Draft) {
+function passFactor(d: Draft, elimCount = 0) {
   let f = 1
   if (d.subcategory) f *= 0.6
   else if (d.category) f *= 0.8
   if (d.minYears !== null) f *= Math.max(0, 1 - Math.max(0, d.minYears - 2) * 0.09)
   if (d.location && d.workMode !== 'Remote') f *= d.relocation ? 0.62 : 0.4
   if (d.sponsorship === 'No') f *= 0.88
-  f *= Math.max(0, 1 - 0.22 * d.skills.filter(s => s.must).length)
+  f *= Math.max(0, 1 - 0.14 * Math.max(d.skills.filter(s => s.must).length, elimCount))
   return f
 }
-const rawPass = (d: Draft) => Math.min(POOL_SIZE, Math.round(POOL_SIZE * passFactor(d) * 1.75))
+const rawPass = (d: Draft, elimCount = 0) => Math.min(POOL_SIZE, Math.round(POOL_SIZE * passFactor(d, elimCount) * 1.75))
 
 /* ---------- Small local pieces ---------- */
 function Lbl({ children, src }: { children: React.ReactNode; src?: SourceKind }) {
@@ -217,30 +223,6 @@ function Lbl({ children, src }: { children: React.ReactNode; src?: SourceKind })
 
 function SuggestedBadge() {
   return <span title="Suggested from the JD. Confirm or change it." className="inline-flex h-4 items-center gap-1 rounded-xs border border-info/50 bg-info/5 px-1 font-mono text-[9px] tracking-[0.1em] text-[#0e7490] uppercase"><Sparkles className="size-2.5" />Suggested</span>
-}
-
-function SkillChip({ tag, onToggle, onRemove }: { tag: SkillTag; onToggle: () => void; onRemove: () => void }) {
-  return (
-    <span className={cn('inline-flex h-7 items-center gap-1.5 rounded-md border pr-1 pl-2 text-xs font-medium', tag.must ? 'border-gray-1100 bg-background' : 'border-border bg-muted')}>
-      {tag.name}
-      <button type="button" aria-pressed={tag.must} onClick={onToggle}
-        title={tag.must ? 'Must-have: candidates without it are eliminated. Click to make it nice-to-have.' : 'Nice-to-have. Click to make it a must-have.'}
-        className={cn('inline-flex h-5 items-center rounded-sm border px-1.5 font-mono text-[9px] tracking-[0.1em] uppercase outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40',
-          tag.must ? 'border-primary bg-primary text-primary-foreground' : 'border-dashed border-gray-800 text-gray-1000 hover:text-foreground')}>
-        Must
-      </button>
-      <button type="button" aria-label={`Remove ${tag.name}`} onClick={onRemove} className="rounded-sm text-muted-foreground hover:text-foreground"><X className="size-3" /></button>
-    </span>
-  )
-}
-
-function AddSkill({ onAdd, placeholder }: { onAdd: (name: string) => void; placeholder: string }) {
-  const [v, setV] = useState('')
-  return (
-    <Input value={v} placeholder={placeholder} aria-label={placeholder} className="h-8 w-48"
-      onChange={e => setV(e.target.value)}
-      onKeyDown={e => { if (e.key === 'Enter' && v.trim()) { e.preventDefault(); onAdd(v.trim()); setV('') } }} />
-  )
 }
 
 const WF_NEW = [
@@ -255,7 +237,7 @@ const WF_EDIT = [
   { id: 'live', label: 'Edit mode (live)' },
   { id: 'revised', label: 'Revised JD → D-03' },
 ]
-const STEPS = ['Reading the job description', 'Finding must-haves', 'Suggesting category', 'Checking the pool']
+const STEPS = ['Reading the job description', 'Finding requirements', 'Suggesting category', 'Checking the pool']
 
 export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
   const app = useApp()
@@ -276,7 +258,8 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
   const [revisedOpen, setRevisedOpen] = useState(false)
   const [askDialog, setAskDialog] = useState<'type' | 'transcript' | null>(null)
   const askRoleId = role?.id ?? 'northwind-spm'
-  const roleAsks = app.asksFor(askRoleId)
+  const reqs = app.requirementsFor(askRoleId)
+  const elimCount = reqs.filter(r => r.effect === 'eliminates').length
   const locationRef = useRef<HTMLInputElement>(null)
 
   useTopBar(
@@ -317,7 +300,6 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
     setSources(s => ({ ...s, [srcKey]: 'EDITED' }))
     setDirty(true)
   }
-  const setSkills = (fn: (s: SkillTag[]) => SkillTag[]) => { setDraft(d => (d ? { ...d, skills: fn(d.skills) } : d)); setSources(s => ({ ...s, skills: 'EDITED' })); setDirty(true) }
 
   const hasJd = src.tab === 'paste' ? src.jdText.trim().length > 20
     : src.tab === 'upload' ? !!src.fileName && !failed
@@ -331,20 +313,25 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
   const pass = useMemo(() => {
     if (!draft) return null
     if (mode === 'edit' && role && baseline) {
-      const fb = passFactor(baseline)
-      return Math.max(0, Math.min(POOL_SIZE, fb > 0 ? Math.round(role.passCount * passFactor(draft) / fb) : rawPass(draft)))
+      const fb = passFactor(baseline, 3)
+      return Math.max(0, Math.min(POOL_SIZE, fb > 0 ? Math.round(role.passCount * passFactor(draft, elimCount) / fb) : rawPass(draft, elimCount)))
     }
-    return rawPass(draft)
-  }, [draft, baseline, mode, role])
+    return rawPass(draft, elimCount)
+  }, [draft, baseline, mode, role, elimCount])
 
   /* ---------- Save ---------- */
   const companySource: Role['companySource'] = src.tab === 'url' ? 'Public posting URL' : src.tab === 'none' ? 'No JD' : src.companyType === 'Client' ? 'Client JD' : 'Public posting URL'
+  const hiringContact = (src.contactName.trim() || src.contactEmail.trim())
+    ? { name: src.contactName.trim() || src.contactEmail.trim(), email: src.contactEmail.trim() || `hiring@${(src.company || 'company').toLowerCase().replace(/[^a-z0-9]/g, '')}.com` }
+    : undefined
+
   const fields = (d: Draft) => ({
     title: d.title || 'Untitled role', category: (d.category || 'Product') as Category, subcategory: d.subcategory, seniority: d.seniority,
     minYears: d.minYears ?? 0, location: d.location, workMode: (d.workMode || 'Hybrid') as WorkMode, relocationAccepted: d.relocation,
     sponsorship: d.sponsorship, transfer: d.transfer, mustSkills: d.skills.filter(s => s.must).map(s => s.name),
     niceSkills: d.skills.filter(s => !s.must).map(s => s.name), pay: d.pay || '—',
     whatGood: d.whatGood || undefined, research: d.research || undefined, interview: d.interview || undefined,
+    hiringContact,
   })
 
   const mustChanges = (r: Role, d: Draft): string[] => {
@@ -362,24 +349,35 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
     return parts
   }
 
-  const save = (find: boolean) => {
+  const save = (scan: boolean) => {
     if (!draft) return
     if (mode === 'new') {
       const f = fields(draft)
       const slug = `${src.company || 'company'}-${f.title}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+      const newId = `${slug}-${Date.now().toString(36).slice(-4)}`
+      const passN = pass ?? 27
       const newRole: Role = {
-        id: `${slug}-${Date.now().toString(36).slice(-4)}`, company: src.company || 'Untitled company', companyType: src.companyType, companySource,
-        ...f, status: 'Open', jdVersion: 1, matchStatus: 'not-run', shortlisted: 0, updated: 'Just now',
-        passCount: pass ?? 0, jdText: src.tab === 'none' ? src.noJdLines : src.jdText || undefined, postingUrl: src.url || undefined,
-        scoredCount: 0, aiScoresUsed: 0,
-        latestUpdate: { text: `${pass ?? 0} pass the must-haves · not scored`, who: app.currentUser.displayName.split(' ')[0], when: 'Just now' },
+        id: newId, company: src.company || 'Untitled company', companyType: src.companyType, companySource,
+        ...f, status: 'Open', jdVersion: 1,
+        matchStatus: scan ? 'up-to-date' : 'not-run',
+        shortlisted: 0, updated: 'Just now',
+        passCount: passN,
+        jdText: src.tab === 'none' ? src.noJdLines : src.jdText || undefined, postingUrl: src.url || undefined,
+        scoredCount: scan ? app.autoSuggestCount : 0,
+        suggestedCount: scan ? app.autoSuggestCount : 0,
+        aiScoresUsed: scan ? app.autoSuggestCount : 0,
+        requirements: reqs.map(q => ({ ...q, roleId: newId })),
+        latestUpdate: scan
+          ? { text: `Scan done · ${app.autoSuggestCount} suggested · ${Math.max(0, passN - app.autoSuggestCount)} not scored`, who: 'Auto-scan', when: 'Just now' }
+          : { text: `${passN} pass Stage 1 · not scored`, who: app.currentUser.displayName.split(' ')[0], when: 'Just now' },
       }
       const label = `${newRole.title} — ${newRole.company}`
       app.addRole(newRole)
-      app.log({ what: `Created role · must-haves: ${f.mustSkills.join(', ') || 'none'} · ${f.minYears}+ yrs`, record: label, recordHref: `/roles/${newRole.id}`, kind: 'Roles' })
-      if (find) {
-        app.log({ what: `Matching run 1 · ${newRole.passCount} ranked · top 5 shown`, record: label, recordHref: `/roles/${newRole.id}`, kind: 'Reruns' })
-        navigate(`/roles/${newRole.id}?tab=matches&run=1`)
+      app.log({ what: `Created role · ${reqs.length} requirements · ${f.minYears}+ yrs`, record: label, recordHref: `/roles/${newRole.id}`, kind: 'Roles' })
+      if (scan) {
+        app.log({ what: `Auto-scan · ${newRole.passCount} not eliminated · ${app.autoSuggestCount} suggested`, record: label, recordHref: `/roles/${newRole.id}`, kind: 'Reruns' })
+        app.toast(`Scanned pool: ${newRole.passCount} not eliminated · ${app.autoSuggestCount} suggested`)
+        navigate(`/roles/${newRole.id}?tab=matches`)
       } else {
         app.toast('Role saved')
         navigate(`/roles/${newRole.id}?tab=details`)
@@ -391,13 +389,14 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
     const changes = mustChanges(role, draft)
     const label = `${role.title} — ${role.company}`
     const patch: Partial<Role> = { ...f, company: src.company || role.company, companyType: src.companyType, updated: 'Just now', passCount: pass ?? role.passCount }
-    if (changes.length && !find) { patch.matchStatus = 'out-of-date'; patch.outOfDateReason = `Must-haves changed since the last run: ${changes.join(', ')}.` }
+    if (changes.length && !scan) { patch.matchStatus = 'out-of-date'; patch.outOfDateReason = `Requirements changed since the last scan: ${changes.join(', ')}.` }
     app.updateRole(role.id, patch)
-    app.log({ what: changes.length ? `Edited must-haves: ${changes.join('; ')}` : 'Edited role details', record: label, recordHref: `/roles/${role.id}`, kind: 'Roles',
-      before: `Must-haves: ${role.mustSkills.join(', ')} · ${role.minYears}+ yrs`, after: `Must-haves: ${f.mustSkills.join(', ')} · ${f.minYears}+ yrs` })
-    if (find) {
-      if (changes.length || role.matchStatus !== 'up-to-date') { app.rerun(role.id); navigate(`/roles/${role.id}?tab=matches&run=1`) }
-      else navigate(`/roles/${role.id}?tab=matches`)
+    app.log({ what: changes.length ? `Edited requirements: ${changes.join('; ')}` : 'Edited role details', record: label, recordHref: `/roles/${role.id}`, kind: 'Roles',
+      before: `Requirements: ${role.mustSkills.join(', ')} · ${role.minYears}+ yrs`, after: `Requirements: ${f.mustSkills.join(', ')} · ${f.minYears}+ yrs` })
+    if (scan) {
+      app.rerun(role.id)
+      app.toast(`Scanned pool: ${pass ?? role.passCount} not eliminated · ${app.autoSuggestCount} suggested`)
+      navigate(`/roles/${role.id}?tab=matches`)
     } else {
       app.toast(changes.length ? 'Role saved · matches marked out of date' : 'Role saved')
       navigate(`/roles/${role.id}?tab=details`)
@@ -420,7 +419,7 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
       if (c.field === 'Pay range') { patch.pay = c.to; parts.push(`pay ${c.from} → ${c.to}`) }
     })
     const v = role.jdVersion + 1
-    const reason = `Must-haves changed since the last run: ${parts.join(', ')}.`
+    const reason = `Requirements changed since the last scan: ${parts.join(', ')}.`
     app.updateRole(role.id, { ...patch, jdVersion: v, matchStatus: 'out-of-date', outOfDateReason: reason, updated: 'Just now' })
     app.log({
       what: `Applied revised JD (v${v}): ${parts.join('; ')}`, record: `${role.title} — ${role.company}`, recordHref: `/roles/${role.id}`, kind: 'Roles',
@@ -452,6 +451,14 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
           <Field label="Company type">
             <Segmented aria-label="Company type" value={src.companyType} onChange={v => editSrc({ companyType: v })} options={['Client', 'Prospect']} />
           </Field>
+          <div className="grid gap-3 border-t border-border pt-3 sm:grid-cols-2">
+            <Field label="Contact name (optional)">
+              <Input placeholder="e.g. Sean Ellis" value={src.contactName} onChange={e => editSrc({ contactName: e.target.value })} />
+            </Field>
+            <Field label="Contact email (optional)">
+              <Input type="email" placeholder="e.g. sean@northwindpay.com" value={src.contactEmail} onChange={e => editSrc({ contactEmail: e.target.value })} />
+            </Field>
+          </div>
           {src.companyType === 'Prospect' && <InfoNote>Prospect roles only offer masked resumes, so identities never reach a prospect by mistake.</InfoNote>}
         </div>
       </BezelCard>
@@ -528,11 +535,6 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
 
   /* ---------- Right pane: Role details ---------- */
   const d = draft
-  const mustSkills = d?.skills.filter(s => s.must) ?? []
-  const niceSkills = d?.skills.filter(s => !s.must) ?? []
-  const toggleMust = (name: string) => setSkills(list => list.map(s => (s.name === name ? { ...s, must: !s.must } : s)))
-  const removeSkill = (name: string) => setSkills(list => list.filter(s => s.name !== name))
-  const addSkill = (name: string, must: boolean) => setSkills(list => (list.some(s => s.name.toLowerCase() === name.toLowerCase()) ? list.map(s => (s.name.toLowerCase() === name.toLowerCase() ? { ...s, must } : s)) : [...list, { name, must }]))
 
   const right = phase === 'extracting' ? (
     <AIStepper title="Extracting role details" steps={STEPS} current={wf === 'extracting' ? 2 : stepper.step} />
@@ -545,119 +547,106 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
         {!d.title && <NotCaptured />}
       </Field>
 
-      {mode === 'edit' && <InfoNote>Changing must-haves marks this role's matches out of date.</InfoNote>}
+      {mode === 'edit' && <InfoNote>Changing requirements marks this role's matches out of date.</InfoNote>}
 
-      <BezelCard title="Must-haves" description="Candidates who fail any must-have are eliminated before ranking. You can still include anyone later.">
-        <div className="space-y-5">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label={<Lbl src={sources.minYears}>Minimum years</Lbl>}>
-              <Input type="number" min={0} max={30} suffix="years" value={d.minYears ?? ''} onChange={e => set('minYears', e.target.value === '' ? null : Number(e.target.value))} />
-              {d.minYears === null && <NotCaptured />}
-            </Field>
-            <Field label={<Lbl src={sources.location}>Location</Lbl>}>
-              <Input ref={locationRef} list="hs-cities" placeholder="City or Remote (US)" value={d.location} onChange={e => set('location', e.target.value)} />
-              <datalist id="hs-cities">{[...KNOWN_CITIES, 'Remote (US)'].map(c => <option key={c} value={c} />)}</datalist>
-              {!d.location && <NotCaptured />}
-            </Field>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label={<Lbl src={sources.workMode}>Work mode</Lbl>}>
-              <div><Segmented aria-label="Work mode" value={d.workMode} onChange={v => set('workMode', v)} options={['Remote', 'Hybrid', 'Onsite'] as (WorkMode | '')[]} /></div>
-              {!d.workMode && <NotCaptured />}
-            </Field>
-            <Field label={<Lbl src={sources.relocation}>Relocation</Lbl>}>
-              <div className="flex h-8 items-center"><Switch checked={d.relocation === true} onChange={v => set('relocation', v)} label="Relocation accepted" /></div>
-              {d.relocation === null && <NotCaptured />}
-            </Field>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label={<Lbl src={sources.sponsorship}>Sponsorship offered</Lbl>}>
-              <div><Segmented aria-label="Sponsorship offered" size="sm" value={d.sponsorship} onChange={v => set('sponsorship', v)} options={['Yes', 'No', 'Unknown'] as YesNo[]} /></div>
-            </Field>
-            <Field label={<Lbl src={sources.transfer}>Visa transfer supported</Lbl>}>
-              <div><Segmented aria-label="Visa transfer supported" size="sm" value={d.transfer} onChange={v => set('transfer', v)} options={['Yes', 'No', 'Unknown'] as YesNo[]} /></div>
-            </Field>
-          </div>
-          <Field label={<Lbl src={sources.skills}>Must-have skills</Lbl>} hint="Turn off Must to move a skill to nice-to-have.">
-            <div className="flex flex-wrap items-center gap-1.5">
-              {mustSkills.map(s => <SkillChip key={s.name} tag={s} onToggle={() => toggleMust(s.name)} onRemove={() => removeSkill(s.name)} />)}
-              {!mustSkills.length && <span className="text-sm text-[#b45309]">No must-have skills yet</span>}
-              <AddSkill placeholder="Add must-have skill" onAdd={n => addSkill(n, true)} />
-            </div>
-          </Field>
-        </div>
-      </BezelCard>
-
-      {/* v0.3 · T7 Client asks (structured requirements from calls/emails/chats) */}
+      {/* v0.4 · §7.1 / N22 Unified Requirements card (replaces separate Must-haves, Client asks, and Nice-to-haves) */}
       <BezelCard
-        icon={<MessageSquarePlus />}
-        title={<span className="flex items-center gap-2">Client asks <span className="font-mono text-[10px] text-muted-foreground tnum">{roleAsks.length}</span></span>}
-        description="Requirements the client said outside the JD. Must-haves and nice-to-haves mark matches out of date; context doesn’t."
+        icon={<ListChecks />}
+        title={`Requirements (${reqs.length})`}
+        description="Each requirement is marked Eliminates (Stage 1 hard filter on years, visa, location, or category) or Improves score (AI checks and cites evidence)."
         action={
-          <div className="flex items-center gap-1.5">
-            <Button variant="ghost" size="sm" icon={<FileAudio />} onClick={() => setAskDialog('transcript')}>Import transcript</Button>
-            <Button variant="outline" size="sm" icon={<Plus />} onClick={() => setAskDialog('type')}>Add client ask</Button>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button variant="ghost" size="sm" icon={<FileAudio />} onClick={() => setAskDialog('transcript')}>
+              Import from call transcript
+            </Button>
+            <Button variant="outline" size="sm" icon={<Plus />} onClick={() => setAskDialog('type')}>
+              + Add requirement
+            </Button>
           </div>
         }
       >
-        {roleAsks.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No client asks yet. Add what the hiring manager said on the intake call or in Slack.</p>
-        ) : (
-          <ul className="divide-y divide-border rounded-xl border border-border">
-            {roleAsks.map(a => {
-              const meta = CLIENT_ASK_TYPES.find(t => t.value === a.type)
-              return (
-                <li key={a.id} className="flex items-start justify-between gap-3 px-3.5 py-2.5">
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-foreground">“{a.text}”</span>
-                      <Tag tone={a.type.startsWith('must') ? 'dark' : a.type === 'nice' ? 'neutral' : 'outline'}>
-                        {meta?.label ?? a.type}{a.column ? ` · ${a.column}` : ''}
-                      </Tag>
-                    </div>
-                    <div className="font-mono text-[11px] text-muted-foreground">
-                      {a.source}{a.saidBy ? ` · ${a.saidBy}` : ''} · {a.when} · added by {a.addedBy}
-                    </div>
-                  </div>
-                  <Button variant="ghost" size="icon-sm" aria-label={`Remove ${a.text}`} onClick={() => app.removeClientAsk(a.id)} icon={<X />} />
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </BezelCard>
+        <div className="space-y-4">
+          {reqs.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No requirements yet. Add requirements from the JD or client intake call.</p>
+          ) : (
+            <div className="space-y-2">
+              {reqs.map(req => (
+                <RequirementRow
+                  key={req.id}
+                  req={req}
+                  onToggleEffect={eff => { app.toggleRequirementEffect(askRoleId, req.id, eff); setDirty(true) }}
+                  onRemove={() => { app.removeRequirement(askRoleId, req.id); setDirty(true) }}
+                />
+              ))}
+            </div>
+          )}
 
-      <BezelCard title="Basics">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Field label={<Lbl src={sources.category}>Category</Lbl>} right={!d.categoryConfirmed && d.category ? <SuggestedBadge /> : undefined}>
-            <Select aria-label="Category" className="w-full" size="lg" value={d.category}
-              onChange={v => { setDraft(x => (x ? { ...x, category: v as Category, subcategory: v ? SUBCATEGORIES[v as Category][0] : '', categoryConfirmed: true } : x)); setSources(s => ({ ...s, category: 'EDITED', subcategory: 'EDITED' })); setDirty(true) }}
-              options={[{ value: '', label: 'Choose…' }, ...CATEGORIES.map(c => ({ value: c, label: c }))]} />
-            {!d.category && <NotCaptured />}
-          </Field>
-          <Field label={<Lbl src={sources.subcategory}>Sub-category</Lbl>} right={!d.categoryConfirmed && d.subcategory ? <SuggestedBadge /> : undefined}>
-            <Select aria-label="Sub-category" className="w-full" size="lg" value={d.subcategory}
-              onChange={v => { setDraft(x => (x ? { ...x, subcategory: v, categoryConfirmed: true } : x)); setSources(s => ({ ...s, subcategory: 'EDITED' })); setDirty(true) }}
-              options={d.category ? SUBCATEGORIES[d.category] : [{ value: '', label: '—' }]} />
-          </Field>
-          <Field label={<Lbl src={sources.seniority}>Seniority</Lbl>}>
-            <Select aria-label="Seniority" className="w-full" size="lg" value={d.seniority} onChange={v => set('seniority', v)}
-              options={['Junior', 'Mid', 'Mid–Senior', 'Senior', 'Lead', 'Manager']} />
-          </Field>
-        </div>
-        {!d.categoryConfirmed && d.category && (
-          <div className="mt-4 flex items-center justify-between gap-2 rounded-lg border border-info/30 bg-info/5 px-3 py-2">
-            <span className="text-xs text-foreground">Category and sub-category are suggested from the JD. Matching uses them as a must-have.</span>
-            <Button size="sm" onClick={() => { setDraft(x => (x ? { ...x, categoryConfirmed: true } : x)); setDirty(true) }}>Confirm</Button>
+          {/* Stage 1 baseline fields sub-well so the live pass counter remains interactive */}
+          <div className="space-y-4 rounded-xl border border-border bg-secondary/40 p-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="eyebrow text-[10px] text-gray-1000">Stage 1 baseline fields</span>
+              <span className="font-mono text-[11px] text-muted-foreground tnum">
+                ~{pass ?? 0} of {POOL_SIZE} pass Stage 1
+              </span>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label={<Lbl src={sources.category}>Category</Lbl>} right={!d.categoryConfirmed && d.category ? <SuggestedBadge /> : undefined}>
+                <Select aria-label="Category" className="w-full" size="lg" value={d.category}
+                  onChange={v => { setDraft(x => (x ? { ...x, category: v as Category, subcategory: v ? SUBCATEGORIES[v as Category][0] : '', categoryConfirmed: true } : x)); setSources(s => ({ ...s, category: 'EDITED', subcategory: 'EDITED' })); setDirty(true) }}
+                  options={[{ value: '', label: 'Choose…' }, ...CATEGORIES.map(c => ({ value: c, label: c }))]} />
+                {!d.category && <NotCaptured />}
+              </Field>
+              <Field label={<Lbl src={sources.subcategory}>Sub-category</Lbl>} right={!d.categoryConfirmed && d.subcategory ? <SuggestedBadge /> : undefined}>
+                <Select aria-label="Sub-category" className="w-full" size="lg" value={d.subcategory}
+                  onChange={v => { setDraft(x => (x ? { ...x, subcategory: v, categoryConfirmed: true } : x)); setSources(s => ({ ...s, subcategory: 'EDITED' })); setDirty(true) }}
+                  options={d.category ? SUBCATEGORIES[d.category] : [{ value: '', label: '—' }]} />
+              </Field>
+              <Field label={<Lbl src={sources.seniority}>Seniority</Lbl>}>
+                <Select aria-label="Seniority" className="w-full" size="lg" value={d.seniority} onChange={v => set('seniority', v)}
+                  options={['Junior', 'Mid', 'Mid–Senior', 'Senior', 'Lead', 'Manager']} />
+              </Field>
+            </div>
+
+            {!d.categoryConfirmed && d.category && (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-info/30 bg-info/5 px-3 py-2">
+                <span className="text-xs text-foreground">Category and sub-category are suggested from the JD. Stage 1 uses Category as an eliminator.</span>
+                <Button size="sm" onClick={() => { setDraft(x => (x ? { ...x, categoryConfirmed: true } : x)); setDirty(true) }}>Confirm</Button>
+              </div>
+            )}
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label={<Lbl src={sources.minYears}>Minimum years</Lbl>}>
+                <Input type="number" min={0} max={30} suffix="years" value={d.minYears ?? ''} onChange={e => set('minYears', e.target.value === '' ? null : Number(e.target.value))} />
+                {d.minYears === null && <NotCaptured />}
+              </Field>
+              <Field label={<Lbl src={sources.location}>Location</Lbl>}>
+                <Input ref={locationRef} list="hs-cities" placeholder="City or Remote (US)" value={d.location} onChange={e => set('location', e.target.value)} />
+                <datalist id="hs-cities">{[...KNOWN_CITIES, 'Remote (US)'].map(c => <option key={c} value={c} />)}</datalist>
+                {!d.location && <NotCaptured />}
+              </Field>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label={<Lbl src={sources.workMode}>Work mode</Lbl>}>
+                <div><Segmented aria-label="Work mode" value={d.workMode} onChange={v => set('workMode', v)} options={['Remote', 'Hybrid', 'Onsite'] as (WorkMode | '')[]} /></div>
+                {!d.workMode && <NotCaptured />}
+              </Field>
+              <Field label={<Lbl src={sources.relocation}>Relocation</Lbl>}>
+                <div className="flex h-8 items-center"><Switch checked={d.relocation === true} onChange={v => set('relocation', v)} label="Relocation accepted" /></div>
+                {d.relocation === null && <NotCaptured />}
+              </Field>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label={<Lbl src={sources.sponsorship}>Sponsorship offered</Lbl>}>
+                <div><Segmented aria-label="Sponsorship offered" size="sm" value={d.sponsorship} onChange={v => set('sponsorship', v)} options={['Yes', 'No', 'Unknown'] as YesNo[]} /></div>
+              </Field>
+              <Field label={<Lbl src={sources.transfer}>Visa transfer supported</Lbl>}>
+                <div><Segmented aria-label="Visa transfer supported" size="sm" value={d.transfer} onChange={v => set('transfer', v)} options={['Yes', 'No', 'Unknown'] as YesNo[]} /></div>
+              </Field>
+            </div>
           </div>
-        )}
-      </BezelCard>
-
-      <BezelCard title="Nice-to-haves" description="Used for ranking, never for elimination.">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {niceSkills.map(s => <SkillChip key={s.name} tag={s} onToggle={() => toggleMust(s.name)} onRemove={() => removeSkill(s.name)} />)}
-          {!niceSkills.length && <span className="text-sm text-muted-foreground">None yet</span>}
-          <AddSkill placeholder="Add nice-to-have" onAdd={n => addSkill(n, false)} />
         </div>
       </BezelCard>
 
@@ -697,13 +686,16 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
             <Button variant="link" className="text-xs text-[#b45309]" onClick={() => locationRef.current?.focus()}>Review location</Button>
           </span>
         ) : (
-          <span className="text-muted-foreground">~<span className="font-mono font-medium text-foreground tnum">{pass}</span> of <span className="font-mono tnum">{POOL_SIZE}</span> candidates pass these must-haves</span>
+          <span className="text-muted-foreground">~<span className="font-mono font-medium text-foreground tnum">{pass}</span> of <span className="font-mono tnum">{POOL_SIZE}</span> candidates pass Stage 1 eliminators</span>
         )}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="hidden font-mono text-[11px] text-muted-foreground sm:inline tnum">
+          Stage 1 + {app.autoSuggestCount} AI suggestions
+        </span>
         <Button variant="ghost" onClick={cancel}>Cancel</Button>
         <Button variant="outline" disabled={!draft} onClick={() => save(false)}>Save role</Button>
-        <Button variant="chroma" disabled={!draft} icon={<Sparkles />} onClick={() => save(true)}>Save and find matches</Button>
+        <Button variant="chroma" disabled={!draft} icon={<Sparkles />} onClick={() => save(true)}>Save and scan</Button>
       </div>
     </div>
   )
@@ -712,7 +704,7 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
     <>
       <SplitPane
         leftTitle={<span className="flex items-center gap-2">Source <ExampleMark /></span>}
-        rightTitle={<span className="flex items-center gap-2">Role details{phase === 'extracted' && d && <span className="font-mono text-[10px] text-gray-1000">{mustSkills.length} must-have skill{mustSkills.length === 1 ? '' : 's'}</span>}</span>}
+        rightTitle={<span className="flex items-center gap-2">Role details{phase === 'extracted' && d && <span className="font-mono text-[10px] text-gray-1000">{elimCount} eliminator{elimCount === 1 ? '' : 's'} · {reqs.length - elimCount} signal{reqs.length - elimCount === 1 ? '' : 's'}</span>}</span>}
         left={left}
         right={right}
         footer={footer}
@@ -721,7 +713,7 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
       <ProposedChangesDialog open={revisedOpen} onClose={() => { setRevisedOpen(false); if (wf === 'revised') setWf('live') }}
         changes={jdChangesNorthwind} onApply={applyRevised}
         subtitle={`From the revised JD you pasted (will become JD v${(role?.jdVersion ?? 1) + 1}). Accepted changes are logged and mark matches out of date.`} />
-      <AddClientAskDialog open={!!askDialog} onClose={() => setAskDialog(null)} roleId={askRoleId} initialMode={askDialog ?? 'type'} />
+      <AddRequirementDialog open={!!askDialog} onClose={() => setAskDialog(null)} roleId={askRoleId} initialMode={askDialog ?? 'type'} />
     </>
   )
 }

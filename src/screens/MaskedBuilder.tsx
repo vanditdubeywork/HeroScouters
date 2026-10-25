@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle, CircleCheck, Copy, Download, EyeOff, LayoutTemplate, Lock, MessageSquareQuote, RefreshCw, Sparkles, Target,
+  AlertTriangle, CircleCheck, Copy, Download, EyeOff, LayoutTemplate, Link2, Lock, MessageSquareQuote, RefreshCw, Sparkles, Target,
 } from 'lucide-react'
 import { ScrollPage, SplitPane, useTopBar } from '../shell/AppShell'
 import { BezelCard, Button, Checkbox, EmptyState, ExampleMark, Field, Input, Segmented, Select, Skeleton, Switch, Textarea, cn } from '../components/ui'
 import { Banner, DocFrame, InfoNote } from '../components/hs'
-import { SignedTakeBlock } from '../components/v3'
+import { DeliverySelect, SignedTakeBlock, StyleSelect } from '../components/v3'
 import {
   DiffSection, EditableText, FixInProfile, PageTake, RefineBox, RefineStatus, RevisionsPopover, SourceResumeSelect,
   amendRevision, emphasise, factHaystack, firstName, initialRevisions, latestVersion, pushRevision, readStale,
@@ -15,7 +15,7 @@ import {
 } from '../components/outputs'
 import { useApp, useWireframeState } from '../store/AppStore'
 import { CopyEmailDialog } from './Dialogs'
-import type { Candidate, Resume, Role } from '../data/types'
+import type { Candidate, OutputDelivery, OutputStyle, Resume, Role } from '../data/types'
 
 /* ==========================================================================
    S-09 · Masked resume builder (single and bulk) — Product Design Doc §8, §9 + PRD v0.3 §7.3, §7.6, §7.8
@@ -137,6 +137,7 @@ function makeSnapshot(bullets: string[], impact: string[], skills: string[]): Se
 /* ---------- Screen ---------- */
 const STATES = [
   { id: 'live', label: 'Live (from link)' },
+  { id: 'traditional', label: 'Style · Traditional (Word)' },
   { id: 'refine-diff', label: 'Refine · section diff' },
   { id: 'refine-blocked', label: 'Refine · fact blocked' },
   { id: 'revisions', label: 'Revisions popover' },
@@ -165,6 +166,7 @@ export function MaskedBuilder() {
   let role: string
   switch (scenario) {
     case 'clean': ids = ['marcus']; role = 'brightdesk-gmm'; break
+    case 'traditional':
     case 'identifiers':
     case 'refine-diff':
     case 'refine-blocked':
@@ -198,6 +200,7 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
   const [draftedFor, setDraftedFor] = useState(initialRole)
   const [postingUrl, setPostingUrl] = useState('')
   const [template, setTemplate] = useState<TemplateId>('A')
+  const [style, setStyle] = useState<OutputStyle>(() => wf === 'traditional' ? 'traditional' : app.defaultStyle.prospect)
   const [aliasOn, setAliasOn] = useState(true)
   const [showSchools, setShowSchools] = useState(false)
   const [showHidden, setShowHidden] = useState(false)
@@ -208,9 +211,13 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
   const [busy, setBusy] = useState(false)
   const [refining, setRefining] = useState(false)
   const [emailOpen, setEmailOpen] = useState(false)
+  const [linkActive, setLinkActive] = useState(true)
   const idRef = useRef<HTMLDivElement>(null)
 
   const r = target !== 'none' && target !== 'url' ? app.role(target) : undefined
+  const [delivery, setDelivery] = useState<OutputDelivery>(() =>
+    r?.companyType === 'Prospect' ? 'link' : app.defaultDelivery.prospect,
+  )
 
   const buildInitialPer = (c: Candidate): Per => {
     const list = app.resumesFor(c.id)
@@ -485,7 +492,7 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
   const maskingPrompt = app.prompts.find(p => p.id === 'masking')
   const promptVersionLabel = maskingPrompt ? `Masking v${maskingPrompt.activeVersion}` : 'Masking v4'
 
-  const download = (list: Candidate[], anyway: boolean) => {
+  const download = (list: Candidate[], anyway: boolean, viaDelivery: OutputDelivery = delivery) => {
     setBusy(true)
     window.setTimeout(() => {
       setBusy(false)
@@ -497,7 +504,11 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
           candidateId: c.id,
           type: 'Masked' as const,
           roleId: r?.id ?? null,
-          template: TEMPLATE_LABEL[template],
+          template: style === 'traditional' ? `Traditional · ${TEMPLATE_LABEL[template]}` : TEMPLATE_LABEL[template],
+          style,
+          delivery: viaDelivery,
+          shareUrl: `https://heroscouter.com/p/${c.id}-masked`,
+          linkActive,
           stale: false,
           sourceResumeId: srcRes?.id,
           sourceVersion: latestVersion(srcRes),
@@ -510,13 +521,17 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
         patch(c.id, { downloadedRev: p.curRev })
         const n = unresolved(c).length
         app.log({
-          what: `Generated masked resume for ${c.name} (template ${template})${anyway && n ? ` · downloaded anyway with ${n} possible identifier${n === 1 ? '' : 's'}` : ''}`,
+          what: `${viaDelivery === 'link' ? 'Copied masked web link' : 'Generated masked resume'} for ${c.name} (${style} · template ${template})${anyway && n ? ` · with ${n} possible identifier${n === 1 ? '' : 's'}` : ''}`,
           record: r ? `${r.title} — ${r.company}` : c.name, recordHref: r ? `/roles/${r.id}` : `/candidates/${c.id}`, kind: 'Outputs',
         })
       })
-      app.toast(list.length > 1 ? `Downloaded ${list.length} masked resumes` : 'Masked resume downloaded')
+      if (viaDelivery === 'link') {
+        app.toast(list.length > 1 ? `Copied ${list.length} shareable web links · Read-only, revocable anytime in Resumes` : 'Copied shareable web link · Read-only, revocable anytime in Resumes')
+      } else {
+        app.toast(list.length > 1 ? `Downloaded ${list.length} masked resumes` : 'Masked resume downloaded')
+      }
       setReviewing(false)
-    }, 700)
+    }, 450)
   }
 
   const roleOptions = [
@@ -528,7 +543,7 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
   /* ---------- Left: Settings ---------- */
   const left = (
     <>
-      {bulk && <div className="eyebrow text-gray-1000">Sections 3–5 apply to <span className="text-foreground">{cur.name}</span></div>}
+      {bulk && <div className="eyebrow text-gray-1000">Sections 3–6 apply to <span className="text-foreground">{cur.name}</span></div>}
       <SourceResumeSelect list={sourceResumes} value={curPer.sourceResumeId} onChange={switchSourceResume} fromMatch={fromMatch} />
 
       <BezelCard icon={<Target />} title="1 · Target">
@@ -545,24 +560,27 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
         </div>
       </BezelCard>
 
-      <BezelCard icon={<LayoutTemplate />} title="2 · Template">
-        <div role="radiogroup" aria-label="Template" className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          {(['A', 'B', 'C'] as TemplateId[]).map(t => {
-            const disabled = t === 'C' && !r
-            const on = template === t
-            return (
-              <button key={t} role="radio" aria-checked={on} disabled={disabled} onClick={() => setTemplate(t)}
-                className={cn('rounded-xl border p-3 text-left transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50',
-                  on ? 'border-gray-1100 bg-background shadow-xs' : 'border-border hover:bg-muted')}>
-                <div className="text-sm font-medium">{TEMPLATE_LABEL[t]}</div>
-                <div className="mt-0.5 text-xs text-muted-foreground">
-                  {t === 'A' ? 'Header, why, skills, short timeline.' : t === 'B' ? 'Opens with big impact numbers.' : disabled ? 'Needs a target role.' : 'Maps must-haves to evidence.'}
-                </div>
-              </button>
-            )
-          })}
+      <BezelCard icon={<LayoutTemplate />} title="2 · Style & template">
+        <div className="space-y-4">
+          <StyleSelect style={style} onChangeStyle={setStyle} />
+          <div role="radiogroup" aria-label="Template" className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {(['A', 'B', 'C'] as TemplateId[]).map(t => {
+              const disabled = t === 'C' && !r
+              const on = template === t
+              return (
+                <button key={t} role="radio" aria-checked={on} disabled={disabled} onClick={() => setTemplate(t)}
+                  className={cn('rounded-xl border p-3 text-left transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50',
+                    on ? 'border-gray-1100 bg-background shadow-xs' : 'border-border hover:bg-muted')}>
+                  <div className="text-sm font-medium">{TEMPLATE_LABEL[t]}</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    {t === 'A' ? 'Header, why, skills, short timeline.' : t === 'B' ? 'Opens with big impact numbers.' : disabled ? 'Needs a target role.' : 'Maps must-haves to evidence.'}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground">Default style and layout are set in Settings → Templates.</p>
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">The default is set in Settings.</p>
       </BezelCard>
 
       <BezelCard icon={<EyeOff />} title="3 · What's hidden">
@@ -630,6 +648,20 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
 
       <BezelCard icon={<MessageSquareQuote />} title="5 · Our take">
         <SignedTakeBlock candidateId={cur.id} roleId={r?.id ?? null} compact />
+      </BezelCard>
+
+      <BezelCard icon={<Link2 />} title="6 · Delivery (N28)">
+        <DeliverySelect
+          delivery={delivery}
+          onChangeDelivery={setDelivery}
+          shareUrl={`https://heroscouter.com/p/${cur.id}-masked`}
+          linkActive={linkActive}
+          onToggleLinkActive={active => {
+            setLinkActive(active)
+            app.toast(active ? 'Shareable web link enabled' : 'Web link turned off')
+          }}
+          onCopyLink={() => app.toast('Copied shareable web link · Read-only, revocable anytime in Resumes')}
+        />
       </BezelCard>
     </>
   )
@@ -703,8 +735,20 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
       <div className="min-h-0 flex-1">
         <DocFrame
           toolbar={
-            <div className="flex flex-1 items-center justify-between gap-2 pr-2">
-              <Switch checked={showHidden} onChange={setShowHidden} label="Show what's hidden" />
+            <div className="flex flex-1 flex-wrap items-center justify-between gap-2 pr-2">
+              <div className="flex items-center gap-3">
+                <Switch checked={showHidden} onChange={setShowHidden} label="Show what's hidden" />
+                <Segmented
+                  size="sm"
+                  aria-label="Preview style"
+                  value={style}
+                  onChange={setStyle}
+                  options={[
+                    { value: 'creative', label: 'Creative' },
+                    { value: 'traditional', label: 'Traditional' },
+                  ]}
+                />
+              </div>
               <RevisionsPopover
                 key={`${cur.id}-${wf === 'revisions' ? 'open' : 'closed'}`}
                 revisions={curPer.revs}
@@ -722,6 +766,7 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
               r={r}
               resume={activeSourceResume}
               template={template}
+              style={style}
               per={curPer}
               take={curTake}
               takeAuthor={curTake ? app.member(curTake.authorId) : undefined}
@@ -770,18 +815,32 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
     <div className="flex flex-wrap items-center gap-2">
       <Button icon={<Copy />} onClick={() => setEmailOpen(true)}>Copy email text</Button>
       <span className="eyebrow ml-1 hidden text-gray-1000 sm:inline">
-        {TEMPLATE_LABEL[template]} · {resumeLabel(activeSourceResume)} · {promptVersionLabel} · {r ? `${r.title} — ${r.company}` : target === 'url' ? 'Public posting' : 'No specific role'}
+        {style === 'traditional' ? 'Traditional' : 'Creative'} · {TEMPLATE_LABEL[template]} · {resumeLabel(activeSourceResume)} · {promptVersionLabel} · {r ? `${r.title} — ${r.company}` : target === 'url' ? 'Public posting' : 'No specific role'}
       </span>
       <div className="ml-auto flex items-center gap-2">
         {flagsHere > 0 && reviewing && (
-          <Button variant="ghost" icon={<Download />} disabled={rendering} onClick={() => download(bulk ? cands : [cur], true)}>{bulk ? 'Download all anyway' : 'Download anyway'}</Button>
+          <Button variant="ghost" icon={<Download />} disabled={rendering} onClick={() => download(bulk ? cands : [cur], true, delivery)}>{bulk ? 'Download all anyway' : 'Download anyway'}</Button>
         )}
         {flagsHere > 0 ? (
           <Button variant="primary" icon={<AlertTriangle />} onClick={reviewNext}>Review {flagsHere} possible identifier{flagsHere === 1 ? '' : 's'}</Button>
+        ) : delivery === 'link' ? (
+          <>
+            <Button variant="outline" icon={<Download />} disabled={rendering} onClick={() => download(bulk ? cands : [cur], false, 'pdf')}>
+              {bulk ? `Download all (${cands.length})` : 'Download PDF'}
+            </Button>
+            <Button variant="primary" icon={<Link2 />} disabled={rendering || !linkActive} onClick={() => download(bulk ? cands : [cur], false, 'link')}>
+              {bulk ? `Copy ${cands.length} web links` : 'Copy web link'}
+            </Button>
+          </>
         ) : (
-          <Button variant="primary" icon={<Download />} disabled={rendering} onClick={() => download(bulk ? cands : [cur], false)}>
-            {bulk ? `Download all (${cands.length})` : 'Download PDF'}
-          </Button>
+          <>
+            <Button variant="outline" icon={<Link2 />} disabled={rendering || !linkActive} onClick={() => download(bulk ? cands : [cur], false, 'link')}>
+              {bulk ? `Copy ${cands.length} web links` : 'Copy web link'}
+            </Button>
+            <Button variant="primary" icon={<Download />} disabled={rendering} onClick={() => download(bulk ? cands : [cur], false, 'pdf')}>
+              {bulk ? `Download all (${cands.length})` : 'Download PDF'}
+            </Button>
+          </>
         )}
       </div>
     </div>
@@ -792,7 +851,14 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
       <SplitPane leftTitle="Settings" rightTitle={bulk ? `Preview · ${cands.length} candidates` : 'Preview'}
         leftActions={<ExampleMark />} rightActions={<span className="font-mono text-[11px] text-muted-foreground">{rendering ? 'Rendering…' : failed ? 'Not generated' : `Ready · v${curPer.curRev}`}</span>}
         left={left} right={right} footer={footer} />
-      <CopyEmailDialog open={emailOpen} onClose={() => setEmailOpen(false)} candidateIds={cands.map(c => c.id)} roleId={r?.id ?? null} initialVariant="prospect" />
+      <CopyEmailDialog
+        open={emailOpen}
+        onClose={() => setEmailOpen(false)}
+        candidateIds={cands.map(c => c.id)}
+        roleId={r?.id ?? null}
+        initialVariant={r?.companyType === 'Client' ? 'client' : 'prospect'}
+        initialKind={r?.companyType === 'Client' ? 'profile-share' : 'pitch'}
+      />
     </>
   )
 }
@@ -811,19 +877,26 @@ function PageSkeleton() {
   )
 }
 
-/* ---------- Masked page (§9.1 + v0.3 T3, T6, T8) ---------- */
+/* ---------- Masked page (§9.1 + v0.3 T3, T6, T8 + v0.4 §7.6 Creative vs Traditional Word-style) ---------- */
 function Masked({ on, what, children }: { on: boolean; what: string; children: React.ReactNode }) {
   return <span className={on ? 'hidden-span px-0.5' : undefined} title={on ? `Hidden: ${what}` : undefined}>{children}</span>
 }
-function H({ children }: { children: React.ReactNode }) {
+function H({ traditional, children }: { traditional?: boolean; children: React.ReactNode }) {
+  if (traditional) {
+    return (
+      <h3 className="mb-1.5 border-b border-[#111]/40 pb-0.5 font-serif text-[9px] font-bold tracking-[0.14em] text-[#111] uppercase">
+        {children}
+      </h3>
+    )
+  }
   return <h3 className="mb-1.5 font-mono text-[8px] font-medium tracking-[0.14em] text-gray-1000 uppercase">{children}</h3>
 }
 
 function MaskedPage({
-  c, r, resume, template, per, take, takeAuthor, currentUser, aliasOn, showSchools, showHidden, reviewing, focusFlag, postingUrl,
+  c, r, resume, template, style = 'creative', per, take, takeAuthor, currentUser, aliasOn, showSchools, showHidden, reviewing, focusFlag, postingUrl,
   onEditBullet, onEditImpact, onEditExpNote, onKeepSection, onUndoSection, onDismissBlock, onRegenerateSection, onFixInProfile,
 }: {
-  c: Candidate; r: Role | undefined; resume: Resume | undefined; template: TemplateId; per: Per
+  c: Candidate; r: Role | undefined; resume: Resume | undefined; template: TemplateId; style?: OutputStyle; per: Per
   take: ReturnType<ReturnType<typeof useApp>['takeFor']>; takeAuthor: ReturnType<ReturnType<typeof useApp>['member']>
   currentUser: ReturnType<typeof useApp>['currentUser']
   aliasOn: boolean; showSchools: boolean; showHidden: boolean; reviewing: boolean; focusFlag: string | null; postingUrl: string
@@ -836,6 +909,7 @@ function MaskedPage({
   onRegenerateSection: (key: 'why' | 'impact' | 'skills') => void
   onFixInProfile: (label: string) => void
 }) {
+  const isTraditional = style === 'traditional'
   const flags = FLAGS[c.id] ?? []
   const alias = aliasOf(c, resume)
   const auth = workAuthPill(c)
@@ -875,7 +949,30 @@ function MaskedPage({
   const blockFor = (key: string) => per.refineResult?.blocked.find(bl => bl.key === key)
 
   const pills = [availability ? `Available: ${availability}` : null, auth, loc].filter((p): p is string => !!p)
-  const header = (
+  const header = isTraditional ? (
+    <header className="border-b-2 border-[#111] pb-3 text-[#111]">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="font-mono text-[7.5px] tracking-[0.14em] text-gray-1000 uppercase">
+          Confidential candidate summary{r ? ` · Prepared for ${r.title} (${r.company})` : ''}
+        </span>
+        <span className="font-mono text-[7.5px] text-gray-1000">HeroScouter</span>
+      </div>
+      <h1 className="mt-1.5 font-serif text-[16px] leading-tight font-bold tracking-tight text-[#111]">
+        {aliasOn ? <Masked on={showHidden} what={`Name: ${c.name}`}>{alias}</Masked> : c.name}
+      </h1>
+      {showHidden && <div className="mt-1 text-[8px]"><span className="hidden-span px-1">Name, email, phone, LinkedIn and photo hidden</span></div>}
+      {pills.length > 0 && (
+        <p className="mt-1 font-mono text-[8.5px] text-gray-1100">
+          {pills.map((p, idx) => (
+            <React.Fragment key={p}>
+              {idx > 0 && <span className="mx-1.5">·</span>}
+              {p === loc ? <Masked on={showHidden} what={`Exact location: ${c.city}`}>{p}</Masked> : p}
+            </React.Fragment>
+          ))}
+        </p>
+      )}
+    </header>
+  ) : (
     <header className="rounded-md bg-[#111] px-5 py-4 text-white">
       <div className="flex items-center justify-between">
         <span className="inline-flex items-center gap-1.5 text-[9px] font-semibold tracking-wide">
@@ -910,11 +1007,11 @@ function MaskedPage({
       onRegenerate={() => onRegenerateSection('why')}
     >
       <section>
-        <H>Why we recommend</H>
+        <H traditional={isTraditional}>Why we recommend</H>
         <ul className="space-y-1 text-[9.5px] leading-snug">
           {bullets.map((b, i) => (
             <li key={i} className="group/fact flex gap-1.5">
-              <span className="text-gray-800">—</span>
+              <span className="text-gray-800">{isTraditional ? '•' : '—'}</span>
               <span className="flex-1">
                 <EditableText
                   value={b}
@@ -931,7 +1028,7 @@ function MaskedPage({
     </DiffSection>
   )
 
-  const takeBlock = <PageTake take={take} author={takeAuthor} variant="quote" />
+  const takeBlock = <PageTake take={take} author={takeAuthor} variant={isTraditional ? 'note' : 'quote'} />
 
   const impactList = impact.length > 0 && (
     <DiffSection
@@ -944,11 +1041,11 @@ function MaskedPage({
       onRegenerate={() => onRegenerateSection('impact')}
     >
       <section>
-        <H>Impact highlights</H>
+        <H traditional={isTraditional}>Impact highlights</H>
         <ul className="space-y-1 text-[9.5px] leading-snug">
           {impact.map((a, i) => (
             <li key={i} className="group/fact flex gap-1.5">
-              <span className="text-gray-800">▪</span>
+              <span className="text-gray-800">{isTraditional ? '•' : '▪'}</span>
               <span className="flex-1">
                 <EditableText
                   value={a}
@@ -1005,18 +1102,18 @@ function MaskedPage({
       onRegenerate={() => onRegenerateSection('skills')}
     >
       <section className="group/fact">
-        <H>Skills</H>
+        <H traditional={isTraditional}>Skills</H>
         <div className="space-y-1 text-[9px]">
           {skillsList.length > 0 && (
             <div className="flex gap-2">
-              <span className="w-9 shrink-0 text-gray-1000">Core</span>
+              <span className="w-9 shrink-0 font-semibold text-gray-1000">Core:</span>
               <span>
                 {skillsList.join(' · ')}
                 <FixInProfile label="Skills" onClick={() => onFixInProfile('Skills')} />
               </span>
             </div>
           )}
-          {c.tools.length > 0 && <div className="flex gap-2"><span className="w-9 shrink-0 text-gray-1000">Tools</span><span>{c.tools.join(' · ')}</span></div>}
+          {c.tools.length > 0 && <div className="flex gap-2"><span className="w-9 shrink-0 font-semibold text-gray-1000">Tools:</span><span>{c.tools.join(' · ')}</span></div>}
         </div>
       </section>
     </DiffSection>
@@ -1024,24 +1121,33 @@ function MaskedPage({
 
   const exp = c.companies.length > 0 && (
     <section>
-      <H>Experience</H>
-      <ol className="space-y-1.5 border-l border-gray-500 pl-3 text-[9px]">
+      <H traditional={isTraditional}>Experience</H>
+      <ol className={cn('space-y-2 text-[9px]', !isTraditional && 'border-l border-gray-500 pl-3')}>
         {c.companies.map(co => {
           const shown = !!per.show[co.name]
           const note = per.expNotes[co.name] ?? EXP_NOTES[c.id]?.[co.name]
           return (
             <li key={co.name} className="group/fact relative">
-              <span className="absolute top-1 -left-[15px] size-1.5 rounded-full bg-gray-1100" />
+              {!isTraditional && <span className="absolute top-1 -left-[15px] size-1.5 rounded-full bg-gray-1100" />}
               <div className="flex items-baseline justify-between gap-2">
-                <span className="font-medium">
+                <span className="font-semibold">
                   {co.title}
+                  {isTraditional && (
+                    <span className="font-normal text-gray-1100">
+                      {' · '}
+                      {shown ? co.name : <Masked on={showHidden} what={`Employer: ${co.name}`}>{co.descriptor}</Masked>}
+                    </span>
+                  )}
                   <FixInProfile label={co.name} onClick={() => onFixInProfile(co.name)} />
                 </span>
                 <span className="shrink-0 font-mono text-[8px] text-gray-1000 tnum">{co.start}–{co.end}</span>
               </div>
-              <div className="text-gray-1100">{shown ? co.name : <Masked on={showHidden} what={`Employer: ${co.name}`}>{co.descriptor}</Masked>}</div>
+              {!isTraditional && (
+                <div className="text-gray-1100">{shown ? co.name : <Masked on={showHidden} what={`Employer: ${co.name}`}>{co.descriptor}</Masked>}</div>
+              )}
               {note && (
                 <div className="text-[8.5px] text-gray-1100">
+                  {isTraditional && '• '}
                   <EditableText
                     value={note}
                     display={withFlags(note)}
@@ -1059,7 +1165,7 @@ function MaskedPage({
 
   const edu = c.education && (
     <section className="group/fact">
-      <H>Education</H>
+      <H traditional={isTraditional}>Education</H>
       <p className="text-[9px]">
         {c.education.degree}, {c.education.field}
         {showSchools ? ` · ${c.education.school}` : showHidden ? <> · <span className="hidden-span px-0.5" title={`Hidden: ${c.education.school}`}>school hidden</span></> : null}
@@ -1081,14 +1187,14 @@ function MaskedPage({
     if (c.workModes && loc && c.workModes.includes(r.workMode)) rows.push({ need: r.workMode === 'Remote' ? 'Remote (US)' : `${r.workMode} · ${r.location.split(',')[0]}`, evidence: loc })
     if (auth) rows.push({ need: 'Work authorization', evidence: auth })
     fit = (
-      <section className="rounded-md border border-gray-500">
-        <div className="border-b border-gray-500 bg-gray-100 px-3 py-1.5 font-mono text-[8px] font-medium tracking-[0.14em] uppercase">Fit for {r.title}</div>
+      <section className={cn(isTraditional ? 'border-y border-[#111]/40 py-1.5' : 'rounded-md border border-gray-500')}>
+        <div className={cn('font-mono text-[8px] font-medium tracking-[0.14em] uppercase', isTraditional ? 'mb-1 font-serif text-[9px] font-bold text-[#111]' : 'border-b border-gray-500 bg-gray-100 px-3 py-1.5')}>Fit for {r.title}</div>
         <table className="w-full text-[9px]">
           <tbody>
             {rows.map((x, i) => (
               <tr key={i} className="border-b border-gray-300 last:border-0">
-                <td className="w-1/3 px-3 py-1 align-top text-gray-1100">✓ {x.need}</td>
-                <td className="px-3 py-1">{withFlags(x.evidence)}</td>
+                <td className="w-1/3 px-2 py-1 align-top text-gray-1100">✓ {x.need}</td>
+                <td className="px-2 py-1">{withFlags(x.evidence)}</td>
               </tr>
             ))}
           </tbody>
@@ -1098,12 +1204,12 @@ function MaskedPage({
   }
 
   const body: React.ReactNode[] =
-    template === 'B' ? [bigNums, why, takeBlock, exp, skills, edu]
+    template === 'B' ? [isTraditional ? impactList : bigNums, why, takeBlock, exp, skills, edu]
       : template === 'C' ? [fit, why, takeBlock, impactList, skills, exp, edu]
         : [why, takeBlock, impactList, skills, exp, edu]
 
   return (
-    <article className="flex h-full min-h-full flex-col gap-4 px-7 py-6 text-[#111]" aria-label="Masked resume preview">
+    <article className="flex h-full min-h-full flex-col gap-3.5 px-7 py-6 text-[#111]" aria-label="Masked resume preview">
       {header}
       {postingUrl && <p className="font-mono text-[7.5px] text-gray-1000">Written for the posting at {postingUrl}</p>}
       {body.filter(Boolean).map((b, i) => <React.Fragment key={i}>{b}</React.Fragment>)}

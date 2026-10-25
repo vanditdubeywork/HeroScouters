@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { AlertTriangle, Copy, Download, FileText, RefreshCw, SearchX, Wand2 } from 'lucide-react'
+import { AlertTriangle, Copy, Download, FileText, Link2, RefreshCw, SearchX, Wand2 } from 'lucide-react'
 import { ScrollPage, useTopBar } from '../shell/AppShell'
-import { Avatar, Button, EmptyState, ExampleMark, PageHeader, Select } from '../components/ui'
+import { Avatar, Button, EmptyState, ExampleMark, PageHeader, Select, Switch, cn } from '../components/ui'
 import { DataTable, FilterChip, type Column } from '../components/hs'
 import { latestVersion } from '../components/outputs'
 import { useApp, useWireframeState } from '../store/AppStore'
@@ -93,7 +93,54 @@ export function ResumesLibrary() {
       key: 'source', header: 'Source',
       render: o => <span className="block max-w-[130px] truncate text-xs text-gray-1100 whitespace-nowrap">{sourceText(o)}</span>,
     },
-    { key: 'template', header: 'Template', render: o => <span className="block max-w-[115px] truncate text-xs text-gray-1100">{o.template}</span> },
+    {
+      key: 'style', header: 'Style',
+      render: o => {
+        const st = o.style ?? (o.type === 'Masked' ? 'creative' : 'traditional')
+        return (
+          <div className="space-y-0.5">
+            <span className={cn(
+              'inline-flex h-5 items-center rounded-sm border px-1.5 text-[11px] font-medium whitespace-nowrap',
+              st === 'creative' ? 'border-border bg-secondary text-foreground' : 'border-border bg-background text-gray-1100',
+            )}>
+              {st === 'creative' ? 'Creative' : 'Traditional'}
+            </span>
+            <div className="max-w-[115px] truncate text-[10px] text-muted-foreground">{o.template}</div>
+          </div>
+        )
+      },
+    },
+    {
+      key: 'delivery', header: 'Delivery & link',
+      render: o => {
+        const deliv = o.delivery ?? (o.type === 'Masked' ? 'link' : 'pdf')
+        const active = o.linkActive ?? true
+        if (deliv === 'link' || o.shareUrl) {
+          return (
+            <div className="flex flex-wrap items-center gap-2" onClick={e => e.stopPropagation()}>
+              <span className={cn(
+                'inline-flex h-5 items-center gap-1 rounded-sm border px-1.5 font-mono text-[10px] font-medium whitespace-nowrap',
+                active ? 'border-success/40 bg-success/[0.08] text-foreground' : 'border-border bg-muted text-muted-foreground line-through',
+              )}>
+                <Link2 className="size-3" />
+                {deliv === 'link' ? 'Web link' : `${deliv.toUpperCase()} + link`}
+              </span>
+              <Switch
+                aria-label={`Web link for ${app.candidate(o.candidateId)?.name ?? o.candidateId}`}
+                checked={active}
+                onChange={next => app.toggleOutputLink(o.id, next)}
+                label={active ? 'On' : 'Revoked'}
+              />
+            </div>
+          )
+        }
+        return (
+          <span className="inline-flex h-5 items-center rounded-sm border border-border bg-background px-1.5 font-mono text-[10px] font-medium uppercase text-gray-1100">
+            {deliv}
+          </span>
+        )
+      },
+    },
     {
       key: 'prompt', header: 'Prompt',
       render: o => <span className="font-mono text-[11px] text-gray-1100 whitespace-nowrap">{o.promptVersion ?? 'Masking v4'}</span>,
@@ -150,6 +197,18 @@ export function ResumesLibrary() {
         onRowClick={o => navigate(`/candidates/${o.candidateId}`)}
         rowActions={o => (
           <>
+            {(o.delivery === 'link' || o.shareUrl) && (
+              <Button
+                variant="outline"
+                size="sm"
+                icon={<Link2 />}
+                disabled={o.linkActive === false}
+                title={o.linkActive === false ? 'Web link is switched off' : o.shareUrl ?? 'Copy web link'}
+                onClick={() => app.toast('Copied shareable web link · Read-only, revocable anytime')}
+              >
+                Copy link
+              </Button>
+            )}
             <Button variant="outline" size="sm" icon={<Download />} onClick={() => download(o)}>Download</Button>
             <Button variant="ghost" size="icon-sm" aria-label="Copy email text" title="Copy email text" icon={<Copy />} onClick={() => setEmail(o)} />
             <Button variant="ghost" size="sm" icon={<Wand2 />} onClick={() => openBuilder(o)}>Refine</Button>

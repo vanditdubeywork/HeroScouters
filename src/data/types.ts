@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Domain types — mirror PRD v0.2 §7.3 data requirements
+   Domain types — mirror PRD v0.4 §9 data requirements (superset of v0.2/v0.3)
    ========================================================================== */
 
 export type Category = 'Engineering' | 'Product' | 'Marketing' | 'Design' | 'Data' | 'Sales' | 'Ops'
@@ -85,6 +85,8 @@ export interface Candidate {
   domains: string[] | null
   /** v0.3 · T8 — call ids on record (takes only draft when ≥1 call or note exists) */
   calls?: { id: string; label: string; when: string; by: string }[]
+  /** v0.4 · C9 — source links (Drive, Dropbox, LinkedIn PDF, outreach sheet) */
+  sourceLinks?: { label: string; url: string; addedAt: string }[]
   /** field → source badge */
   fieldSources: Record<string, SourceKind>
   example?: boolean
@@ -92,6 +94,47 @@ export interface Candidate {
 
 export type MatchStatusFlag = 'up-to-date' | 'out-of-date' | 'not-run'
 export type RoleStatus = 'Open' | 'On hold' | 'Closed'
+
+/* ---------- v0.4 · §7.1 Unified Role Requirements (replaces separate must/nice/client-asks) ---------- */
+export type RequirementEffect = 'eliminates' | 'improves'
+export type RequirementColumn =
+  | 'Minimum years'
+  | 'Work authorization'
+  | 'Location'
+  | 'Category'
+  | 'Sub-category'
+  | 'Domain'
+  | 'Skills'
+  | 'Pay'
+  | 'Availability'
+
+/** Only these 4 columns can eliminate in Stage 1 (§7.1 table) */
+export const ELIMINATOR_COLUMNS: RequirementColumn[] = [
+  'Minimum years',
+  'Work authorization',
+  'Location',
+  'Category',
+]
+
+export interface RoleRequirement {
+  id: string
+  roleId: string
+  text: string
+  source: 'JD' | 'Call' | 'Email' | 'Chat'
+  saidBy?: string // e.g. "Sean (VP Product)"
+  when?: string
+  effect: RequirementEffect
+  column?: RequirementColumn
+  addedBy: string
+  /** Evidence per candidate for free-text / signal requirements */
+  evidence?: Record<string, 'found' | 'not-found'>
+}
+
+export interface HiringContact {
+  name: string
+  title?: string
+  email: string
+}
 
 export interface Role {
   id: string
@@ -126,18 +169,53 @@ export interface Role {
   /** v0.3 · T2 */
   scoredCount: number
   aiScoresUsed: number
-  /** v0.3 · T9 — "JD v3: must-haves changed" · who · when */
+  /** v0.3 · T9 — "Scan done · 5 suggested · 22 not scored" · who · when */
   latestUpdate?: { text: string; who: string; when: string }
+  /** v0.4 · C5 Auto-scan suggested count */
+  suggestedCount?: number
+  /** v0.4 · C2/C4 Hiring contact for 1-click Gmail drafts */
+  hiringContact?: HiringContact
+  /** v0.4 · C6/T7 Unified requirements list */
+  requirements?: RoleRequirement[]
 }
 
 export type Band = 'Strong' | 'Good' | 'Stretch'
+/** v0.4 · C6 Recommendation replaces Fit band + numeric score on screen */
+export type Recommendation = 'Strong' | 'Mild' | 'Not recommended'
+
 export type ChipKind = 'evidence' | 'predicted' | 'assumed' | 'gap'
 export interface MatchChip {
   kind: ChipKind
   label: string
   detail?: string
 }
-export type MatchRowStatus = 'new' | 'shortlisted' | 'rejected' | 'requalified'
+
+/** v0.4 · C6 Requirement check item on scored rows */
+export interface RequirementMetItem {
+  reqId: string
+  label: string
+  result: 'met' | 'not-met' | 'assumed' | 'predicted'
+  evidence?: string
+}
+
+/** v0.4 · C10 Not interested reasons */
+export const NOT_INTERESTED_REASONS = ['Pay', 'Location', 'Company', 'Role type', 'Timing', 'Not looking', 'Other'] as const
+export type NotInterestedReason = (typeof NOT_INTERESTED_REASONS)[number]
+
+export type MatchRowStatus = 'new' | 'shortlisted' | 'rejected' | 'requalified' | 'not-interested'
+
+/** v0.4 · C2 Alignment states (candidate side & client/prospect side, in either order) */
+export type CandidateSideState = 'not-asked' | 'asked' | 'interested' | 'not-interested'
+export type ClientSideState = 'not-sent' | 'sent' | 'interested' | 'passed'
+export type ProspectSideState = 'not-pitched' | 'pitched' | 'interested' | 'passed'
+
+export interface MatchAlignment {
+  candidateSide: CandidateSideState
+  clientSide: ClientSideState
+  prospectSide: ProspectSideState
+  updatedBy: string
+  at: string
+}
 
 export interface Match {
   id: string
@@ -150,11 +228,13 @@ export interface Match {
   chips: MatchChip[]
   status: MatchRowStatus
   rejectReason?: string
+  /** v0.4 · C10 reason when status === 'not-interested' */
+  notInterestedReason?: NotInterestedReason
   /** after-rerun delta tag (N9) */
   delta?: 'new' | 'moved' | 'requalified'
-  /** v0.3 · T2 — false = passed stage 1 but not AI-scored yet (band/score/reason are placeholders) */
+  /** v0.3 · T2 — false = passed stage 1 but not AI-scored yet */
   scored: boolean
-  /** v0.3 · T2 — skipped for scoring during pruning */
+  /** v0.3 · T2 — legacy skip flag (v0.4 cuts Skip for scoring; pruning = Reject) */
   skipped?: boolean
   /** v0.3 · T2 — which run scored it */
   scoredInRun?: number
@@ -164,6 +244,18 @@ export interface Match {
   scoredOnResumeId?: string
   /** v0.3 · T7 — evidence chips for client-ask must-haves with no column */
   askEvidence?: { askId: string; label: string; found: boolean }[]
+  /** v0.4 · C5 — true when scored automatically on role intake auto-scan */
+  suggested?: boolean
+  /** v0.4 · C6 — Recommendation: Strong · Mild · Not recommended (no numeric score on screen) */
+  recommendation?: Recommendation
+  /** v0.4 · C6 — Requirements met breakdown (e.g. 4/4 requirements) */
+  requirementsMet?: RequirementMetItem[]
+  /** v0.4 · C6 — Up to 3 green flags (strengths beyond requirements) */
+  greenFlags?: string[]
+  /** v0.4 · C6 — Up to 3 red flags (risks) */
+  redFlags?: string[]
+  /** v0.4 · C2 — Bilateral alignment status for shortlisted matches */
+  alignment?: MatchAlignment
 }
 
 export interface Eliminated {
@@ -178,11 +270,21 @@ export interface RoleMatchForCandidate {
   score: number
   reason: string
   chips: MatchChip[]
-  status: 'new' | 'shortlisted' | 'not-a-fit'
+  status: 'new' | 'shortlisted' | 'not-a-fit' | 'not-interested'
+  notInterestedReason?: NotInterestedReason
+  recommendation?: Recommendation
+  requirementsMet?: RequirementMetItem[]
+  greenFlags?: string[]
+  redFlags?: string[]
 }
 
 /** v0.3 · T6 — "Tailored" is now "Editable" (edit in app, refine with a prompt, PDF + DOCX) */
 export type OutputType = 'Masked' | 'Editable' | 'As-is'
+/** v0.4 · C12 — Two resume styles to test in Probe 2 */
+export type OutputStyle = 'creative' | 'traditional'
+/** v0.4 · C12 — Delivery format (PDF, read-only web link, or DOCX) */
+export type OutputDelivery = 'pdf' | 'link' | 'docx'
+
 export interface OutputRevision {
   n: number
   instruction: string // "Shorter, lead with payments" · "Generated" · "Hand edit"
@@ -207,10 +309,17 @@ export interface ResumeOutput {
   /** v0.3 · T6 — refinement revisions (latest last) */
   revisions?: OutputRevision[]
   staleReason?: string
+  /** v0.4 · C12 — creative vs traditional Word-style */
+  style?: OutputStyle
+  /** v0.4 · C12 — pdf / link / docx */
+  delivery?: OutputDelivery
+  /** v0.4 · C12 — read-only shareable web link & on/off switch */
+  shareUrl?: string
+  linkActive?: boolean
 }
 
 /* ==========================================================================
-   v0.3 additions — PRD v0.3 §7
+   v0.3 & v0.4 additions
    ========================================================================== */
 
 /** T5 · three fixed roles */
@@ -228,9 +337,9 @@ export interface TeamMember {
 export type Permission =
   | 'addRecords' | 'editFacts' | 'score' | 'shortlist' | 'reject'
   | 'genMasked' | 'genIdentity' | 'copyMasked' | 'copyFull' | 'signTake'
-  | 'exportCsv' | 'settings' | 'delete'
+  | 'exportCsv' | 'settings' | 'delete' | 'drafts'
 
-/** T4 · Domain column (Decision #5 — ~10 values, maintained in Settings → Skill list) */
+/** T4 · Domain column (Decision #18 — ~10 values, maintained in Settings → Skill list) */
 export const DOMAINS = ['B2B SaaS', 'Payments/Fintech', 'Healthtech', 'Marketplace', 'Consumer', 'DevTools', 'AI/ML', 'E-commerce', 'Edtech', 'Enterprise'] as const
 
 /** T3 · one profile, one or more resumes, each with versions */
@@ -252,13 +361,13 @@ export interface Resume {
   versions: ResumeVersion[]
 }
 
-/** T7 · client asks */
+/** T7 · client asks (backward compatible with v0.3; unified into RoleRequirement in v0.4) */
 export type ClientAskType = 'must-column' | 'must-signal' | 'nice' | 'context'
 export const CLIENT_ASK_TYPES: { value: ClientAskType; label: string; effect: string }[] = [
-  { value: 'must-column', label: 'Must-have (column)', effect: 'Becomes a must-have rule. Matches go out of date.' },
-  { value: 'must-signal', label: 'Must-have (no column)', effect: 'Scored as a high-weight requirement with an evidence chip.' },
-  { value: 'nice', label: 'Nice-to-have', effect: 'A ranking signal. Matches go out of date.' },
-  { value: 'context', label: 'Context', effect: 'Not used for matching. Shown on the role and to the pitch and take prompts.' },
+  { value: 'must-column', label: 'Eliminates (column)', effect: 'Hard filter on a stored column. Re-runs stage 1 for free.' },
+  { value: 'must-signal', label: 'Improves score (signal)', effect: 'Checked during AI scoring with an evidence line.' },
+  { value: 'nice', label: 'Improves score (nice-to-have)', effect: 'A ranking signal during AI scoring.' },
+  { value: 'context', label: 'Context', effect: 'Shown on the role and passed to the email and take prompts.' },
 ]
 export interface ClientAsk {
   id: string
@@ -266,7 +375,7 @@ export interface ClientAsk {
   text: string
   type: ClientAskType
   column?: string // when must-column: "Location" · "Work authorization"…
-  source: 'Call' | 'Email' | 'Chat'
+  source: 'Call' | 'Email' | 'Chat' | 'JD'
   saidBy?: string // "Sean (VP Product)"
   when: string
   addedBy: string
@@ -286,6 +395,25 @@ export interface Take {
   approvedAt?: string
   editedSinceSigning?: boolean
   sourceCallIds: string[]
+}
+
+/** v0.4 · C3 / C4 / §7.5 / §7.7 Email drafts & Probe 1 */
+export type EmailDraftKind = 'interest-check' | 'profile-share' | 'shortlist' | 'pitch' | 'roles-for-you'
+export interface EmailDraftRecord {
+  id: string
+  kind: EmailDraftKind
+  roleId?: string
+  candidateIds: string[]
+  recipientName: string
+  recipientEmail: string
+  recipientRelation: 'Onboarded client' | 'New prospect' | 'Candidate'
+  subject: string
+  body: string
+  method: 'in-product' | 'copied-prompt'
+  rounds: number
+  markedSentAt?: string
+  gmailDraftId?: string
+  delivery?: OutputDelivery
 }
 
 /** T5 · prompt registry */

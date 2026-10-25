@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Pencil, MoreHorizontal, Upload, Phone, PenLine, Trash2, Copy, FileText, Download, RefreshCw, HelpCircle, ListPlus,
   Check, X, User, Briefcase, Layers, Sparkles, SlidersHorizontal, ShieldCheck, StickyNote, MessageSquareText, Link2, Lightbulb, AlertTriangle, UserX,
-  Star, GitCompare, Wand2, Files,
+  Star, GitCompare, Wand2, Files, ExternalLink, Plus, Mail, ChevronDown,
 } from 'lucide-react'
 import { ScrollPage, useTopBar } from '../shell/AppShell'
 import {
@@ -13,7 +13,7 @@ import {
   AIStepper, Banner, CompletenessMeter, Dialog, FilterChip, InfoNote, MatchChipView, MatchRow, NotCaptured, ProposedChangesList, SourceBadge, WorkAuthChip, useStepper,
 } from '../components/hs'
 import { GatedButton, SelectionBar, SignedTakeBlock, useListSelection } from '../components/v3'
-import { ConfirmDialog, ProposedChangesDialog, RejectDialog } from './Dialogs'
+import { ConfirmDialog, CopyEmailDialog, NotInterestedDialog, ProposedChangesDialog } from './Dialogs'
 import { useApp, useWireframeState, whoCanText } from '../store/AppStore'
 import { callChangesPriya } from '../data/mock'
 import { CATEGORIES } from '../data/types'
@@ -34,6 +34,7 @@ const WF_STATES = [
   { id: 'enriched', label: 'After call enrichment' },
   { id: 'noroles', label: 'No matching roles' },
   { id: 'outofdate', label: 'Out-of-date matches' },
+  { id: 'not-interested', label: 'Mark not interested (D-10)' },
   { id: 'tworesumes', label: 'Two resumes (Priya · Resumes tab)' },
   { id: 'd07', label: 'D-07 Update or another resume' },
   { id: 'take-empty', label: 'Take · no call yet (Dev K.)' },
@@ -41,7 +42,7 @@ const WF_STATES = [
   { id: 'take-signed', label: 'Take · signed (Priya S.; View as Vandit for “Signed by you”)' },
 ]
 /** Wireframe states that show a specific example record */
-const WF_RECORD: Record<string, string> = { tworesumes: 'priya', 'take-empty': 'dev', 'take-draft': 'ana', 'take-signed': 'priya' }
+const WF_RECORD: Record<string, string> = { tworesumes: 'priya', 'take-empty': 'dev', 'take-draft': 'ana', 'take-signed': 'priya', 'not-interested': 'priya' }
 
 /* ---------- Ask list helpers (§5.3: must-have questions first) ---------- */
 const MUST_HAVE_HINTS = ['relocat', 'visa', 'sponsorship', 'transfer', 'remote', 'hybrid', 'onsite', 'located', 'years']
@@ -75,8 +76,30 @@ const MORE_ROLES: Role[] = [
   },
 ]
 const MORE_ROWS: RoleMatchForCandidate[] = [
-  { roleId: 'tally-pm', rank: 0, band: 'Good', score: 79, status: 'new', reason: 'Payments PM role in Austin; passes now that she is open to relocating there.', chips: [{ kind: 'evidence', label: 'Payments' }, { kind: 'evidence', label: 'Open to Austin' }, { kind: 'evidence', label: 'H-1B · transfer supported' }, { kind: 'evidence', label: 'SQL' }] },
-  { roleId: 'meridian-spm', rank: 0, band: 'Good', score: 76, status: 'new', reason: 'Billing PM role in NYC; Stripe billing work is direct evidence.', chips: [{ kind: 'evidence', label: 'Billing' }, { kind: 'evidence', label: 'Open to NYC' }, { kind: 'evidence', label: 'SQL' }, { kind: 'gap', label: 'Pay +5% over range' }] },
+  {
+    roleId: 'tally-pm', rank: 0, band: 'Good', recommendation: 'Strong', score: 79, status: 'new',
+    reason: 'Payments PM role in Austin; passes now that she is open to relocating there.',
+    requirementsMet: [
+      { reqId: 'tally-1', label: '5+ yrs PM', result: 'met', evidence: '7 yrs' },
+      { reqId: 'tally-2', label: 'Austin hybrid', result: 'met', evidence: 'Open to Austin (call)' },
+      { reqId: 'tally-3', label: 'Payments & SQL', result: 'met', evidence: 'Payments + SQL confirmed' },
+    ],
+    greenFlags: ['Open to relocating to Austin (confirmed on call)', 'SQL confirmed on call'],
+    redFlags: [],
+    chips: [{ kind: 'evidence', label: 'Payments' }, { kind: 'evidence', label: 'Open to Austin' }, { kind: 'evidence', label: 'H-1B · transfer supported' }, { kind: 'evidence', label: 'SQL' }],
+  },
+  {
+    roleId: 'meridian-spm', rank: 0, band: 'Good', recommendation: 'Mild', score: 76, status: 'new',
+    reason: 'Billing PM role in NYC; Stripe billing work is direct evidence.',
+    requirementsMet: [
+      { reqId: 'mer-1', label: '6+ yrs PM', result: 'met', evidence: '7 yrs' },
+      { reqId: 'mer-2', label: 'NYC hybrid', result: 'met', evidence: 'Open to NYC (call)' },
+      { reqId: 'mer-3', label: 'Billing & SQL', result: 'met', evidence: 'Stripe Billing PM' },
+    ],
+    greenFlags: ['Direct Stripe Billing PM experience'],
+    redFlags: ['Pay expectation +5% over range'],
+    chips: [{ kind: 'evidence', label: 'Billing' }, { kind: 'evidence', label: 'Open to NYC' }, { kind: 'evidence', label: 'SQL' }, { kind: 'gap', label: 'Pay +5% over range' }],
+  },
 ]
 
 /* ==========================================================================
@@ -388,7 +411,11 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
   const [askFlash, setAskFlash] = useState(false)
   const [dlg, setDlg] = useState<null | 'addCall' | 'callChanges' | 'd07' | 'compareResume' | 'delete' | 'message'>(null)
   const [compareTarget, setCompareTarget] = useState<{ resume: Resume; versionN: number } | null>(null)
-  const [notFit, setNotFit] = useState<string | null>(null)
+  const [notInterestedRoleIds, setNotInterestedRoleIds] = useState<string[]>([])
+  const [emailDlgOpen, setEmailDlgOpen] = useState(false)
+  const [addingLink, setAddingLink] = useState(false)
+  const [newLinkLabel, setNewLinkLabel] = useState('')
+  const [newLinkUrl, setNewLinkUrl] = useState('')
   const [finding, setFinding] = useState(false)
   const [calls, setCalls] = useState<string[]>([])
 
@@ -396,7 +423,9 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
   const baseRows = wf === 'noroles' ? [] : (app.rolesForCandidate[c.id] ?? [])
   const extraRows = ranked && wf !== 'noroles' ? MORE_ROWS.map(r => ({ ...r, status: extraStatus[r.roleId] ?? r.status })) : []
   const rows = [...baseRows, ...extraRows].sort((a, b) => b.score - a.score)
-  const selectableRoleIds = useMemo(() => rows.filter(r => r.status !== 'not-a-fit').map(r => r.roleId), [rows])
+  const activeRows = useMemo(() => rows.filter(r => r.status !== 'not-interested'), [rows])
+  const notInterestedRoles = useMemo(() => rows.filter(r => r.status === 'not-interested'), [rows])
+  const selectableRoleIds = useMemo(() => activeRows.filter(r => r.status !== 'not-a-fit').map(r => r.roleId), [activeRows])
   const sel = useListSelection(selectableRoleIds)
 
   // Reset local review flags when the reviewer jumps between states
@@ -407,10 +436,14 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
     sel.clear(); setEditing({})
     const targetRecord = WF_RECORD[wf]
     if (targetRecord && targetRecord !== stored.id) {
-      navigate(`/candidates/${targetRecord}${wf === 'tworesumes' ? '?tab=resumes' : ''}`, { replace: true })
+      navigate(`/candidates/${targetRecord}${wf === 'tworesumes' ? '?tab=resumes' : wf === 'not-interested' ? '?tab=roles' : ''}`, { replace: true })
       return
     }
     if (wf === 'noroles' || wf === 'outofdate') setTab('roles')
+    if (wf === 'not-interested') {
+      setTab('roles')
+      setNotInterestedRoleIds([baseRows[0]?.roleId ?? 'northwind-spm'])
+    }
     if (wf === 'enriched') { setRanked(false); setTab('profile') }
     if (wf === 'low' || wf === 'high') setTab('profile')
     if (wf === 'tworesumes') setTab('resumes')
@@ -522,7 +555,22 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
   }
 
   const deleteCount = outputsFor.length
-  const notFitRole = notFit ? roleOf(notFit) : undefined
+
+  const handleAddSourceLink = () => {
+    const url = newLinkUrl.trim()
+    if (!url) return
+    const label = newLinkLabel.trim() || (/linkedin/i.test(url) ? 'LinkedIn profile' : /dropbox/i.test(url) ? 'Dropbox resume' : 'Google Drive resume')
+    const linkItem = { label, url, kind: /linkedin/i.test(url) ? 'LinkedIn' : /dropbox/i.test(url) ? 'Dropbox' : 'Drive', addedAt: 'Just now' }
+    app.updateCandidate(stored.id, {
+      updated: 'Just now',
+      sourceLinks: [linkItem, ...(stored.sourceLinks ?? [])],
+    })
+    app.log({ what: `Added source link · ${label}`, record: stored.name, recordHref: `/candidates/${stored.id}`, kind: 'Candidates' })
+    app.toast('Added source link')
+    setNewLinkLabel('')
+    setNewLinkUrl('')
+    setAddingLink(false)
+  }
 
   return (
     <ScrollPage className="max-w-[1440px]">
@@ -572,7 +620,7 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
       <div className="border-b border-border pb-2">
         <PillTabs value={tab} onChange={setTab} tabs={[
           { value: 'profile', label: 'Profile' },
-          { value: 'roles', label: 'Matching roles', count: rows.filter(r => r.status !== 'not-a-fit').length },
+          { value: 'roles', label: 'Matching roles', count: activeRows.filter(r => r.status !== 'not-a-fit').length },
           { value: 'resumes', label: 'Resumes', count: resumes.length + outputsFor.length },
           { value: 'history', label: 'History' },
         ]} />
@@ -658,34 +706,125 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
                   <p className="mt-2 text-xs text-muted-foreground">Ranks only {c.name} for these 2 roles.</p>
                 </BezelCard>
               )}
-              <BezelCard icon={<FileText />} title="Sources" action={<Button variant="ghost" size="sm" icon={<Phone />} onClick={() => setDlg('addCall')}>Add call</Button>}>
-                <ul className="space-y-2.5 text-sm">
-                  {resumes.map(r => {
-                    const latest = r.versions[r.versions.length - 1]
-                    return (
-                      <li key={r.id} className="flex items-center gap-2">
-                        <FileText className="size-3.5 text-muted-foreground" />
-                        <span className="flex-1 truncate">
-                          {resumes.length > 1 ? `${r.label} resume` : 'Resume'} v{latest?.n ?? 1}
-                          {r.isPrimary && resumes.length > 1 && <span className="eyebrow ml-2 text-[9px] text-gray-1000">primary</span>}
-                          {resumes.length === 1 && <span className="eyebrow ml-2 text-[9px] text-gray-1000">current</span>}
-                        </span>
-                        <span className="text-xs text-muted-foreground">{latest?.uploadedAt ?? c.updated}</span>
-                      </li>
-                    )
-                  })}
-                  {calls.map(x => <li key={x} className="flex items-center gap-2"><Phone className="size-3.5 text-muted-foreground" /><span className="flex-1">{x.split(' · Just now')[0]}</span><span className="text-xs text-muted-foreground">Just now</span></li>)}
-                  {(c.calls ?? []).map(call => (
-                    <li key={call.id} className="flex items-center gap-2">
-                      <Phone className="size-3.5 text-muted-foreground" />
-                      <span className="flex-1 truncate">{call.label} · {call.by}</span>
-                      <span className="text-xs text-muted-foreground">{call.when}</span>
-                    </li>
-                  ))}
-                  {enriched && !(c.calls?.length) && calls.length === 0 && (
-                    <li className="flex items-center gap-2"><Phone className="size-3.5 text-muted-foreground" /><span className="flex-1">Intro call · Granola</span><span className="text-xs text-muted-foreground">Just now</span></li>
-                  )}
-                </ul>
+              <BezelCard
+                icon={<FileText />}
+                title="Sources"
+                action={
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="sm" icon={<Plus />} onClick={() => setAddingLink(v => !v)}>Add link</Button>
+                    <Button variant="ghost" size="sm" icon={<Phone />} onClick={() => setDlg('addCall')}>Add call</Button>
+                  </div>
+                }
+              >
+                <div className="space-y-3">
+                  {/* Source links (C9) */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="eyebrow text-[10px] text-gray-1000">Source links</span>
+                      {!addingLink && (
+                        <button
+                          type="button"
+                          onClick={() => setAddingLink(true)}
+                          className="inline-flex items-center gap-0.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                        >
+                          <Plus className="size-3" /> Add link
+                        </button>
+                      )}
+                    </div>
+                    {addingLink && (
+                      <div className="space-y-2 rounded-xl border border-border bg-background p-2.5">
+                        <Input
+                          aria-label="Source link label"
+                          value={newLinkLabel}
+                          onChange={e => setNewLinkLabel(e.target.value)}
+                          placeholder="Label (e.g. Google Drive — Product resume)"
+                        />
+                        <Input
+                          aria-label="Source link URL"
+                          value={newLinkUrl}
+                          onChange={e => setNewLinkUrl(e.target.value)}
+                          placeholder="https://drive.google.com/file/d/… or linkedin.com/in/…"
+                        />
+                        <div className="flex items-center justify-between gap-2 pt-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setNewLinkLabel('Dropbox — Growth resume')
+                              setNewLinkUrl('https://dropbox.com/s/9xPriyaGrowth/Priya_Growth.pdf')
+                            }}
+                          >
+                            Use example
+                          </Button>
+                          <div className="flex gap-1.5">
+                            <Button variant="ghost" size="sm" onClick={() => setAddingLink(false)}>Cancel</Button>
+                            <Button variant="primary" size="sm" disabled={!newLinkUrl.trim()} onClick={handleAddSourceLink}>Save link</Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {(c.sourceLinks && c.sourceLinks.length > 0) ? (
+                      <ul className="space-y-2 text-sm">
+                        {c.sourceLinks.map(l => {
+                          const shortUrl = l.url.replace(/^https?:\/\/(www\.)?/, '')
+                          return (
+                            <li key={l.url + l.label} className="flex items-start gap-2">
+                              <Link2 className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
+                              <div className="min-w-0 flex-1">
+                                <a
+                                  href={l.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  onClick={e => { e.preventDefault(); app.toast(`Opened ${l.label}`) }}
+                                  className="group inline-flex max-w-full items-center gap-1 font-medium text-foreground hover:underline"
+                                >
+                                  <span className="truncate">{l.label}</span>
+                                  <ExternalLink className="size-3 shrink-0 text-muted-foreground group-hover:text-foreground" />
+                                </a>
+                                <div className="truncate font-mono text-[11px] text-muted-foreground">
+                                  {shortUrl} · {l.addedAt}
+                                </div>
+                              </div>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">No external resume or LinkedIn links attached yet.</p>
+                    )}
+                  </div>
+
+                  <div className="border-t border-border pt-2.5">
+                    <div className="eyebrow mb-2 text-[10px] text-gray-1000">Files &amp; calls</div>
+                    <ul className="space-y-2.5 text-sm">
+                      {resumes.map(r => {
+                        const latest = r.versions[r.versions.length - 1]
+                        return (
+                          <li key={r.id} className="flex items-center gap-2">
+                            <FileText className="size-3.5 text-muted-foreground" />
+                            <span className="flex-1 truncate">
+                              {resumes.length > 1 ? `${r.label} resume` : 'Resume'} v{latest?.n ?? 1}
+                              {r.isPrimary && resumes.length > 1 && <span className="eyebrow ml-2 text-[9px] text-gray-1000">primary</span>}
+                              {resumes.length === 1 && <span className="eyebrow ml-2 text-[9px] text-gray-1000">current</span>}
+                            </span>
+                            <span className="text-xs text-muted-foreground">{latest?.uploadedAt ?? c.updated}</span>
+                          </li>
+                        )
+                      })}
+                      {calls.map(x => <li key={x} className="flex items-center gap-2"><Phone className="size-3.5 text-muted-foreground" /><span className="flex-1">{x.split(' · Just now')[0]}</span><span className="text-xs text-muted-foreground">Just now</span></li>)}
+                      {(c.calls ?? []).map(call => (
+                        <li key={call.id} className="flex items-center gap-2">
+                          <Phone className="size-3.5 text-muted-foreground" />
+                          <span className="flex-1 truncate">{call.label} · {call.by}</span>
+                          <span className="text-xs text-muted-foreground">{call.when}</span>
+                        </li>
+                      ))}
+                      {enriched && !(c.calls?.length) && calls.length === 0 && (
+                        <li className="flex items-center gap-2"><Phone className="size-3.5 text-muted-foreground" /><span className="flex-1">Intro call · Granola</span><span className="text-xs text-muted-foreground">Just now</span></li>
+                      )}
+                    </ul>
+                  </div>
+                </div>
                 <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">Last edited by Vandit D. · {c.updated}</p>
               </BezelCard>
             </aside>
@@ -722,15 +861,16 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
                     app.toast(`Added ${c.name} to ${count} shortlist${count === 1 ? '' : 's'}`)
                     sel.clear()
                   }}>Add to shortlists</GatedButton>
-                  <Button variant="outline" size="sm" icon={<Copy />} onClick={() => setDlg('message')}>Copy message for candidate</Button>
+                  <Button variant="outline" size="sm" icon={<X />} onClick={() => setNotInterestedRoleIds(sel.selected)}>Mark not interested</Button>
+                  <GatedButton perm="drafts" variant="outline" size="sm" icon={<Mail />} onClick={() => setEmailDlgOpen(true)}>Draft “Roles for you” email</GatedButton>
                 </SelectionBar>
               ) : (
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span className="font-mono tnum">{rows.length}</span> open roles where {c.name} passes the must-haves · client and prospect roles · select 2–3 to pitch
+                  <span className="font-mono tnum">{activeRows.length}</span> open roles where {c.name} passes the must-haves · client and prospect roles · select 2–3 to pitch
                 </div>
               )}
               <ul className={cn('space-y-2', sel.selected.length > 0 && 'any-selected')}>
-                {rows.map((r, i) => {
+                {activeRows.map((r, i) => {
                   const role = roleOf(r.roleId)
                   if (!role) return null
                   const isSel = sel.isSelected(r.roleId)
@@ -742,6 +882,12 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
                         tag={<CompanyTypeTag type={role.companyType} />}
                         role={role}
                         band={r.band} score={r.score} reason={r.reason} chips={r.chips}
+                        recommendation={r.recommendation}
+                        suggested={(r as { suggested?: boolean }).suggested}
+                        requirementsMet={r.requirementsMet}
+                        greenFlags={r.greenFlags}
+                        redFlags={r.redFlags}
+                        notInterestedReason={r.notInterestedReason}
                         status={r.status} dimmed={outOfDate}
                         selected={isSel}
                         onToggleSelect={r.status !== 'not-a-fit' ? shift => sel.toggle(r.roleId, shift) : undefined}
@@ -749,9 +895,9 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
                           shortlist: app.can('shortlist') ? undefined : whoCanText('shortlist'),
                           reject: app.can('reject') ? undefined : whoCanText('reject'),
                         }}
-                        shortlistLabel="Add to shortlist" rejectLabel="Not a fit"
+                        shortlistLabel="Add to shortlist" rejectLabel="Not interested"
                         onShortlist={() => addToShortlist(r.roleId)}
-                        onReject={() => setNotFit(r.roleId)}
+                        onReject={() => setNotInterestedRoleIds([r.roleId])}
                         onUndo={() => setRoleStatus(r.roleId, 'new')}
                         onAddToAsk={ch => addAsk(`Confirm: ${ch.label.toLowerCase()}?`)}
                         onClick={app.role(r.roleId) ? () => navigate(`/roles/${r.roleId}`) : undefined}
@@ -760,6 +906,49 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
                   )
                 })}
               </ul>
+
+              {notInterestedRoles.length > 0 && (
+                <details className="group rounded-xl border border-dashed border-border bg-card/60 px-4 py-3">
+                  <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-medium text-muted-foreground hover:text-foreground">
+                    <span>Not interested ({notInterestedRoles.length}) · never suggested again for these roles</span>
+                    <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <ul className="mt-3 space-y-2">
+                    {notInterestedRoles.map((r, i) => {
+                      const role = roleOf(r.roleId)
+                      if (!role) return null
+                      return (
+                        <li key={r.roleId}>
+                          <MatchRow
+                            rank={activeRows.length + i + 1}
+                            title={`${role.title} · ${role.company}`}
+                            subtitle={`${role.location} · ${role.workMode.toLowerCase()} · ${role.pay}`}
+                            tag={<CompanyTypeTag type={role.companyType} />}
+                            role={role}
+                            band={r.band}
+                            score={r.score}
+                            reason={r.reason}
+                            chips={r.chips}
+                            recommendation={r.recommendation}
+                            requirementsMet={r.requirementsMet}
+                            greenFlags={r.greenFlags}
+                            redFlags={r.redFlags}
+                            notInterestedReason={r.notInterestedReason}
+                            status="not-interested"
+                            onUndo={() => {
+                              if (MORE_ROLES.some(mr => mr.id === r.roleId)) {
+                                setExtraStatus(s => ({ ...s, [r.roleId]: 'new' }))
+                              } else {
+                                app.undoNotInterested(c.id, r.roleId)
+                              }
+                            }}
+                          />
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </details>
+              )}
             </>
           )}
         </div>
@@ -929,16 +1118,27 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
           app.toast(`Deleted ${c.name}`)
           navigate('/candidates')
         }} />
-      <RejectDialog open={!!notFit} onClose={() => setNotFit(null)} candidateName={c.name} roleTitle={notFitRole?.title ?? ''}
-        title={`Not a fit: ${notFitRole?.title ?? ''} · ${notFitRole?.company ?? ''}`}
-        onConfirm={reason => {
-          if (!notFit) return
-          const rid = notFit
-          setRoleStatus(rid, 'not-a-fit')
-          sel.setSelected(s => s.filter(x => x !== rid))
-          app.log({ what: `Marked not a fit · ${reason}`, record: `${notFitRole?.title} — ${notFitRole?.company}`, recordHref: `/roles/${rid}`, kind: 'Decisions' })
-          app.toast(`Marked not a fit for ${notFitRole?.title}`, { undo: () => setRoleStatus(rid, 'new') })
-        }} />
+      <NotInterestedDialog
+        open={notInterestedRoleIds.length > 0}
+        onClose={() => setNotInterestedRoleIds([])}
+        candidateId={c.id}
+        roleIds={notInterestedRoleIds}
+        onConfirmed={() => {
+          notInterestedRoleIds.forEach(rid => {
+            if (MORE_ROLES.some(mr => mr.id === rid)) {
+              setExtraStatus(s => ({ ...s, [rid]: 'not-interested' }))
+            }
+          })
+          sel.setSelected(s => s.filter(x => !notInterestedRoleIds.includes(x)))
+        }}
+      />
+      <CopyEmailDialog
+        open={emailDlgOpen}
+        onClose={() => setEmailDlgOpen(false)}
+        initialKind="roles-for-you"
+        candidateIds={[c.id]}
+        roleId={sel.selected[0] ?? activeRows[0]?.roleId ?? c.cameInForRole ?? null}
+      />
       <CandidateMessageDialog open={dlg === 'message'} onClose={() => setDlg(null)} c={c} roles={sel.selected.map(roleOf).filter((r): r is Role => !!r)} />
     </ScrollPage>
   )

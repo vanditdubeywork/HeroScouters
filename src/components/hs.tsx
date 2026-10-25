@@ -5,7 +5,8 @@ import {
 } from 'lucide-react'
 import { Avatar, Button, Checkbox, Kbd, Menu, Skeleton, cn, type MenuItem } from './ui'
 import { useApp } from '../store/AppStore'
-import type { Band, MatchChip, MatchRowStatus, ProposedChange, SourceKind, WorkAuth, Candidate, Role } from '../data/types'
+import { RecommendationPill, RecommendationBlock } from './v3'
+import type { Band, MatchChip, MatchRowStatus, ProposedChange, SourceKind, WorkAuth, Candidate, Role, Recommendation, RequirementMetItem, NotInterestedReason } from '../data/types'
 
 /* ==========================================================================
    HeroScouter components N1–N15 (Product Design Doc §4.4)
@@ -30,23 +31,26 @@ export function SourceBadge({ kind, className }: { kind: SourceKind; className?:
   )
 }
 
-/* ---------- N5 · Fit band chip ---------- */
+/* ---------- N5 · Recommendation chip (v0.4 §7.2: Strong / Mild / Not recommended, no numeric score) ---------- */
 const BAND_TIP: Record<Band, string> = {
-  Strong: 'Strong: meets every must-have on evidence. High skill overlap. No assumed must-have fields.',
-  Good: 'Good: meets must-haves, with at most one predicted skill or one minor gap.',
-  Stretch: 'Stretch: passes only because a must-have value is assumed, or relies on several predicted skills.',
+  Strong: 'Strong recommendation: meets requirements on direct evidence with clear green flags.',
+  Good: 'Mild recommendation: meets hard requirements, with predicted skills or minor caveats.',
+  Stretch: 'Not recommended: passed Stage 1 hard filters, but lacks core role signals.',
 }
-export function BandChip({ band, score, forceScore }: { band: Band; score?: number; forceScore?: boolean }) {
-  const { showScore } = useApp()
+export function BandChip({ band }: { band: Band; score?: number; forceScore?: boolean }) {
+  const recLabel: Record<Band, Recommendation> = {
+    Strong: 'Strong',
+    Good: 'Mild',
+    Stretch: 'Not recommended',
+  }
   const style: Record<Band, string> = {
     Strong: 'bg-primary text-primary-foreground border-primary',
     Good: 'bg-background text-foreground border-gray-1100',
-    Stretch: 'bg-background text-gray-1100 border-dashed border-gray-800',
+    Stretch: 'bg-background text-muted-foreground border-dashed border-gray-800',
   }
   return (
     <span title={BAND_TIP[band]} className="inline-flex items-center gap-1.5">
-      <span className={cn('inline-flex h-[22px] items-center rounded-md border px-2 text-[11px] btn-type', style[band])}>{band}</span>
-      {(showScore || forceScore) && score !== undefined && <span className="font-mono text-[11px] text-gray-1000 tnum">{score}</span>}
+      <span className={cn('inline-flex h-[22px] items-center rounded-md border px-2 text-[11px] btn-type whitespace-nowrap', style[band])}>{recLabel[band]}</span>
     </span>
   )
 }
@@ -312,12 +316,13 @@ export function DataTable<T extends { id: string }>({
   )
 }
 
-/* ---------- N2 · Match row (Simplified 3/4 profile + 1/4 centered actions) ---------- */
+/* ---------- N2 · Match row (v0.4 §7.2: Requirements met 4/4, green/red flags, Strong/Mild/Not recommended, no numeric score) ---------- */
 export function MatchRow({
-  rank, initials, title, subtitle, tag, band, score, reason, chips, status, rejectReason, delta, focused,
+  rank, initials, title, subtitle, tag, band, score: _score, reason, chips, status, rejectReason, delta, focused,
   candidate, role,
   onPreview, onShortlist, onReject, onUndo, onAddToAsk, shortlistLabel = 'Shortlist', rejectLabel = 'Reject', onClick,
   selected, onToggleSelect, notScored, skipped, meta, footer, actionsDisabled,
+  recommendation, suggested, requirementsMet, greenFlags, redFlags, notInterestedReason,
 }: {
   rank: number; initials?: string; title: string; subtitle: string; tag?: React.ReactNode
   band: Band; score: number; reason: string; chips: MatchChip[]
@@ -326,24 +331,27 @@ export function MatchRow({
   candidate?: Candidate; role?: Role
   onPreview?: () => void; onShortlist?: () => void; onReject?: () => void; onUndo?: () => void; onAddToAsk?: (c: MatchChip) => void
   shortlistLabel?: string; rejectLabel?: string; onClick?: () => void
-  /** v0.3 · T1 selection (checkbox shows on hover or when anything is selected) */
   selected?: boolean; onToggleSelect?: (shift: boolean) => void
-  /** v0.3 · T2 passed stage 1 but not AI-scored: facts only, no band, no reason */
   notScored?: boolean; skipped?: boolean
-  /** v0.3 · extra inline meta under the reason (e.g. "Scored on Growth resume · Use Product resume", client-ask chips) */
   meta?: React.ReactNode; footer?: React.ReactNode
-  /** v0.3 · T5 { shortlist?: reason; reject?: reason } — visible but disabled with "who can" */
   actionsDisabled?: { shortlist?: string; reject?: string }
+  /** v0.4 · C6 / C10 */
+  recommendation?: Recommendation; suggested?: boolean
+  requirementsMet?: RequirementMetItem[]; greenFlags?: string[]; redFlags?: string[]
+  notInterestedReason?: NotInterestedReason
 }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => { if (focused) ref.current?.focus({ preventScroll: false }) }, [focused])
 
-  if (status === 'rejected' || status === 'not-a-fit') {
+  if (status === 'rejected' || status === 'not-a-fit' || status === 'not-interested') {
+    const label = status === 'not-interested'
+      ? `Not interested${notInterestedReason ? ` · ${notInterestedReason}` : ''}`
+      : `${status === 'rejected' ? 'Rejected' : 'Not a fit'}${rejectReason ? ` · ${rejectReason}` : ''}`
     return (
       <div className="flex h-11 items-center gap-3 rounded-xl border border-dashed border-border bg-gray-100/60 px-4 text-sm text-muted-foreground">
-        <span className="font-mono text-[11px] tnum">#{rank}</span>
+        {!notScored && <span className="font-mono text-[11px] tnum">#{rank}</span>}
         <span className="truncate font-medium text-gray-1100">{title}</span>
-        <span className="text-xs">· {status === 'rejected' ? 'Rejected' : 'Not a fit'}{rejectReason ? ` · ${rejectReason}` : ''}</span>
+        <span className="text-xs">· {label}</span>
         {onUndo && <Button variant="link" className="ml-auto text-xs" onClick={onUndo}>Undo</Button>}
       </div>
     )
@@ -370,6 +378,8 @@ export function MatchRow({
       : []
 
   const approveText = shortlistLabel
+  const rec: Recommendation = recommendation ?? (band === 'Strong' ? 'Strong' : band === 'Good' ? 'Mild' : 'Not recommended')
+  const hasV4Breakdown = (requirementsMet && requirementsMet.length > 0) || (greenFlags && greenFlags.length > 0) || (redFlags && redFlags.length > 0)
 
   // When the 4-column facts strip is shown, omit evidence chips that merely repeat years, location/mode, or work auth
   const visibleChips = facts.length > 0
@@ -389,7 +399,7 @@ export function MatchRow({
       )}
     >
       <div className="grid grid-cols-1 gap-1 lg:grid-cols-4">
-        {/* ==================== 3/4 LEFT SECTION: Clean Profile & Match Summary (Click anywhere to preview) ==================== */}
+        {/* ==================== 3/4 LEFT SECTION: Clean Profile & Match Summary ==================== */}
         <div
           role={openPreview ? 'button' : undefined}
           tabIndex={openPreview ? 0 : undefined}
@@ -407,7 +417,7 @@ export function MatchRow({
         >
           {shortlisted && <span aria-hidden className="absolute top-3 bottom-3 left-0 w-[3px] rounded-r-full bg-success" />}
 
-          {/* Row 1: Identity + Band Score */}
+          {/* Row 1: Identity + Recommendation Pill (no numeric score on screen) */}
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               {onToggleSelect && (
@@ -416,7 +426,7 @@ export function MatchRow({
                   <span className="pointer-events-none"><Checkbox aria-label={`Select ${title}`} checked={!!selected} onChange={() => {}} /></span>
                 </span>
               )}
-              <span className="font-mono text-xs font-medium text-gray-1000 tnum">{notScored ? '—' : `#${rank}`}</span>
+              {!notScored && <span className="font-mono text-xs font-medium text-gray-1000 tnum">#{rank}</span>}
               {initials && <Avatar initials={initials} size={36} />}
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -436,8 +446,8 @@ export function MatchRow({
               </div>
             </div>
             {notScored
-              ? <span className={cn('eyebrow rounded-md border border-dashed px-1.5 py-0.5 text-[10px]', skipped ? 'border-gray-700 text-muted-foreground' : 'border-gray-800 text-gray-1100')}>{skipped ? 'Skipped' : 'Not scored'}</span>
-              : <BandChip band={band} score={score} />}
+              ? <span className={cn('eyebrow rounded-md border border-dashed px-1.5 py-0.5 text-[10px]', skipped ? 'border-gray-700 text-muted-foreground' : 'border-gray-800 text-gray-1100')}>Not scored</span>
+              : <RecommendationPill recommendation={rec} suggested={suggested} />}
           </div>
 
           {/* Row 2: 4-Column Structured Profile Facts */}
@@ -452,11 +462,20 @@ export function MatchRow({
             </div>
           )}
 
-          {/* Row 3: Plain-English Reason + Evidence Chips */}
+          {/* Row 3: Plain-English Reason + v0.4 Requirements Met / Flags Block */}
           {!notScored && (
             <div className="space-y-2">
               <p className="text-[13px] leading-snug text-gray-1100">“{reason}”</p>
-              {visibleChips.length > 0 && <ChipRow chips={visibleChips} onAddToAsk={onAddToAsk} />}
+              {hasV4Breakdown ? (
+                <RecommendationBlock
+                  requirementsMet={requirementsMet}
+                  greenFlags={greenFlags}
+                  redFlags={redFlags}
+                  onAskAssumed={onAddToAsk ? label => onAddToAsk({ kind: 'assumed', label }) : undefined}
+                />
+              ) : (
+                visibleChips.length > 0 && <ChipRow chips={visibleChips} onAddToAsk={onAddToAsk} />
+              )}
             </div>
           )}
           {meta && <div onClick={e => e.stopPropagation()}>{meta}</div>}
@@ -467,7 +486,7 @@ export function MatchRow({
           className="flex flex-col items-center justify-center gap-2 rounded-xl border border-border bg-card p-4 lg:col-span-1"
           onClick={e => e.stopPropagation()}
         >
-          {/* 1. Colored Approve / Shortlist Button */}
+          {/* 1. Colored Shortlist Button */}
           {onShortlist && (
             shortlisted ? (
               <button
@@ -525,21 +544,39 @@ export function MatchRow({
   )
 }
 
-/* ---------- §6.1 Funnel line ---------- */
-export function FunnelLine({ pool, pass, top, onSeeEliminated, eliminatedOpen }: { pool: number; pass: number; top: number; onSeeEliminated?: () => void; eliminatedOpen?: boolean }) {
-  const Step = ({ n, label }: { n: number; label: string }) => (
-    <span className="inline-flex items-baseline gap-1.5"><span className="font-mono text-sm font-medium text-foreground tnum">{n}</span><span className="text-xs text-muted-foreground">{label}</span></span>
+/* ---------- §7.2 Funnel line (v0.4: 412 in pool → 385 eliminated → 27 not scored → 5 suggested → 3 shortlisted) ---------- */
+export function FunnelLine({
+  pool, pass, top, onSeeEliminated, eliminatedOpen,
+  notScored, suggested, shortlisted,
+}: {
+  pool: number; pass: number; top: number; onSeeEliminated?: () => void; eliminatedOpen?: boolean
+  notScored?: number; suggested?: number; shortlisted?: number
+}) {
+  const elim = Math.max(0, pool - pass)
+  const Step = ({ n, label, muted }: { n: number; label: string; muted?: boolean }) => (
+    <span className="inline-flex items-baseline gap-1.5">
+      <span className={cn('font-mono text-sm font-medium tnum', muted ? 'text-muted-foreground' : 'text-foreground')}>{n}</span>
+      <span className="text-xs text-muted-foreground">{label}</span>
+    </span>
   )
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-border bg-secondary/60 px-4 py-2.5">
       <Step n={pool} label="in pool" />
       <span className="text-gray-800">→</span>
-      <Step n={pass} label="pass must-haves" />
+      <Step n={elim} label="eliminated" muted />
       <span className="text-gray-800">→</span>
-      <Step n={top} label="ranked, top shown" />
+      <Step n={notScored ?? Math.max(0, pass - top)} label="not scored" />
+      <span className="text-gray-800">→</span>
+      <Step n={suggested ?? top} label={suggested !== undefined ? 'suggested / scored' : 'scored'} />
+      {shortlisted !== undefined && (
+        <>
+          <span className="text-gray-800">→</span>
+          <Step n={shortlisted} label="shortlisted" />
+        </>
+      )}
       {onSeeEliminated && (
         <Button variant="link" className="ml-auto text-xs" onClick={onSeeEliminated} kbd="E">
-          {eliminatedOpen ? 'Hide eliminated' : `See ${pool - pass} eliminated`}
+          {eliminatedOpen ? 'Hide eliminated' : `See ${elim} eliminated`}
         </Button>
       )}
     </div>

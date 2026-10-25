@@ -1,17 +1,20 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
-  Sparkles, Sliders, FileText, Users, Plus, Trash2, ArrowRight, ShieldCheck, Check, Info, Terminal, Lock, RotateCcw, Eye, UserCircle, Globe,
+  Sparkles, Sliders, FileText, Users, Plus, Trash2, ArrowRight, ShieldCheck, Check, Info, Terminal, Lock, RotateCcw, Eye, UserCircle, Globe, Mail, Link2,
 } from 'lucide-react'
 import { useTopBar } from '../shell/AppShell'
 import {
-  Avatar, BezelCard, Button, Checkbox, ExampleMark, Field, Input, PageHeader, PillTabs, Select, Switch, Tag, Textarea, cn,
+  Avatar, BezelCard, Button, Checkbox, ExampleMark, Field, Input, PageHeader, PillTabs, Segmented, Select, Switch, Tag, Textarea, cn,
 } from '../components/ui'
 import { Dialog, InfoNote } from '../components/hs'
 import { signature } from '../components/v3'
 import { useViewAsWhile } from '../components/outputs'
 import { PERMISSIONS, SCORE_OPTIONS, SCORE_RUN_CAP, useApp, useWireframeState } from '../store/AppStore'
-import { CATEGORIES, LOCKED_RULES, SUBCATEGORIES, type AccessRole, type Category, type Permission, type PromptDef } from '../data/types'
+import {
+  CATEGORIES, ELIMINATOR_COLUMNS, LOCKED_RULES, SUBCATEGORIES,
+  type AccessRole, type Category, type OutputDelivery, type OutputStyle, type Permission, type PromptDef,
+} from '../data/types'
 
 /* ==========================================================================
    S-13 · Settings (admin + My profile) — PRD v0.3 §7.2, §7.4, §7.5, §7.8
@@ -138,7 +141,7 @@ const VALID_TABS: SettingsTab[] = ['matching', 'skills', 'prompts', 'templates',
 
 export function SettingsPage() {
   const app = useApp()
-  const { showScore, setShowScore, toast, log } = app
+  const { toast, log } = app
   const [params, setParams] = useSearchParams()
   const urlTab = params.get('tab') as SettingsTab | null
 
@@ -394,9 +397,93 @@ export function SettingsPage() {
             </InfoNote>
           )}
 
-          {/* ==================== TAB: MATCHING (T2) ==================== */}
+          {/* ==================== TAB: MATCHING (v0.4 §7.8, C5, C6) ==================== */}
           {tab === 'matching' && isAdmin && (
             <div className="space-y-6">
+              <BezelCard
+                icon={<Sparkles />}
+                title="Auto-suggest count on role save (C5)"
+                description="When a role is saved, Stage 1 runs for free and the top N candidates by similarity are scored automatically as Suggested."
+              >
+                <div className="space-y-3">
+                  <Field
+                    label="Auto-suggested candidates per new role"
+                    hint="Appears in the Suggested group at the top of Matches immediately after Save and scan."
+                  >
+                    <div>
+                      <Segmented
+                        aria-label="Auto-suggest count on role save"
+                        value={String(app.autoSuggestCount)}
+                        onChange={v => {
+                          const num = Number(v)
+                          app.setAutoSuggestCount(num)
+                          toast(num === 0 ? 'Auto-suggest turned off' : `Auto-suggest set to top ${num} candidates`)
+                        }}
+                        options={[
+                          { value: '0', label: '0 (off)' },
+                          { value: '3', label: '3' },
+                          { value: '5', label: '5 (default)' },
+                          { value: '10', label: '10' },
+                        ]}
+                      />
+                    </div>
+                  </Field>
+                </div>
+              </BezelCard>
+
+              <BezelCard
+                icon={<Sliders />}
+                title="Default requirement effect by type (§7.1, C6)"
+                description="Every role has one unified Requirements list. Only the 4 hard stored columns can eliminate in Stage 1; all other requirements improve the Stage 2 AI recommendation."
+              >
+                <div className="space-y-3">
+                  <div className="overflow-x-auto rounded-xl border border-border bg-card">
+                    <table className="w-full border-collapse text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-border bg-gray-100/90">
+                          <th className="eyebrow px-3 py-2 text-[10px] text-gray-1000">Requirement column / type</th>
+                          <th className="eyebrow px-3 py-2 text-[10px] text-gray-1000">Default effect</th>
+                          <th className="eyebrow px-3 py-2 text-[10px] text-gray-1000">Can switch to Eliminates?</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {[
+                          { col: 'Minimum years', effect: 'Eliminates (Stage 1)', canElim: true, note: 'Hard filter on years of experience' },
+                          { col: 'Work authorization', effect: 'Eliminates (Stage 1)', canElim: true, note: 'Compares visa sponsorship & H-1B transfer needs' },
+                          { col: 'Location', effect: 'Eliminates (Stage 1)', canElim: true, note: 'Checks metro, work mode & relocation openness' },
+                          { col: 'Category', effect: 'Eliminates (Stage 1)', canElim: true, note: 'Matches primary function category' },
+                          { col: 'Skills', effect: 'Improves score (Stage 2 AI)', canElim: false, note: 'Checked with explicit & predicted skill evidence' },
+                          { col: 'Domain', effect: 'Improves score (Stage 2 AI)', canElim: false, note: 'Matches industry / domain tags (~10 values)' },
+                          { col: 'Pay', effect: 'Improves score (Stage 2 AI)', canElim: false, note: 'Flags pay range gaps without eliminating' },
+                          { col: 'Free-text signals', effect: 'Improves score (Stage 2 AI)', canElim: false, note: 'Call/JD asks without a column (e.g. "Led team of 5+")' },
+                        ].map(r => (
+                          <tr key={r.col}>
+                            <td className="px-3 py-2">
+                              <div className="font-medium text-foreground">{r.col}</div>
+                              <div className="text-[11px] text-muted-foreground">{r.note}</div>
+                            </td>
+                            <td className="px-3 py-2">
+                              <span className={cn(
+                                'inline-flex h-5 items-center rounded-md border px-2 font-mono text-[10px] font-medium uppercase',
+                                r.canElim ? 'border-gray-1100 bg-primary text-primary-foreground' : 'border-border bg-secondary text-gray-1100',
+                              )}>
+                                {r.effect}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">
+                              {ELIMINATOR_COLUMNS.includes(r.col as typeof ELIMINATOR_COLUMNS[number]) ? 'Yes (Eliminates ⇄ Improves)' : 'No · Stage 2 only'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <InfoNote>
+                    Missing candidate values never eliminate — they pass Stage 1 as <strong>Assumed</strong> and join the Ask list. Recruiters can also click <strong>Include anyway</strong> on any eliminated candidate.
+                  </InfoNote>
+                </div>
+              </BezelCard>
+
               <BezelCard
                 icon={<Sliders />}
                 title="Stage-1 must-have eliminators"
@@ -431,26 +518,21 @@ export function SettingsPage() {
                     checked={mustHaveFields.mustSkills}
                     onChange={v => setMustHaveFields(s => ({ ...s, mustSkills: v }))}
                     label="Must-have skills (including predicted skills)"
-                    description="Requires evidence or an approved adjacency prediction for skills flagged Must on the role."
+                    description="Requires evidence or an approved adjacency prediction for skills flagged on the role."
                   />
-                  <div className="pt-1">
-                    <InfoNote>
-                      Recruiters can always inspect the eliminated list on any role and click <strong>Include anyway</strong> to override a rule.
-                    </InfoNote>
-                  </div>
                 </div>
               </BezelCard>
 
               <BezelCard
                 icon={<Sliders />}
-                title="Stage-2 AI scoring & ranking defaults"
-                description="Control how many candidates are scored per round and how ranked matches appear."
+                title="Stage-2 AI scoring & recommendation defaults"
+                description="Control how many candidates are scored per round and how ranked recommendations appear."
               >
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <Field
                       label="Default number to score"
-                      hint={`Pre-selected in “Score [N ▾] with AI”. Per-run cap: ${SCORE_RUN_CAP} AI scores.`}
+                      hint={`When ≤25 remain, scores all in 1 click. Above 25, pre-selects this count (cap: ${SCORE_RUN_CAP}/run).`}
                     >
                       <Select
                         aria-label="Default number to score"
@@ -466,26 +548,15 @@ export function SettingsPage() {
                         }))}
                       />
                     </Field>
-                    <Field label="Ordering tie-breaker" hint="Applied when two candidates have equal fit.">
+                    <Field label="Ordering tie-breaker" hint="Applied when two candidates have equal recommendation.">
                       <Input value="Explicit evidence before predicted skills" disabled />
                     </Field>
                   </div>
 
-                  <div className="flex items-center justify-between rounded-xl border border-border bg-secondary/50 p-3.5">
-                    <div className="space-y-0.5 pr-4">
-                      <div className="text-sm font-medium text-foreground">Show whole-number score next to fit band</div>
-                      <p className="text-xs text-muted-foreground">
-                        Displays <span className="font-mono">Strong · 88</span> instead of <span className="font-mono">Strong</span> alone. Reason and evidence always come first (P2).
-                      </p>
-                    </div>
-                    <Switch
-                      aria-label="Show score next to band"
-                      checked={showScore}
-                      onChange={v => {
-                        setShowScore(v)
-                        toast(v ? 'Score shown next to band' : 'Showing fit bands only')
-                      }}
-                    />
+                  <div className="rounded-xl border border-border bg-secondary/50 p-3.5 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">Recommendations replace numeric scores (v0.4 §7.2):</span> Scored candidates show{' '}
+                    <span className="font-mono text-foreground">Strong</span>, <span className="font-mono text-foreground">Mild</span>, or{' '}
+                    <span className="font-mono text-foreground">Not recommended</span> alongside requirements met (<span className="font-mono">4/4</span>), green flags, and red flags. Whole-number scores are never shown on screen.
                   </div>
                 </div>
               </BezelCard>
@@ -496,7 +567,7 @@ export function SettingsPage() {
                 description="Reruns are never automatic so token spend stays predictable and lists never reshuffle under a reviewer."
               >
                 <ul className="space-y-2 text-sm text-foreground">
-                  <li className="flex items-center gap-2"><Check className="size-4 text-muted-foreground" /> Role must-haves, minimum years, location/mode, sponsorship, or rule client asks change</li>
+                  <li className="flex items-center gap-2"><Check className="size-4 text-muted-foreground" /> Role requirements, minimum years, location/mode, or sponsorship change</li>
                   <li className="flex items-center gap-2"><Check className="size-4 text-muted-foreground" /> A revised JD version is applied to an open role</li>
                   <li className="flex items-center gap-2"><Check className="size-4 text-muted-foreground" /> Candidate skills, work authorization, or location preferences change</li>
                   <li className="flex items-center gap-2"><Check className="size-4 text-muted-foreground" /> A new resume version or call enrichment is applied to a candidate</li>
@@ -659,9 +730,84 @@ export function SettingsPage() {
             </div>
           )}
 
-          {/* ==================== TAB: PROMPTS (N23 — F-16) ==================== */}
+          {/* ==================== TAB: PROMPTS (N23 — F-16 · Probe 1 §8.1) ==================== */}
           {tab === 'prompts' && isAdmin && (
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+            <div className="space-y-6">
+              {/* Probe 1 · Email drafting test (§8.1) */}
+              <BezelCard
+                icon={<Mail />}
+                title="Probe 1 · Email drafting test (§8.1 — 2-week checkpoint)"
+                description="Comparing Option A (Draft in product) vs Option B (Copy assembled prompt for Claude) across 30 real outreach emails."
+              >
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <span className="font-medium text-foreground">
+                        Target: 30 real emails drafted ({app.probe1Stats.inProductCount + app.probe1Stats.claudeCount} / 30 completed)
+                      </span>
+                      <span className="font-mono text-[11px] text-success tnum">
+                        {Math.min(100, Math.round(((app.probe1Stats.inProductCount + app.probe1Stats.claudeCount) / 30) * 100))}% of checkpoint target
+                      </span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-primary transition-all"
+                        style={{ width: `${Math.min(100, Math.round(((app.probe1Stats.inProductCount + app.probe1Stats.claudeCount) / 30) * 100))}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="rounded-xl border border-border bg-card p-3.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-foreground">Option A · Draft in product</span>
+                        <span className="rounded-md border border-success/40 bg-success/10 px-2 py-0.5 font-mono text-[10px] font-medium text-success tnum">
+                          78% sent in ≤2 rounds
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 pt-1 text-xs">
+                        <div>
+                          <div className="text-[11px] text-muted-foreground">Drafted</div>
+                          <div className="font-mono text-sm font-semibold text-foreground tnum">{app.probe1Stats.inProductCount}</div>
+                        </div>
+                        <div>
+                          <div className="text-[11px] text-muted-foreground">Avg refine rounds</div>
+                          <div className="font-mono text-sm font-semibold text-foreground tnum">{app.probe1Stats.inProductMedianRounds}</div>
+                        </div>
+                        <div>
+                          <div className="text-[11px] text-muted-foreground">Sent as-is / ≤2 rds</div>
+                          <div className="font-mono text-sm font-semibold text-foreground tnum">14 ({Math.round((14 / Math.max(1, app.probe1Stats.inProductCount)) * 100)}%)</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-border bg-card p-3.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-foreground">Option B · Copy prompt for Claude</span>
+                        <span className="rounded-md border border-border bg-secondary px-2 py-0.5 font-mono text-[10px] text-gray-1100 tnum">
+                          Assembled context
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 pt-1 text-xs">
+                        <div>
+                          <div className="text-[11px] text-muted-foreground">Prompts copied</div>
+                          <div className="font-mono text-sm font-semibold text-foreground tnum">{app.probe1Stats.claudeCount}</div>
+                        </div>
+                        <div>
+                          <div className="text-[11px] text-muted-foreground">Avg rounds in Claude</div>
+                          <div className="font-mono text-sm font-semibold text-foreground tnum">{app.probe1Stats.claudeMedianRounds}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <InfoNote>
+                    Decision rule: If ≥70% of in-product drafts go out in ≤2 rounds, keep in-product drafting. Otherwise default to Copy prompt for Claude.
+                  </InfoNote>
+                </div>
+              </BezelCard>
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
               {/* Left: grouped prompt list */}
               <div className="space-y-3 rounded-2xl border border-border bg-gray-100 p-1">
                 <div className="space-y-3 rounded-xl border border-border bg-card p-2.5">
@@ -875,12 +1021,160 @@ export function SettingsPage() {
                   </ol>
                 </BezelCard>
               </div>
+              </div>
             </div>
           )}
 
-          {/* ==================== TAB: TEMPLATES (T5) ==================== */}
+          {/* ==================== TAB: TEMPLATES (T5 · C12 · Probe 2 §8.2) ==================== */}
           {tab === 'templates' && isAdmin && (
             <div className="space-y-6">
+              <BezelCard
+                icon={<Link2 />}
+                title="Default style & delivery per audience (§7.6, C12)"
+                description="Choose the default resume style (Creative visual cards vs Traditional Word-style) and delivery format (Web link vs PDF) for Prospects and Onboarded clients."
+              >
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="space-y-3 rounded-xl border border-border bg-card p-3.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold text-foreground">Prospects (masked pitch)</span>
+                      <span className="font-mono text-[10px] text-muted-foreground">S-09 Masked builder</span>
+                    </div>
+                    <Field label="Default resume style">
+                      <Segmented
+                        size="sm"
+                        aria-label="Prospect default style"
+                        value={app.defaultStyle.prospect}
+                        onChange={(v: OutputStyle) => {
+                          app.setDefaultStyle({ prospect: v })
+                          toast(`Prospect default style set to ${v === 'creative' ? 'Creative' : 'Traditional'}`)
+                        }}
+                        options={[
+                          { value: 'creative', label: 'Creative (visual cards)' },
+                          { value: 'traditional', label: 'Traditional (Word-style)' },
+                        ]}
+                      />
+                    </Field>
+                    <Field label="Default delivery">
+                      <Segmented
+                        size="sm"
+                        aria-label="Prospect default delivery"
+                        value={app.defaultDelivery.prospect}
+                        onChange={(v: OutputDelivery) => {
+                          app.setDefaultDelivery({ prospect: v })
+                          toast(`Prospect default delivery set to ${v === 'link' ? 'Web link' : 'PDF'}`)
+                        }}
+                        options={[
+                          { value: 'link', label: 'Web link (read-only)' },
+                          { value: 'pdf', label: 'PDF' },
+                        ]}
+                      />
+                    </Field>
+                  </div>
+
+                  <div className="space-y-3 rounded-xl border border-border bg-card p-3.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold text-foreground">Onboarded clients (named)</span>
+                      <span className="font-mono text-[10px] text-muted-foreground">S-10 Editable review</span>
+                    </div>
+                    <Field label="Default resume style">
+                      <Segmented
+                        size="sm"
+                        aria-label="Client default style"
+                        value={app.defaultStyle.client}
+                        onChange={(v: OutputStyle) => {
+                          app.setDefaultStyle({ client: v })
+                          toast(`Client default style set to ${v === 'creative' ? 'Creative' : 'Traditional'}`)
+                        }}
+                        options={[
+                          { value: 'traditional', label: 'Traditional (Word-style)' },
+                          { value: 'creative', label: 'Creative (visual cards)' },
+                        ]}
+                      />
+                    </Field>
+                    <Field label="Default delivery">
+                      <Segmented
+                        size="sm"
+                        aria-label="Client default delivery"
+                        value={app.defaultDelivery.client}
+                        onChange={(v: OutputDelivery) => {
+                          app.setDefaultDelivery({ client: v })
+                          toast(`Client default delivery set to ${v === 'link' ? 'Web link' : 'PDF'}`)
+                        }}
+                        options={[
+                          { value: 'pdf', label: 'PDF' },
+                          { value: 'link', label: 'Web link (read-only)' },
+                        ]}
+                      />
+                    </Field>
+                  </div>
+                </div>
+              </BezelCard>
+
+              <BezelCard
+                icon={<Sparkles />}
+                title="Probe 2 · Resume format & delivery test (§8.2)"
+                description="Checkpoint target: 40 sends per style per audience. Measuring positive reply rates for Creative vs Traditional and open/forward rates for Web link vs PDF."
+              >
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="rounded-xl border border-border bg-card p-3.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-foreground">Creative (visual cards)</span>
+                        <span className="font-mono text-[10px] text-muted-foreground tnum">{app.probe2Stats.creativeSends} / 40 sends</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div>
+                          <div className="text-[11px] text-muted-foreground">Interested replies</div>
+                          <div className="font-mono text-sm font-semibold text-foreground tnum">
+                            {app.probe2Stats.creativeInterested} ({Math.round((app.probe2Stats.creativeInterested / Math.max(1, app.probe2Stats.creativeSends)) * 100)}%)
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[11px] text-muted-foreground">Prospect reply</div>
+                          <div className="font-mono text-sm font-semibold text-success tnum">36%</div>
+                        </div>
+                        <div>
+                          <div className="text-[11px] text-muted-foreground">Client reply</div>
+                          <div className="font-mono text-sm font-semibold text-foreground tnum">28%</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-border bg-card p-3.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-foreground">Traditional (Word-style)</span>
+                        <span className="font-mono text-[10px] text-muted-foreground tnum">{app.probe2Stats.traditionalSends} / 40 sends</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div>
+                          <div className="text-[11px] text-muted-foreground">Interested replies</div>
+                          <div className="font-mono text-sm font-semibold text-foreground tnum">
+                            {app.probe2Stats.traditionalInterested} ({Math.round((app.probe2Stats.traditionalInterested / Math.max(1, app.probe2Stats.traditionalSends)) * 100)}%)
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[11px] text-muted-foreground">Prospect reply</div>
+                          <div className="font-mono text-sm font-semibold text-foreground tnum">25%</div>
+                        </div>
+                        <div>
+                          <div className="text-[11px] text-muted-foreground">Client reply</div>
+                          <div className="font-mono text-sm font-semibold text-success tnum">41%</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-secondary/40 px-3.5 py-2.5 text-xs">
+                    <span className="text-foreground">
+                      <strong>Delivery comparison:</strong> Web links opened on <span className="font-mono">82%</span> of prospect pitches (avg 1.8 views · revocable anytime in Resumes) vs <span className="font-mono">64%</span> for PDF attachments.
+                    </span>
+                    <span className="font-mono text-[11px] text-muted-foreground tnum">
+                      {app.probe2Stats.creativeSends + app.probe2Stats.traditionalSends} / 80 total sends
+                    </span>
+                  </div>
+                </div>
+              </BezelCard>
+
               <BezelCard
                 icon={<FileText />}
                 title="Masked resume templates (prospect outreach)"

@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Check, ChevronLeft, ChevronRight, CircleCheck, Download, FileText, RotateCcw, Undo2 } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, CircleCheck, Download, FileText, Link2, RotateCcw, Undo2 } from 'lucide-react'
 import { useTopBar } from '../shell/AppShell'
 import { Button, ExampleMark, Segmented, cn } from '../components/ui'
 import { Banner, DocFrame, InfoNote, SourceBadge } from '../components/hs'
-import { GatedButton } from '../components/v3'
+import { DeliverySelect, GatedButton, StyleSelect } from '../components/v3'
 import {
   DiffSection, EditableText, FixInProfile, PageTake, RefineBox, RefineStatus, RevisionsPopover, SourceResumeSelect,
   amendRevision, emphasise, factHaystack, initialRevisions, latestVersion, pushRevision, readStale,
@@ -12,7 +12,7 @@ import {
   type LocalRevision, type OutputSection, type RefineResult, type SectionContent,
 } from '../components/outputs'
 import { useApp, useWireframeState } from '../store/AppStore'
-import type { Candidate, Resume } from '../data/types'
+import type { Candidate, OutputDelivery, OutputStyle, Resume } from '../data/types'
 
 /* ==========================================================================
    S-10 · Editable resume review (client roles) — Product Design Doc §8, §9.4 + PRD v0.3 §7.3, §7.5, §7.6, §7.8
@@ -146,6 +146,9 @@ export function TailoredReview() {
   const [reverted, setReverted] = useState<Record<string, string[]>>({})
   const [approved, setApproved] = useState<string[]>([])
   const [refining, setRefining] = useState(false)
+  const [style, setStyle] = useState<OutputStyle>(() => app.defaultStyle.client)
+  const [delivery, setDelivery] = useState<OutputDelivery>(() => app.defaultDelivery.client)
+  const [linkActive, setLinkActive] = useState(true)
 
   const buildInitialEditState = (cand: Candidate): CandEditState => {
     const list = app.resumesFor(cand.id)
@@ -367,13 +370,18 @@ export function TailoredReview() {
   const tailorPrompt = app.prompts.find(p => p.id === 'tailor')
   const promptVersionLabel = tailorPrompt ? `Editable v${tailorPrompt.activeVersion}` : 'Editable v3'
 
-  const approve = () => {
+  const approve = (viaDelivery: OutputDelivery = delivery) => {
     const asIs = m === 'as-is'
+    const shareUrl = `https://heroscouter.com/p/${c.id}-${r?.id ?? 'role'}`
     app.addOutputs([{
       candidateId: c.id,
       type: asIs ? 'As-is' : 'Editable',
       roleId: r?.id ?? null,
-      template: asIs ? 'Original' : 'Editable · Classic',
+      template: asIs ? 'Original' : style === 'creative' ? 'Creative · Visual cards' : 'Traditional · Word-style',
+      style,
+      delivery: viaDelivery,
+      shareUrl,
+      linkActive,
       stale: false,
       sourceResumeId: activeSourceResume?.id,
       sourceVersion: latestVersion(activeSourceResume),
@@ -382,10 +390,18 @@ export function TailoredReview() {
     }])
     patchEdit(c.id, { downloadedRev: curEdit.curRev })
     app.log({
-      what: asIs ? `Approved ${c.name}'s resume to send as-is` : `Approved editable resume for ${c.name} · ${activeChanges.length} change${activeChanges.length === 1 ? '' : 's'}`,
+      what: asIs
+        ? `Approved ${c.name}'s resume to send as-is (${viaDelivery.toUpperCase()})`
+        : `Approved editable resume for ${c.name} (${style} · ${viaDelivery.toUpperCase()}) · ${activeChanges.length} change${activeChanges.length === 1 ? '' : 's'}`,
       record: r ? `${r.title} — ${r.company}` : c.name, recordHref: r ? `/roles/${r.id}` : `/candidates/${c.id}`, kind: 'Outputs',
     })
-    app.toast(asIs ? 'Resume downloaded' : 'Editable resume downloaded')
+    if (viaDelivery === 'link') {
+      app.toast('Copied shareable web link · Read-only, revocable anytime in Resumes')
+    } else if (viaDelivery === 'docx') {
+      app.toast('DOCX downloaded')
+    } else {
+      app.toast(asIs ? 'Resume downloaded' : 'Editable resume downloaded')
+    }
     setApproved(a => (a.includes(c.id) ? a : [...a, c.id]))
     if (idx < cands.length - 1) setIdx(idx + 1)
   }
@@ -405,6 +421,11 @@ export function TailoredReview() {
         <Segmented aria-label="Resume mode" value={m} onChange={v => setMode(s => ({ ...s, [c.id]: v }))}
           options={[{ value: 'editable', label: 'Editable' }, { value: 'as-is', label: 'Send as-is' }]} />
         <SourceResumeSelect list={sourceResumes} value={curEdit.sourceResumeId} onChange={switchSourceResume} fromMatch={fromMatch} compact />
+        {m === 'editable' && (
+          <div className="flex items-center gap-2">
+            <StyleSelect style={style} onChangeStyle={setStyle} />
+          </div>
+        )}
         {hint}
         {cands.length > 1 && (
           <ol aria-label="Candidates" className="ml-auto flex items-center gap-1">
@@ -439,13 +460,13 @@ export function TailoredReview() {
               </div>
               <div className="min-h-0 flex-1">
                 <DocFrame>
-                  <ResumeDoc doc={doc} view="original" reverted={rev} />
+                  <ResumeDoc doc={doc} view="original" style="traditional" reverted={rev} />
                 </DocFrame>
               </div>
             </section>
             <section className="flex min-h-[560px] flex-col border-t border-border lg:min-h-0 lg:border-t-0">
               <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-muted/50 px-4 text-xs">
-                <span className="font-medium text-muted-foreground">Editable</span>
+                <span className="font-medium text-muted-foreground">Editable ({style === 'creative' ? 'Creative' : 'Traditional'})</span>
                 <span className="truncate text-foreground" aria-live="polite">
                   {doc.changes.length === 0 ? 'No changes suggested. Nothing on record would make it stronger.' : activeChanges.length === 0 ? 'All changes reverted. This matches the original.' : summarize(activeChanges)}
                 </span>
@@ -477,6 +498,7 @@ export function TailoredReview() {
                   <ResumeDoc
                     doc={doc}
                     view="editable"
+                    style={style}
                     reverted={rev}
                     onToggle={toggle}
                     take={take}
@@ -516,38 +538,65 @@ export function TailoredReview() {
               <span className="inline-flex items-center gap-2"><FileText className="size-3.5" />Original resume · sent as-is · {resumeLabel(activeSourceResume)}</span>
               <InfoNote>As-is keeps the original file untouched. The signed take goes into the copied email instead.</InfoNote>
             </div>
-            <div className="min-h-0 flex-1"><DocFrame><ResumeDoc doc={doc} view="original" reverted={doc.changes.map(x => x.id)} /></DocFrame></div>
+            <div className="min-h-0 flex-1"><DocFrame><ResumeDoc doc={doc} view="original" style="traditional" reverted={doc.changes.map(x => x.id)} /></DocFrame></div>
           </div>
         )}
       </div>
 
       {/* Footer */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border bg-background/95 px-4 py-3 backdrop-blur sm:px-6">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-border bg-background/95 px-4 py-3 backdrop-blur sm:px-6">
         {cands.length > 1 && (
-          <>
+          <div className="flex items-center gap-1.5">
             <span className="eyebrow text-gray-1000">Candidate <span className="tnum">{idx + 1}</span> of <span className="tnum">{cands.length}</span></span>
             <Button variant="ghost" size="icon-sm" aria-label="Previous candidate" disabled={idx === 0} onClick={() => setIdx(idx - 1)} icon={<ChevronLeft />} />
             {idx < cands.length - 1
               ? <Button variant="ghost" iconRight={<ChevronRight />} onClick={() => setIdx(idx + 1)}>Next candidate</Button>
               : <Button variant="ghost" onClick={() => navigate(r ? `/roles/${r.id}?tab=shortlist` : '/resumes')}>Back to shortlist</Button>}
-          </>
+          </div>
         )}
+
+        <div className="min-w-[260px] flex-1">
+          <DeliverySelect
+            delivery={delivery}
+            onChangeDelivery={setDelivery}
+            allowDocx
+            shareUrl={`https://heroscouter.com/p/${c.id}-${r?.id ?? 'role'}`}
+            linkActive={linkActive}
+            onToggleLinkActive={setLinkActive}
+            onCopyLink={() => app.toast('Copied shareable web link')}
+          />
+        </div>
+
         <div className="ml-auto flex items-center gap-2">
-          <GatedButton perm="genIdentity" icon={<Download />} onClick={() => app.toast('DOCX downloaded')}>Download DOCX</GatedButton>
-          <GatedButton perm="genIdentity" variant="primary" icon={<Download />} onClick={approve}>Approve and download PDF</GatedButton>
+          {delivery === 'link' ? (
+            <>
+              <GatedButton perm="genIdentity" variant="outline" icon={<Download />} onClick={() => approve('pdf')}>Download PDF</GatedButton>
+              <GatedButton perm="genIdentity" variant="primary" icon={<Link2 />} disabled={!linkActive} onClick={() => approve('link')}>Approve & copy web link</GatedButton>
+            </>
+          ) : delivery === 'docx' ? (
+            <>
+              <GatedButton perm="genIdentity" variant="outline" icon={<Download />} onClick={() => approve('pdf')}>Download PDF</GatedButton>
+              <GatedButton perm="genIdentity" variant="primary" icon={<Download />} onClick={() => approve('docx')}>Approve & download DOCX</GatedButton>
+            </>
+          ) : (
+            <>
+              <GatedButton perm="genIdentity" variant="outline" icon={<Download />} onClick={() => approve('docx')}>Download DOCX</GatedButton>
+              <GatedButton perm="genIdentity" variant="primary" icon={<Download />} onClick={() => approve('pdf')}>Approve and download PDF</GatedButton>
+            </>
+          )}
         </div>
       </div>
     </div>
   )
 }
 
-/* ---------- Resume page (identity kept; original formatting conventions) ---------- */
+/* ---------- Resume page (identity kept; supports Traditional Word-style vs Creative visual cards per §7.6 / C12) ---------- */
 function ResumeDoc({
-  doc, view, reverted, onToggle, take, takeAuthor,
+  doc, view, style = 'traditional', reverted, onToggle, take, takeAuthor,
   summaryOverride, bulletOverrides = {}, jobOrderOverrides = {}, skillsOverride,
   refineResult, onEditSummary, onEditBullet, onKeepSection, onUndoSection, onDismissBlock, onFixInProfile,
 }: {
-  doc: Doc; view: 'original' | 'editable'; reverted: string[]; onToggle?: (id: string) => void
+  doc: Doc; view: 'original' | 'editable'; style?: OutputStyle; reverted: string[]; onToggle?: (id: string) => void
   take?: ReturnType<ReturnType<typeof useApp>['takeFor']>; takeAuthor?: ReturnType<ReturnType<typeof useApp>['member']>
   summaryOverride?: string
   bulletOverrides?: Record<string, string>
@@ -562,6 +611,7 @@ function ResumeDoc({
   onFixInProfile?: (label: string) => void
 }) {
   const editable = view === 'editable'
+  const isCreative = editable && style === 'creative'
   const on = (ch?: Change) => !!ch && editable && !reverted.includes(ch.id)
   const changed = (ch?: Change) => !!ch && !reverted.includes(ch.id)
   const summaryCh = doc.changes.find(x => x.kind === 'summary')
@@ -597,15 +647,33 @@ function ResumeDoc({
   const changeFor = (key: string) => editable ? refineResult?.changes.find(c => c.key === key) : undefined
   const blockFor = (key: string) => editable ? refineResult?.blocked.find(b => b.key === key) : undefined
 
+  const sectionHeaderClass = isCreative
+    ? 'mb-1.5 font-mono text-[8px] font-medium tracking-[0.14em] text-gray-1000 uppercase'
+    : 'mb-1.5 border-b border-[#111]/40 pb-0.5 font-serif text-[9px] font-bold tracking-[0.14em] text-[#111] uppercase'
+
   return (
     <article className="space-y-4 px-8 py-7 text-[#111]" aria-label={`${editable ? 'Editable' : 'Original'} resume`}>
-      <header className="border-b border-gray-500 pb-3">
-        <h1 className="text-[16px] font-semibold tracking-tight">{doc.name}</h1>
-        <p className="text-[10px] text-gray-1100">{doc.headline}</p>
-        <p className="mt-0.5 font-mono text-[8px] text-gray-1000">{doc.contact}</p>
-      </header>
+      {isCreative ? (
+        <header className="rounded-md bg-[#111] px-5 py-4 text-white">
+          <div className="flex items-center justify-between">
+            <span className="inline-flex items-center gap-1.5 text-[9px] font-semibold tracking-wide">
+              <span className="flex size-3.5 items-center justify-center rounded-[3px] bg-white text-[8px] font-bold text-black">H</span>HeroScouter
+            </span>
+            <span className="font-mono text-[7.5px] tracking-[0.14em] text-white/60 uppercase">Client candidate profile</span>
+          </div>
+          <h1 className="mt-2.5 text-[16px] font-semibold tracking-tight">{doc.name}</h1>
+          <p className="text-[10px] text-white/90">{doc.headline}</p>
+          <p className="mt-1 font-mono text-[8px] text-white/75">{doc.contact}</p>
+        </header>
+      ) : (
+        <header className="border-b-2 border-[#111] pb-3">
+          <h1 className="font-serif text-[16px] font-bold tracking-tight">{doc.name}</h1>
+          <p className="text-[10px] text-gray-1100">{doc.headline}</p>
+          <p className="mt-0.5 font-mono text-[8px] text-gray-1000">{doc.contact}</p>
+        </header>
+      )}
 
-      {editable && <PageTake take={take} author={takeAuthor} variant="note" />}
+      {editable && <PageTake take={take} author={takeAuthor} variant={isCreative ? 'quote' : 'note'} />}
 
       <DiffSection
         label="Summary"
@@ -615,8 +683,8 @@ function ResumeDoc({
         onUndo={onUndoSection ? () => onUndoSection('summary') : undefined}
         onDismissBlock={onDismissBlock ? () => onDismissBlock('summary') : undefined}
       >
-        <section>
-          <h3 className="mb-1 font-mono text-[8px] font-medium tracking-[0.14em] text-gray-1000 uppercase">Summary</h3>
+        <section className={cn(isCreative && 'rounded-md border border-gray-400 bg-gray-100/60 p-2.5')}>
+          <h3 className={sectionHeaderClass}>Summary</h3>
           <Block ch={summaryCh} active={on(summaryCh)} wasChanged={!editable && changed(summaryCh)} reverted={editable && !!summaryCh && reverted.includes(summaryCh.id)} onToggle={onToggle}>
             <p className="group/fact text-[9.5px] leading-snug">
               {editable && onEditSummary ? (
@@ -629,7 +697,7 @@ function ResumeDoc({
       </DiffSection>
 
       <section>
-        <h3 className="mb-1 font-mono text-[8px] font-medium tracking-[0.14em] text-gray-1000 uppercase">Experience</h3>
+        <h3 className={sectionHeaderClass}>Experience</h3>
         <div className="space-y-2.5">
           {doc.jobs.map(job => {
             const jobKey = `job:${job.company}`
@@ -643,7 +711,7 @@ function ResumeDoc({
                 onUndo={onUndoSection ? () => onUndoSection(jobKey) : undefined}
                 onDismissBlock={onDismissBlock ? () => onDismissBlock(jobKey) : undefined}
               >
-                <div>
+                <div className={cn(isCreative && 'rounded-md border border-gray-300 p-2.5')}>
                   <div className="group/fact flex items-baseline justify-between gap-2 text-[9.5px]">
                     <span>
                       <span className="font-semibold">{job.title}</span> · {job.company}
@@ -661,7 +729,7 @@ function ResumeDoc({
                         : b.text
                       const renderBullet = (
                         <p className="group/fact flex gap-1.5 text-[9px] leading-snug">
-                          <span className="text-gray-800">•</span>
+                          <span className="text-gray-800">{isCreative ? '▪' : '•'}</span>
                           <span className="flex-1">
                             {editable && onEditBullet ? (
                               <EditableText value={shownText} onChange={v => onEditBullet(b.id, v)} label={`bullet ${b.id}`} />
@@ -697,7 +765,7 @@ function ResumeDoc({
         onDismissBlock={onDismissBlock ? () => onDismissBlock('skills') : undefined}
       >
         <section className="group/fact">
-          <h3 className="mb-1 font-mono text-[8px] font-medium tracking-[0.14em] text-gray-1000 uppercase">Skills</h3>
+          <h3 className={sectionHeaderClass}>Skills</h3>
           <p className="text-[9px]">
             {skillsList.join(' · ')}
             {editable && onFixInProfile && <FixInProfile label="Skills" onClick={() => onFixInProfile('Skills')} />}
@@ -712,7 +780,7 @@ function ResumeDoc({
 
       {doc.education && (
         <section className="group/fact">
-          <h3 className="mb-1 font-mono text-[8px] font-medium tracking-[0.14em] text-gray-1000 uppercase">Education</h3>
+          <h3 className={sectionHeaderClass}>Education</h3>
           <p className="text-[9px]">
             {doc.education}
             {editable && onFixInProfile && <FixInProfile label="Education" onClick={() => onFixInProfile('Education')} />}

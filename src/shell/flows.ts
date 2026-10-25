@@ -1,5 +1,55 @@
-/** Founder-review walkthroughs (Product Design Doc §15 + PRD v0.3 Appendix A) */
+/** Founder-review walkthroughs (Product Design Doc §15 + PRD v0.4 §6 Flows F-20…F-24) */
 export const FLOWS = [
+  {
+    id: 'F-20', title: 'v0.4 · Role in → auto-scan suggestions (C5)', start: '/roles/new',
+    steps: [
+      'Paste JD or call notes → unified Requirements list',
+      'Save and scan → Stage 1 runs for free',
+      'Opens /roles/cobalt-ds?tab=matches with 5 auto-suggested candidates',
+      'Suggested group shows Strong / Mild / Not recommended + 4/4 met',
+      '22 remaining passers wait in Not scored below',
+    ],
+  },
+  {
+    id: 'F-21', title: 'v0.4 · Prune and score (C6 · C7)', start: '/roles/cobalt-ds?tab=matches',
+    steps: [
+      'Filter Not scored (repeated column = OR, across columns = AND)',
+      'Shift + J/K or Shift + click to select mismatches',
+      'Press X → Reject with one reason for the batch (no Skip button)',
+      '22 remain (≤25) → 1-click Score 22 with AI',
+      'Review green flags, red flags, and requirement evidence',
+    ],
+  },
+  {
+    id: 'F-22', title: 'v0.4 · Align and send in either order (C2 · C3)', start: '/roles/northwind-spm?tab=shortlist',
+    steps: [
+      'Shortlist shows Candidate & Client AlignmentPills on every row',
+      'Candidate-first: Ask candidate → Interested → Share with client',
+      'Client-first: Share profile (“Want to talk?”) → Client: Interested → Ask candidate',
+      'When both sides are Interested → “Both aligned · ready for intro”',
+      'Draft in product or Copy prompt for Claude (Probe 1) + Gmail draft',
+    ],
+  },
+  {
+    id: 'F-23', title: 'v0.4 · Pitch prospects in bulk (C4)', start: '/roles',
+    steps: [
+      'Filter or select open Prospect roles on /roles',
+      'Selection bar → Prepare pitches',
+      'D-09 CreateGmailDraftsDialog previews masked candidates per role',
+      'Attaches read-only masked web links (revocable anytime)',
+      'Creates Gmail drafts in one click + copies outreach sheet rows',
+    ],
+  },
+  {
+    id: 'F-24', title: 'v0.4 · Mark not interested per role (C10)', start: '/candidates/priya?tab=roles',
+    steps: [
+      'Open Priya S. → Matching roles tab',
+      'Click Not interested on a role → D-10 NotInterestedDialog',
+      'Pick 1-tap reason (e.g. Pay)',
+      'Dialog proposes updating Priya’s pay expectation ($190k–$215k)',
+      'Priya moves to collapsed Not interested group; never suggested for that role again',
+    ],
+  },
   {
     id: 'F-13', title: 'v0.3 · Score in rounds (T2)', start: '/roles/brightdesk-gmm',
     steps: ['Brightdesk · 38 pass the must-haves (not scored)', 'Prune: filter, select, Skip for scoring', 'Score [10 ▾] with AI → 10 AI scores', 'Review ranked rows', 'Score 10 more — earlier scores kept'],

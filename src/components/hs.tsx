@@ -3,7 +3,7 @@ import {
   Check, Diamond, HelpCircle, AlertTriangle, X, ChevronLeft, ChevronRight, ExternalLink, Loader2,
   AlertCircle, Info, RefreshCw, ChevronDown, ArrowUp, ArrowDown, CircleCheck, ListPlus, Eye,
 } from 'lucide-react'
-import { Avatar, Button, Checkbox, Kbd, Menu, Skeleton, cn } from './ui'
+import { Avatar, Button, Checkbox, Kbd, Menu, Skeleton, cn, type MenuItem } from './ui'
 import { useApp } from '../store/AppStore'
 import type { Band, MatchChip, MatchRowStatus, ProposedChange, SourceKind, WorkAuth, Candidate, Role } from '../data/types'
 
@@ -149,12 +149,20 @@ function parseColStyle(w?: string): React.CSSProperties | undefined {
 
 export function DataTable<T extends { id: string }>({
   columns, rows, onRowClick, selectable, selected, onSelectedChange, loading, empty, rowActions, rowClassName, dense,
+  columnMenu, isSelectable, quietCheckbox,
 }: {
   columns: Column<T>[]; rows: T[]; onRowClick?: (r: T) => void
   selectable?: boolean; selected?: string[]; onSelectedChange?: (ids: string[]) => void
   loading?: boolean; empty?: React.ReactNode; rowActions?: (r: T) => React.ReactNode; rowClassName?: (r: T) => string; dense?: boolean
+  /** v0.3 · T4 Sheets-style header menu (Sort A→Z / Z→A · Filter this column · Hide column) */
+  columnMenu?: (col: Column<T>, sort: { asc: () => void; desc: () => void }) => MenuItem[]
+  /** v0.3 · T1 rows that can't be selected (e.g. rejected) */
+  isSelectable?: (r: T) => boolean
+  /** v0.3 · P8 checkbox hidden until hover or any selection */
+  quietCheckbox?: boolean
 }) {
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null)
+  const anchor = useRef<string | null>(null)
   const sorted = React.useMemo(() => {
     if (!sort) return rows
     const col = columns.find(c => c.key === sort.key)
@@ -162,7 +170,23 @@ export function DataTable<T extends { id: string }>({
     return [...rows].sort((a, b) => (col.sortValue!(a) > col.sortValue!(b) ? 1 : -1) * sort.dir)
   }, [rows, sort, columns])
   const sel = selected ?? []
-  const allSel = rows.length > 0 && sel.length === rows.length
+  const selectableRows = isSelectable ? sorted.filter(isSelectable) : sorted
+  const allSel = selectableRows.length > 0 && selectableRows.every(r => sel.includes(r.id))
+  const anySel = sel.length > 0
+  /** P10 · Shift-click selects the range from the last clicked row */
+  const toggleRow = (id: string, on: boolean, shift: boolean) => {
+    if (shift && anchor.current) {
+      const ids = sorted.map(r => r.id)
+      const a = ids.indexOf(anchor.current); const b = ids.indexOf(id)
+      if (a >= 0 && b >= 0) {
+        const range = sorted.slice(Math.min(a, b), Math.max(a, b) + 1).filter(r => !isSelectable || isSelectable(r)).map(r => r.id)
+        onSelectedChange?.(Array.from(new Set([...sel, ...range])))
+        return
+      }
+    }
+    anchor.current = id
+    onSelectedChange?.(on ? [...sel, id] : sel.filter(x => x !== id))
+  }
 
   return (
     <section className="rounded-2xl border border-border bg-gray-100 p-1">
@@ -172,7 +196,7 @@ export function DataTable<T extends { id: string }>({
             <tr role="row" className="h-9 divide-x divide-border border-b border-border bg-gray-100/90">
               {selectable && (
                 <th className="w-8 px-2.5 py-2 align-middle">
-                  <Checkbox aria-label="Select all" checked={allSel} onChange={v => onSelectedChange?.(v ? rows.map(r => r.id) : [])} />
+                  <Checkbox aria-label={`Select all ${selectableRows.length} shown`} checked={allSel} onChange={v => onSelectedChange?.(v ? selectableRows.map(r => r.id) : [])} />
                 </th>
               )}
               {columns.map(c => (
@@ -183,7 +207,17 @@ export function DataTable<T extends { id: string }>({
                   aria-sort={sort?.key === c.key ? (sort.dir === 1 ? 'ascending' : 'descending') : undefined}
                   className={cn('eyebrow px-2.5 py-2 text-[10px] font-medium whitespace-nowrap text-gray-1000 select-none', c.align === 'right' && 'text-right')}
                 >
-                  {c.sortable ? (
+                  {columnMenu ? (
+                    <Menu align="start" width={200}
+                      trigger={({ toggle }) => (
+                        <button type="button" onClick={toggle} className={cn('inline-flex items-center gap-1 uppercase transition-colors hover:text-foreground', sort?.key === c.key && 'text-foreground')}>
+                          {c.header}
+                          {sort?.key === c.key ? (sort.dir === 1 ? <ArrowUp className="size-3 text-foreground" /> : <ArrowDown className="size-3 text-foreground" />) : <ChevronDown className="size-3 text-gray-800" />}
+                        </button>
+                      )}
+                      items={columnMenu(c, { asc: () => setSort({ key: c.key, dir: 1 }), desc: () => setSort({ key: c.key, dir: -1 }) })}
+                    />
+                  ) : c.sortable ? (
                     <button
                       type="button"
                       className={cn('inline-flex items-center gap-1 uppercase transition-colors hover:text-foreground', sort?.key === c.key && 'text-foreground')}
@@ -226,6 +260,7 @@ export function DataTable<T extends { id: string }>({
             ) : (
               sorted.map(r => {
                 const isSel = sel.includes(r.id)
+                const canSel = !isSelectable || isSelectable(r)
                 return (
                   <tr
                     key={r.id}
@@ -242,8 +277,10 @@ export function DataTable<T extends { id: string }>({
                     )}
                   >
                     {selectable && (
-                      <td className="w-8 px-2.5 py-2 align-middle" onClick={e => e.stopPropagation()}>
-                        <Checkbox aria-label="Select row" checked={isSel} onChange={v => onSelectedChange?.(v ? [...sel, r.id] : sel.filter(x => x !== r.id))} />
+                      <td className={cn('w-8 px-2.5 py-2 align-middle', quietCheckbox && !anySel && 'opacity-0 transition-opacity group-hover/row:opacity-100 focus-within:opacity-100')}
+                        onClickCapture={e => { if (e.shiftKey && canSel) { e.stopPropagation(); e.preventDefault(); toggleRow(r.id, !isSel, true) } }}
+                        onClick={e => e.stopPropagation()}>
+                        {canSel && <Checkbox aria-label="Select row" checked={isSel} onChange={v => toggleRow(r.id, v, false)} />}
                       </td>
                     )}
                     {columns.map(c => (
@@ -278,7 +315,8 @@ export function DataTable<T extends { id: string }>({
 export function MatchRow({
   rank, initials, title, subtitle, tag, band, score, reason, chips, status, rejectReason, delta, focused,
   candidate, role,
-  onPreview, onShortlist, onReject, onUndo, onAddToAsk, shortlistLabel = 'Approve', rejectLabel = 'Reject', onClick,
+  onPreview, onShortlist, onReject, onUndo, onAddToAsk, shortlistLabel = 'Shortlist', rejectLabel = 'Reject', onClick,
+  selected, onToggleSelect, notScored, skipped, meta, footer, actionsDisabled,
 }: {
   rank: number; initials?: string; title: string; subtitle: string; tag?: React.ReactNode
   band: Band; score: number; reason: string; chips: MatchChip[]
@@ -287,6 +325,14 @@ export function MatchRow({
   candidate?: Candidate; role?: Role
   onPreview?: () => void; onShortlist?: () => void; onReject?: () => void; onUndo?: () => void; onAddToAsk?: (c: MatchChip) => void
   shortlistLabel?: string; rejectLabel?: string; onClick?: () => void
+  /** v0.3 · T1 selection (checkbox shows on hover or when anything is selected) */
+  selected?: boolean; onToggleSelect?: (shift: boolean) => void
+  /** v0.3 · T2 passed stage 1 but not AI-scored: facts only, no band, no reason */
+  notScored?: boolean; skipped?: boolean
+  /** v0.3 · extra inline meta under the reason (e.g. "Scored on Growth resume · Use Product resume", client-ask chips) */
+  meta?: React.ReactNode; footer?: React.ReactNode
+  /** v0.3 · T5 { shortlist?: reason; reject?: reason } — visible but disabled with "who can" */
+  actionsDisabled?: { shortlist?: string; reject?: string }
 }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => { if (focused) ref.current?.focus({ preventScroll: false }) }, [focused])
@@ -322,7 +368,7 @@ export function MatchRow({
         ]
       : []
 
-  const approveText = shortlistLabel === 'Shortlist' ? 'Approve' : shortlistLabel
+  const approveText = shortlistLabel
 
   // When the 4-column facts strip is shown, omit evidence chips that merely repeat years, location/mode, or work auth
   const visibleChips = facts.length > 0
@@ -337,8 +383,8 @@ export function MatchRow({
       ref={ref}
       tabIndex={-1}
       className={cn(
-        'relative rounded-2xl border bg-gray-100 p-1 transition-[box-shadow,border-color] outline-none',
-        focused ? 'border-gray-1100 shadow-custom-hover' : shortlisted ? 'border-emerald-500/40' : 'border-border hover:border-gray-600',
+        'group/match relative rounded-2xl border bg-gray-100 p-1 transition-[box-shadow,border-color] outline-none',
+        selected ? 'border-gray-1100 bg-secondary' : focused ? 'border-gray-1100 shadow-custom-hover' : shortlisted ? 'border-emerald-500/40' : 'border-border hover:border-gray-600',
       )}
     >
       <div className="grid grid-cols-1 gap-1 lg:grid-cols-4">
@@ -363,7 +409,13 @@ export function MatchRow({
           {/* Row 1: Identity + Band Score */}
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
-              <span className="font-mono text-xs font-medium text-gray-1000 tnum">#{rank}</span>
+              {onToggleSelect && (
+                <span className={cn('transition-opacity', selected ? 'opacity-100' : 'opacity-0 group-hover/match:opacity-100 focus-within:opacity-100 [.any-selected_&]:opacity-100')}
+                  onClick={e => { e.stopPropagation(); onToggleSelect(e.shiftKey) }}>
+                  <span className="pointer-events-none"><Checkbox aria-label={`Select ${title}`} checked={!!selected} onChange={() => {}} /></span>
+                </span>
+              )}
+              <span className="font-mono text-xs font-medium text-gray-1000 tnum">{notScored ? '—' : `#${rank}`}</span>
               {initials && <Avatar initials={initials} size={36} />}
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -382,7 +434,9 @@ export function MatchRow({
                 </div>
               </div>
             </div>
-            <BandChip band={band} score={score} />
+            {notScored
+              ? <span className={cn('eyebrow rounded-md border border-dashed px-1.5 py-0.5 text-[10px]', skipped ? 'border-gray-700 text-muted-foreground' : 'border-gray-800 text-gray-1100')}>{skipped ? 'Skipped' : 'Not scored'}</span>
+              : <BandChip band={band} score={score} />}
           </div>
 
           {/* Row 2: 4-Column Structured Profile Facts */}
@@ -398,10 +452,13 @@ export function MatchRow({
           )}
 
           {/* Row 3: Plain-English Reason + Evidence Chips */}
-          <div className="space-y-2">
-            <p className="text-[13px] leading-snug text-gray-1100">“{reason}”</p>
-            {visibleChips.length > 0 && <ChipRow chips={visibleChips} onAddToAsk={onAddToAsk} />}
-          </div>
+          {!notScored && (
+            <div className="space-y-2">
+              <p className="text-[13px] leading-snug text-gray-1100">“{reason}”</p>
+              {visibleChips.length > 0 && <ChipRow chips={visibleChips} onAddToAsk={onAddToAsk} />}
+            </div>
+          )}
+          {meta && <div onClick={e => e.stopPropagation()}>{meta}</div>}
         </div>
 
         {/* ==================== 1/4 RIGHT SECTION: 3 Big Centered Action Buttons ==================== */}
@@ -424,7 +481,9 @@ export function MatchRow({
               <button
                 type="button"
                 onClick={onShortlist}
-                className="flex h-9 w-full max-w-[190px] items-center justify-center gap-2 rounded-xl border border-emerald-500/50 bg-emerald-500/15 px-4 text-xs font-semibold text-emerald-400 transition-colors hover:border-emerald-400 hover:bg-emerald-500/25"
+                disabled={!!actionsDisabled?.shortlist}
+                title={actionsDisabled?.shortlist}
+                className="flex h-9 w-full max-w-[190px] items-center justify-center gap-2 rounded-xl border border-emerald-500/50 bg-emerald-500/15 px-4 text-xs font-semibold text-emerald-400 transition-colors hover:border-emerald-400 hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Check className="size-4 shrink-0 stroke-[2.5]" />
                 <span>{approveText}</span>
@@ -437,8 +496,10 @@ export function MatchRow({
             <button
               type="button"
               onClick={onReject}
-              aria-label={rejectLabel}
-              className="flex h-9 w-full max-w-[190px] items-center justify-center gap-2 rounded-xl border border-[#e5484d]/50 bg-[#e5484d]/15 px-4 text-xs font-semibold text-[#ff6b6e] transition-colors hover:border-[#e5484d] hover:bg-[#e5484d]/25"
+              aria-label={actionsDisabled?.reject ? `${rejectLabel} — ${actionsDisabled.reject}` : rejectLabel}
+              disabled={!!actionsDisabled?.reject}
+              title={actionsDisabled?.reject}
+              className="flex h-9 w-full max-w-[190px] items-center justify-center gap-2 rounded-xl border border-[#e5484d]/50 bg-[#e5484d]/15 px-4 text-xs font-semibold text-[#ff6b6e] transition-colors hover:border-[#e5484d] hover:bg-[#e5484d]/25 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <X className="size-4 shrink-0 stroke-[2.5]" />
               <span>{rejectLabel}</span>
@@ -456,6 +517,7 @@ export function MatchRow({
               <span>{onPreview ? 'Preview' : 'Open role'}</span>
             </button>
           )}
+          {footer}
         </div>
       </div>
     </div>

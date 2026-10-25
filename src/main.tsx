@@ -35,6 +35,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="/resumes" element={<ResumesLibrary />} />
               <Route path="/resumes/masked" element={<MaskedBuilder />} />
               <Route path="/resumes/tailored" element={<TailoredReview />} />
+              <Route path="/resumes/editable" element={<TailoredReview />} />
               <Route path="/activity" element={<ActivityLog />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/wireframes" element={<WireframeIndex />} />

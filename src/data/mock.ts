@@ -1,6 +1,12 @@
 import type {
   Candidate, Role, Match, Eliminated, RoleMatchForCandidate, ResumeOutput, LogEntry, ProposedChange,
+  TeamMember, Resume, ClientAsk, Take, PromptDef,
 } from './types'
+
+/** Literal helpers: v0.3 fields are filled in by the export maps below */
+type RawCandidate = Omit<Candidate, 'domains'> & { domains?: string[] | null }
+type RawRole = Omit<Role, 'scoredCount' | 'aiScoresUsed'> & { scoredCount?: number; aiScoresUsed?: number }
+type RawMatch = Omit<Match, 'scored' | 'similarity'> & { scored?: boolean; similarity?: number }
 
 /* ==========================================================================
    Example data — Product Design Doc §16. Fictional, marked "Example".
@@ -10,7 +16,7 @@ export const POOL_SIZE = 412
 export const OPEN_ROLES = 14
 
 /* ---------- Named candidates (§16) ---------- */
-const named: Candidate[] = [
+const named: RawCandidate[] = [
   {
     id: 'priya', name: 'Priya S.', initials: 'PS', example: true,
     headline: 'Senior Product Manager · payments & B2B SaaS',
@@ -149,7 +155,7 @@ const seeds: Seed[] = [
   ['Sam D.', 'DevOps Engineer · Kubernetes, AWS', 'Engineering', 'DevOps', 8, 'Remote (US)', ['Remote'], { status: 'US citizen' }, 84],
 ]
 
-const supporting: Candidate[] = seeds.map(([name, headline, category, subcategory, years, city, workModes, workAuth, completeness], i) => {
+const supporting: RawCandidate[] = seeds.map(([name, headline, category, subcategory, years, city, workModes, workAuth, completeness], i) => {
   const initials = name.split(' ').map(s => s[0]).join('').replace('.', '')
   const metro = city ? city.split(',')[0].replace('Brooklyn', 'NYC').replace('New York', 'NYC').replace('Jersey City', 'NYC').replace('Oakland', 'SF Bay Area').replace('San Jose', 'SF Bay Area').replace('San Francisco', 'SF Bay Area') : null
   const ago = ['1h ago', '5h ago', 'Yesterday', '2 days ago', '3 days ago', '1 week ago', '2 weeks ago'][i % 7]
@@ -166,11 +172,31 @@ const supporting: Candidate[] = seeds.map(([name, headline, category, subcategor
   }
 })
 
-export const candidates: Candidate[] = [...named, ...supporting]
+/** v0.3 · T4 Domain column — extracted at parse time, editable. null = Not captured */
+const DOMAIN_BY_ID: Record<string, string[] | null> = {
+  priya: ['Payments/Fintech', 'B2B SaaS'], marcus: ['B2B SaaS'], ana: ['Edtech'], dev: null, sara: ['Marketplace', 'Consumer'],
+  jordant: ['Payments/Fintech'], ravip: ['Payments/Fintech'], elenav: ['B2B SaaS', 'Payments/Fintech'], chloew: ['Consumer'],
+  omarh: ['B2B SaaS'], hannahb: null, leog: ['DevTools'], meic: ['B2B SaaS'], tomasa: ['Healthtech'], ninaf: ['B2B SaaS'],
+  kwameo: ['E-commerce'], ishan: null, benr: ['Consumer'], fatimaz: ['Payments/Fintech'], arjunm: ['AI/ML'], gracel: ['B2B SaaS'],
+  diegos: ['B2B SaaS', 'Enterprise'], paulk: ['Marketplace'], yukit: ['Enterprise'], samd: ['DevTools'],
+}
+/** v0.3 · T8 — calls on record (takes only draft when ≥1 call or note exists) */
+const CALLS_BY_ID: Record<string, Candidate['calls']> = {
+  priya: [{ id: 'call-priya-1', label: 'Intro call (Fathom)', when: '3 days ago', by: 'Vandit D.' }],
+  ana: [{ id: 'call-ana-1', label: 'Screen (Granola)', when: 'Yesterday', by: 'Vandit D.' }],
+  marcus: [{ id: 'call-marcus-1', label: 'Intro call (Fathom)', when: '2 weeks ago', by: 'Purvesh N.' }],
+  sara: [{ id: 'call-sara-1', label: 'Catch-up call', when: 'Today', by: 'Purvesh N.' }],
+}
+
+export const candidates: Candidate[] = [...named, ...supporting].map(c => ({
+  ...c,
+  domains: c.domains !== undefined ? c.domains : (DOMAIN_BY_ID[c.id] ?? null),
+  calls: c.calls ?? CALLS_BY_ID[c.id] ?? [],
+}))
 export const candidateById = (id: string) => candidates.find(c => c.id === id)
 
 /* ---------- Roles (§16 + supporting) ---------- */
-export const roles: Role[] = [
+const rawRoles: RawRole[] = [
   {
     id: 'northwind-spm', title: 'Senior Product Manager', company: 'Northwind Pay', companyType: 'Client', companySource: 'Client JD',
     category: 'Product', subcategory: 'Product Manager', seniority: 'Senior', minYears: 6,
@@ -244,10 +270,24 @@ export const roles: Role[] = [
     status: 'Closed', jdVersion: 2, matchStatus: 'up-to-date', shortlisted: 5, updated: '1 month ago', passCount: 12,
   },
 ]
+/** v0.3 · T2 scoring counts + T9 latest update */
+const ROLE_V3: Record<string, Pick<Role, 'scoredCount' | 'aiScoresUsed' | 'latestUpdate'>> = {
+  'northwind-spm': { scoredCount: 7, aiScoresUsed: 17, latestUpdate: { text: 'JD v3: must-haves changed', who: 'Purvesh', when: '20 min ago' } },
+  'lumen-fse': { scoredCount: 10, aiScoresUsed: 10, latestUpdate: { text: 'Shortlist ready (2)', who: 'Vandit', when: '1h ago' } },
+  'brightdesk-gmm': { scoredCount: 0, aiScoresUsed: 0, latestUpdate: { text: '38 pass the must-haves · not scored', who: 'Vandit', when: '35 min ago' } },
+  'harbor-be': { scoredCount: 10, aiScoresUsed: 20, latestUpdate: { text: '4 shortlisted', who: 'Purvesh', when: '2 days ago' } },
+  'quill-pmm': { scoredCount: 5, aiScoresUsed: 5, latestUpdate: { text: 'Leo G. included anyway', who: 'Purvesh', when: '3 days ago' } },
+  'atlas-pd': { scoredCount: 10, aiScoresUsed: 10, latestUpdate: { text: 'Work mode changed: Onsite → Hybrid', who: 'Vandit', when: '5h ago' } },
+  'cobalt-ds': { scoredCount: 0, aiScoresUsed: 0, latestUpdate: { text: 'Role added from intake call', who: 'Vandit', when: '6h ago' } },
+  'pine-ae': { scoredCount: 10, aiScoresUsed: 10, latestUpdate: { text: 'Shortlist ready (3)', who: 'Purvesh', when: '1 week ago' } },
+  'vela-fe': { scoredCount: 10, aiScoresUsed: 10, latestUpdate: { text: 'Put on hold', who: 'Purvesh', when: '2 weeks ago' } },
+  'orbit-lc': { scoredCount: 12, aiScoresUsed: 12, latestUpdate: { text: 'Role closed · 5 sent', who: 'Purvesh', when: '1 month ago' } },
+}
+export const roles: Role[] = rawRoles.map(r => ({ ...r, scoredCount: r.scoredCount ?? ROLE_V3[r.id]?.scoredCount ?? 0, aiScoresUsed: r.aiScoresUsed ?? ROLE_V3[r.id]?.aiScoresUsed ?? 0, latestUpdate: r.latestUpdate ?? ROLE_V3[r.id]?.latestUpdate }))
 export const roleById = (id: string) => roles.find(r => r.id === id)
 
 /* ---------- Matches (role → candidates) ---------- */
-export const matches: Match[] = [
+const rawMatches: RawMatch[] = [
   // Northwind Pay · Senior PM
   { id: 'm1', roleId: 'northwind-spm', candidateId: 'priya', rank: 1, band: 'Strong', score: 88, status: 'new',
     reason: 'Owns merchant payouts at a Series B fintech; meets every must-have on evidence except SQL, which is predicted.',
@@ -305,6 +345,35 @@ export const matches: Match[] = [
     chips: [{ kind: 'evidence', label: '5 yrs' }, { kind: 'evidence', label: 'Onsite' }, { kind: 'evidence', label: 'LinkedIn Ads' }, { kind: 'assumed', label: 'Work authorization' }] },
 ]
 
+/**
+ * v0.3 · T2 — Stage 1 passers that haven't been AI-scored yet. Sorted by similarity.
+ * band/score/reason are placeholders until "Score with AI" runs (never shown while scored=false).
+ */
+const UNSCORED: Record<string, string[]> = {
+  'northwind-spm': ['marcus', 'gracel', 'yukit', 'leog', 'omarh', 'tomasa', 'diegos', 'chloew', 'hannahb', 'kwameo', 'benr', 'samd'],
+  'brightdesk-gmm': ['leog', 'hannahb', 'diegos', 'gracel', 'yukit', 'paulk'],
+  'lumen-fse': ['tomasa', 'samd', 'benr', 'gracel'],
+  'cobalt-ds': ['arjunm', 'gracel', 'sara', 'priya', 'yukit', 'elenav'],
+}
+const SCORED_ROLES = new Set(['northwind-spm', 'lumen-fse'])
+const unscoredMatches: RawMatch[] = Object.entries(UNSCORED).flatMap(([roleId, ids]) => {
+  const base = rawMatches.filter(m => m.roleId === roleId).length
+  return ids.map((candidateId, i) => ({
+    id: `u-${roleId}-${candidateId}`, roleId, candidateId, rank: base + i + 1, band: 'Good' as const,
+    score: 0, status: 'new' as const, reason: '', chips: [], scored: false, similarity: base + i + 1,
+  }))
+})
+export const matches: Match[] = [...rawMatches, ...unscoredMatches].map(m => ({
+  ...m,
+  scored: m.scored ?? SCORED_ROLES.has(m.roleId),
+  similarity: m.similarity ?? m.rank,
+  scoredInRun: (m.scored ?? SCORED_ROLES.has(m.roleId)) ? 1 : undefined,
+  scoredOnResumeId: m.candidateId === 'priya' && m.roleId === 'northwind-spm' ? 'res-priya-product' : undefined,
+  askEvidence: m.roleId === 'northwind-spm' && (m.scored ?? true)
+    ? [{ askId: 'ask-nw-2', label: 'Led a team of 5+', found: ['m1', 'm2', 'm5'].includes(m.id) }]
+    : undefined,
+}))
+
 /** Extra matches revealed by "Show next 5" for Northwind (ranks 8+) */
 export const northwindAfterRerun: Partial<Record<string, Match['delta']>> = {
   m3: 'new', m4: 'moved', m7: 'requalified',
@@ -360,10 +429,15 @@ export const rolesForCandidate: Record<string, RoleMatchForCandidate[]> = {
 
 /* ---------- Resume outputs ---------- */
 export const outputs: ResumeOutput[] = [
-  { id: 'o1', candidateId: 'priya', type: 'Masked', roleId: 'northwind-spm', template: 'A · Compact', createdBy: 'Purvesh N.', created: 'Today, 10:42', stale: true },
+  { id: 'o1', candidateId: 'priya', type: 'Masked', roleId: 'northwind-spm', template: 'A · Compact', createdBy: 'Purvesh N.', created: 'Today, 10:42', stale: true,
+    staleReason: 'Product resume has a new version (v3)', sourceResumeId: 'res-priya-product', sourceVersion: 2, promptVersion: 'Masking v3',
+    revisions: [
+      { n: 1, instruction: 'Generated', scope: 'Whole resume', createdBy: 'Purvesh N.', at: 'Today, 10:38' },
+      { n: 2, instruction: 'Shorter, lead with payments', scope: 'Whole resume', createdBy: 'Purvesh N.', at: 'Today, 10:41' },
+    ] },
   { id: 'o2', candidateId: 'ana', type: 'Masked', roleId: 'lumen-fse', template: 'C · Role-fit', createdBy: 'Vandit D.', created: 'Today, 09:15', stale: false },
   { id: 'o3', candidateId: 'kwameo', type: 'Masked', roleId: 'lumen-fse', template: 'C · Role-fit', createdBy: 'Vandit D.', created: 'Today, 09:15', stale: false },
-  { id: 'o4', candidateId: 'jordant', type: 'Tailored', roleId: 'northwind-spm', template: 'Tailored · Classic', createdBy: 'Purvesh N.', created: 'Yesterday', stale: false },
+  { id: 'o4', candidateId: 'jordant', type: 'Editable', roleId: 'northwind-spm', template: 'Editable · Classic', createdBy: 'Purvesh N.', created: 'Yesterday', stale: false },
   { id: 'o5', candidateId: 'marcus', type: 'Masked', roleId: null, template: 'B · Achievement-led', createdBy: 'Riya (intern)', created: 'Yesterday', stale: false },
   { id: 'o6', candidateId: 'sara', type: 'As-is', roleId: 'northwind-spm', template: 'Original', createdBy: 'Purvesh N.', created: '2 days ago', stale: false },
   { id: 'o7', candidateId: 'meic', type: 'Masked', roleId: null, template: 'A · Compact', createdBy: 'Riya (intern)', created: '3 days ago', stale: false },
@@ -397,10 +471,109 @@ export const jdChangesNorthwind: ProposedChange[] = [
   { id: 'j3', field: 'Pay range', from: '$165k–$185k', to: '$170k–$190k', source: 'JD' },
 ]
 
-export const team = [
-  { name: 'Purvesh Naik', initials: 'PN', email: 'purvesh@heroscouter.com', access: 'Admin' },
-  { name: 'Vandit Dubey', initials: 'VD', email: 'vandit@heroscouter.com', access: 'Admin' },
-  { name: 'Riya (intern)', initials: 'RI', email: 'riya@heroscouter.com', access: 'Member' },
+/** v0.3 · T5 three fixed roles · T8 display name + title sign takes */
+export const team: TeamMember[] = [
+  { id: 'purvesh', name: 'Purvesh Naik', initials: 'PN', email: 'purvesh@heroscouter.com', access: 'Admin', displayName: 'Purvesh N.', title: 'Founder, HeroScouter' },
+  { id: 'vandit', name: 'Vandit Dubey', initials: 'VD', email: 'vandit@heroscouter.com', access: 'Recruiter', displayName: 'Vandit D.', title: 'Talent Partner, HeroScouter' },
+  { id: 'aman', name: 'Aman K. (associate)', initials: 'AK', email: 'aman@heroscouter.com', access: 'Associate', displayName: 'Aman K.', title: 'Talent Associate, HeroScouter' },
+  { id: 'riya', name: 'Riya (intern)', initials: 'RI', email: 'riya@heroscouter.com', access: 'Associate', displayName: 'Riya S.', title: 'Talent Intern, HeroScouter' },
+]
+
+/* ---------- v0.3 · T3 Resumes (one profile, one or more resumes) ---------- */
+export const resumes: Resume[] = [
+  { id: 'res-priya-product', candidateId: 'priya', label: 'Product', targetCategory: 'Product', isPrimary: true,
+    headline: 'Senior Product Manager · payments & B2B SaaS', emphasis: ['Payments', 'API products', 'Pricing'],
+    versions: [
+      { n: 1, file: 'Priya_S_Resume.pdf', uploadedBy: 'Vandit D.', uploadedAt: '3 weeks ago', changesApplied: 14 },
+      { n: 2, file: 'Priya_S_Resume_2026.pdf', uploadedBy: 'Vandit D.', uploadedAt: '3 days ago', changesApplied: 3 },
+      { n: 3, file: 'Priya_S_PM_Oct.pdf', uploadedBy: 'Purvesh N.', uploadedAt: '2h ago', changesApplied: 1 },
+    ] },
+  { id: 'res-priya-growth', candidateId: 'priya', label: 'Growth', targetCategory: 'Marketing', isPrimary: false,
+    headline: 'Growth & monetization lead · pricing, checkout, self-serve', emphasis: ['Pricing', 'Self-serve checkout', 'Experimentation'],
+    versions: [{ n: 1, file: 'Priya_S_Growth.pdf', uploadedBy: 'Vandit D.', uploadedAt: 'Yesterday', changesApplied: 2 }] },
+]
+/** Every candidate without an explicit resume gets one Primary resume (most candidates: no selectors anywhere) */
+export function defaultResumeFor(c: Candidate): Resume {
+  return {
+    id: `res-${c.id}`, candidateId: c.id, label: c.category, targetCategory: c.category, isPrimary: true,
+    headline: c.headline, emphasis: c.skills.slice(0, 3),
+    versions: Array.from({ length: c.resumeVersion }, (_, i) => ({ n: i + 1, file: `${c.name.replace(/[^A-Za-z]/g, '_')}_Resume_v${i + 1}.pdf`, uploadedBy: 'Vandit D.', uploadedAt: i + 1 === c.resumeVersion ? c.updated : '1 month ago', changesApplied: 0 })),
+  }
+}
+
+/* ---------- v0.3 · T7 Client asks ---------- */
+export const clientAsks: ClientAsk[] = [
+  { id: 'ask-nw-1', roleId: 'northwind-spm', text: 'No sponsorship — transfer is fine', type: 'must-column', column: 'Work authorization', source: 'Call', saidBy: 'Sean (VP Product)', when: 'Yesterday', addedBy: 'Purvesh N.' },
+  { id: 'ask-nw-2', roleId: 'northwind-spm', text: 'Has led a team of 5+', type: 'must-signal', source: 'Call', saidBy: 'Sean (VP Product)', when: 'Yesterday', addedBy: 'Purvesh N.' },
+  { id: 'ask-nw-3', roleId: 'northwind-spm', text: 'Fintech background a plus', type: 'nice', source: 'Email', saidBy: 'Dana K.', when: '2 days ago', addedBy: 'Vandit D.' },
+  { id: 'ask-nw-4', roleId: 'northwind-spm', text: 'Sean cares about speed; the team ships weekly', type: 'context', source: 'Call', saidBy: 'Sean (VP Product)', when: 'Yesterday', addedBy: 'Purvesh N.' },
+]
+/** Proposed from an intake transcript (US-42) */
+export const proposedAsksFromTranscript: Omit<ClientAsk, 'id' | 'roleId' | 'addedBy'>[] = [
+  { text: 'Must be in the Bay Area 3 days a week', type: 'must-column', column: 'Location', source: 'Call', saidBy: 'Sean', when: 'Just now' },
+  { text: 'Has shipped a public API', type: 'must-signal', source: 'Call', saidBy: 'Sean', when: 'Just now' },
+  { text: 'Ledger or reconciliation experience a plus', type: 'nice', source: 'Call', saidBy: 'Sean', when: 'Just now' },
+  { text: 'Hiring manager wants a first call within a week', type: 'context', source: 'Call', saidBy: 'Sean', when: 'Just now' },
+]
+
+/* ---------- v0.3 · T8 Takes ---------- */
+export const takes: Take[] = [
+  { id: 'take-priya', candidateId: 'priya', roleId: null, status: 'signed', authorId: 'vandit', approvedAt: '3 days ago',
+    text: 'The most commercially sharp payments PM I have spoken to this quarter. She talks ledgers with engineers and revenue with founders.', sourceCallIds: ['call-priya-1'] },
+  { id: 'take-ana', candidateId: 'ana', roleId: null, status: 'draft', authorId: 'vandit', draftedByAI: true,
+    text: 'Ships fast and owns outcomes: rebuilt a checkout end to end and halved latency. Needs an H-1B filing next cap season.', sourceCallIds: ['call-ana-1'] },
+  { id: 'take-marcus', candidateId: 'marcus', roleId: null, status: 'signed', authorId: 'purvesh', approvedAt: '2 weeks ago',
+    text: 'Rare growth marketer who can explain every dollar of spend. I would put him in front of any B2B founder.', sourceCallIds: ['call-marcus-1'] },
+]
+
+/* ---------- v0.3 · T5 Prompt registry ---------- */
+const pv = (v: number, text: string, savedBy: string, savedAt: string, note?: string) => ({ v, text, savedBy, savedAt, note })
+export const prompts: PromptDef[] = [
+  { id: 'masking', name: 'Masking', usedIn: 'S-09 Masked builder', group: 'Outputs', editable: true, activeVersion: 4,
+    variables: ['{candidate}', '{role}', '{template}', '{hidden_fields}'],
+    versions: [
+      pv(1, 'Rewrite the resume so the candidate cannot be identified…', 'Vandit D.', '2 months ago'),
+      pv(2, 'Rewrite the resume so the candidate cannot be identified. Describe employers by stage, sector and size…', 'Vandit D.', '6 weeks ago'),
+      pv(3, 'Describe employers by stage, sector and size. Keep metros, never cities…', 'Purvesh N.', '3 weeks ago', 'Metro only'),
+      pv(4, 'You prepare a masked one-page profile for {role}. Describe each employer by stage, sector and size instead of its name unless {hidden_fields} says Show. Keep the metro, never the city. Lead with the impact numbers that matter for {role}.', 'Purvesh N.', '1 week ago', 'Lead with impact for the role'),
+    ] },
+  { id: 'why', name: '“Why we recommend”', usedIn: 'S-09 Masked builder', group: 'Outputs', editable: true, activeVersion: 2,
+    variables: ['{candidate}', '{role}', '{must_haves}'],
+    versions: [
+      pv(1, 'Write 3 bullets on why this candidate fits…', 'Vandit D.', '1 month ago'),
+      pv(2, 'Write 3 short bullets mapping {candidate}’s evidence to the must-haves of {role}. One fact per bullet. No adjectives without a number.', 'Vandit D.', '2 weeks ago'),
+    ] },
+  { id: 'take', name: '“Our take” draft', usedIn: 'S-07 Profile · S-09 Masked builder', group: 'Outputs', editable: true, activeVersion: 1,
+    variables: ['{call_notes}', '{candidate}', '{role}', '{signer}'],
+    versions: [pv(1, 'Draft a 1–2 sentence take in the voice of {signer}, using only {call_notes}. Max 280 characters. Say one specific thing you learned on the call.', 'Purvesh N.', '1 week ago')] },
+  { id: 'tailor', name: 'Editable output', usedIn: 'S-10 Editable review', group: 'Outputs', editable: true, activeVersion: 3,
+    variables: ['{candidate}', '{role}', '{source_resume}'],
+    versions: [
+      pv(1, 'Tailor the resume to the role…', 'Vandit D.', '2 months ago'),
+      pv(2, 'Reorder and reword bullets toward {role}. Every change must trace to {source_resume} or a call.', 'Vandit D.', '1 month ago'),
+      pv(3, 'Reorder and reword bullets toward {role}. Rewrite the summary in 2 lines. Every change must trace to {source_resume} or a call; mark the source.', 'Purvesh N.', '10 days ago'),
+    ] },
+  { id: 'email-prospect', name: 'Prospect pitch', usedIn: 'Copy email (F-11)', group: 'Email drafts', editable: true, activeVersion: 1,
+    variables: ['{role}', '{company}', '{candidates}', '{signer}'],
+    versions: [pv(1, 'Hi — saw {company} is hiring a {role}. Here are {candidates} we think fit, masked. Reply and I’ll make an intro. — {signer}', 'Purvesh N.', '2 weeks ago')] },
+  { id: 'email-client', name: 'Client shortlist', usedIn: 'Copy email (F-11)', group: 'Email drafts', editable: true, activeVersion: 1,
+    variables: ['{role}', '{company}', '{candidates}', '{signer}'],
+    versions: [pv(1, 'Hi — for the {role} at {company}, here is our shortlist in order: {candidates}. Takes are below each name. — {signer}', 'Purvesh N.', '2 weeks ago')] },
+  { id: 'email-candidate', name: 'Candidate “roles for you”', usedIn: 'Copy message (S-07)', group: 'Email drafts', editable: true, activeVersion: 1,
+    variables: ['{candidate}', '{roles}', '{signer}'],
+    versions: [pv(1, 'Hi {candidate} — a few roles that fit what you told me: {roles}. Want me to share your profile? — {signer}', 'Vandit D.', '3 weeks ago')] },
+  { id: 'refine-presets', name: 'Refinement presets', usedIn: 'Refine box (S-09, S-10)', group: 'Refine presets', editable: true, activeVersion: 1,
+    variables: [],
+    versions: [pv(1, 'Shorter\nLead with impact\nMore numbers\nLess salesy\nFocus on B2B', 'Vandit D.', '1 week ago')] },
+  { id: 'extract-resume', name: 'Resume extraction', usedIn: 'S-06 New candidate', group: 'Extraction', editable: false, activeVersion: 6,
+    variables: ['{resume_text}'], versions: [pv(6, 'Extract the profile fields from {resume_text}. Mark anything not stated as null. Never guess work authorization.', 'Arjun (dev)', '1 month ago')] },
+  { id: 'extract-jd', name: 'JD extraction', usedIn: 'S-03 Role editor', group: 'Extraction', editable: false, activeVersion: 3,
+    variables: ['{jd_text}'], versions: [pv(3, 'Extract must-haves, nice-to-haves, pay and location from {jd_text}. Default sponsorship to Unknown.', 'Arjun (dev)', '1 month ago')] },
+  { id: 'extract-call', name: 'Call extraction', usedIn: 'S-07 Profile · S-04 Client asks', group: 'Extraction', editable: false, activeVersion: 2,
+    variables: ['{transcript}'], versions: [pv(2, 'From {transcript}, propose changes to profile fields or client asks. Quote the line each comes from.', 'Arjun (dev)', '3 weeks ago')] },
+  { id: 'score', name: 'Stage-2 scoring', usedIn: 'S-04 Matches', group: 'Scoring', editable: false, activeVersion: 5,
+    variables: ['{role}', '{candidate}', '{resume}', '{client_asks}'],
+    versions: [pv(5, 'Score {candidate} for {role} on evidence. Return a band, a one-line reason, and chips for evidence, predicted, assumed and gaps. Check each of {client_asks}.', 'Arjun (dev)', '1 month ago')] },
 ]
 
 export const REJECT_REASONS = ['Skills', 'Seniority', 'Location', 'Work authorization', 'Pay', 'Not interested', 'Other'] as const

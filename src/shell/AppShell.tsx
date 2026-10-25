@@ -89,7 +89,7 @@ export function AppShell() {
 }
 
 function Sidebar({ collapsed, onToggle, mobile }: { collapsed: boolean; onToggle: () => void; mobile?: boolean }) {
-  const { needsAttention, roles, candidates } = useApp()
+  const { needsAttention, roles, candidates, currentUser, team, setCurrentUser, toast } = useApp()
   const outOfDate = roles.filter(r => r.matchStatus === 'out-of-date').length
   const missing = 9
   const navigate = useNavigate()
@@ -128,24 +128,6 @@ function Sidebar({ collapsed, onToggle, mobile }: { collapsed: boolean; onToggle
                     {!collapsed && it.to === '/roles' && <span className="ml-auto font-mono text-[10px] text-gray-900 tnum">{roles.filter(r => r.status === 'Open').length}</span>}
                     {!collapsed && it.to === '/candidates' && <span className="ml-auto font-mono text-[10px] text-gray-900 tnum">412</span>}
                   </NavLink>
-                  {!collapsed && it.to === '/candidates' && (
-                    <div className="mt-0.5 ml-5 flex flex-col gap-0.5 border-l border-border pl-2">
-                      <Link
-                        to="/candidates?screen=ai"
-                        className="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-gray-1100 transition-colors hover:bg-muted hover:text-foreground"
-                      >
-                        <span className="text-gray-900">✦</span>
-                        <span className="truncate">AI Scout</span>
-                      </Link>
-                      <Link
-                        to="/candidates?screen=manual"
-                        className="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-gray-1100 transition-colors hover:bg-muted hover:text-foreground"
-                      >
-                        <span className="text-gray-900">⊞</span>
-                        <span className="truncate">Manual Filters & Pool</span>
-                      </Link>
-                    </div>
-                  )}
                 </li>
               ))}
             </ul>
@@ -167,14 +149,30 @@ function Sidebar({ collapsed, onToggle, mobile }: { collapsed: boolean; onToggle
         )}
         {needsAttention && collapsed && <span title="Needs attention" className="size-2 rounded-full bg-warning" />}
         <div className={cn('flex items-center justify-between gap-2 px-1 pt-1', collapsed && 'flex-col px-0')}>
-          <Menu align="start"
+          {/* v0.3 · T5 — "View as" switches the signed-in role so reviewers can see Admin / Recruiter / Associate limits */}
+          <Menu align="start" width={260}
             trigger={({ toggle }) => (
               <button onClick={toggle} className="flex min-w-0 items-center gap-2 rounded-lg p-1 text-sm transition-colors hover:bg-muted">
-                <Avatar initials="VD" />
-                {!collapsed && <span className="truncate font-medium">Vandit Dubey</span>}
+                <Avatar initials={currentUser.initials} />
+                {!collapsed && (
+                  <span className="flex min-w-0 flex-col items-start leading-tight">
+                    <span className="truncate font-medium">{currentUser.name}</span>
+                    <span className="font-mono text-[10px] text-muted-foreground">{currentUser.access}</span>
+                  </span>
+                )}
               </button>
             )}
-            items={[{ label: 'Profile' }, { label: 'Keyboard shortcuts', hint: '⌘K' }, { separator: true, label: '' }, { label: 'Sign out' }]}
+            items={[
+              { label: 'My profile', hint: 'signature', onSelect: () => navigate('/settings?tab=profile') },
+              { separator: true, label: '' },
+              ...team.map(m => ({
+                label: `View as ${m.displayName} · ${m.access}`,
+                hint: m.id === currentUser.id ? 'current' : undefined,
+                onSelect: () => { setCurrentUser(m.id); toast(`Viewing as ${m.displayName} (${m.access})`) },
+              })),
+              { separator: true, label: '' },
+              { label: 'Sign out' },
+            ]}
           />
           <button aria-label="Notifications" className="relative flex size-8 shrink-0 items-center justify-center rounded-lg border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground">
             <Bell className="size-4" />

@@ -1,14 +1,14 @@
 import React, { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  AlertTriangle, Briefcase, Check, CircleCheck, Copy, Download, Eye, FileCheck,
-  FileText, Globe, Layers, Link2, MoreHorizontal, RefreshCw, SearchX, Shield,
+  AlertTriangle, Briefcase, Check, ChevronDown, CircleCheck, Copy, Download, Eye, EyeOff, FileCheck,
+  FileText, Globe, Layers, Link2, Mail, MoreHorizontal, RefreshCw, SearchX, Shield,
   Sparkles, User, Wand2,
 } from 'lucide-react'
 import { ScrollPage, useTopBar } from '../shell/AppShell'
 import { Avatar, Button, CompanyTypeTag, EmptyState, ExampleMark, Menu, PageHeader, Select, Switch, cn } from '../components/ui'
 import { DataTable, FilterChip, type Column } from '../components/hs'
-import { ColumnsMenu, useColumnPrefs } from '../components/v3'
+import { ColumnsMenu, SelectionBar, useColumnPrefs, useListSelection } from '../components/v3'
 import { latestVersion } from '../components/outputs'
 import { BulkMaskForRoleDialog } from '../components/BulkMaskModal'
 import { useApp, useWireframeState } from '../store/AppStore'
@@ -61,7 +61,8 @@ export function ResumesLibrary() {
   const [roleF, setRoleF] = useState('all')
   const [byF, setByF] = useState('all')
   const [email, setEmail] = useState<ResumeOutput | null>(null)
-  const [bulkMaskOpen, setBulkMaskOpen] = useState(false)
+  const [bulkEmailCands, setBulkEmailCands] = useState<string[] | null>(null)
+  const [bulkMaskCands, setBulkMaskCands] = useState<string[] | null>(null)
   const colPrefs = useColumnPrefs('resumes-v4-saas', RESUME_COL_SPECS.filter(s => s.defaultVisible).map(s => s.key))
 
   const all = wf === 'empty' ? [] : app.outputs
@@ -75,6 +76,14 @@ export function ResumesLibrary() {
       ),
     [all, types, roleF, byF],
   )
+
+  const sel = useListSelection(rows.map(o => o.id))
+  const selectedRows = useMemo(() => rows.filter(o => sel.selected.includes(o.id)), [rows, sel.selected])
+  const selectedCandIds = useMemo(
+    () => Array.from(new Set(selectedRows.map(o => o.candidateId))),
+    [selectedRows],
+  )
+  const staleRowIds = useMemo(() => rows.filter(o => o.stale).map(o => o.id), [rows])
 
   const roleIds = Array.from(new Set(app.outputs.map(o => o.roleId).filter((x): x is string => !!x)))
   const people = Array.from(new Set(app.outputs.map(o => o.createdBy)))
@@ -339,77 +348,180 @@ export function ResumesLibrary() {
             >
               Masked Role Links View
             </Button>
-            <Button variant="primary" icon={<Sparkles />} onClick={() => setBulkMaskOpen(true)}>
+            <Button variant="primary" icon={<Sparkles />} onClick={() => setBulkMaskCands(selectedCandIds.length > 0 ? selectedCandIds : [])}>
               Select resumes &amp; bulk mask
             </Button>
           </div>
         }
       />
 
-      {/* Interactive Icon Filter Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <FilterChip
-            active={types.length === 0}
-            icon={<Layers />}
-            count={all.length}
-            onClick={() => setTypes([])}
+      {/* Interactive Icon Filter Bar + Quick Bulk Select */}
+      {sel.selected.length > 0 ? (
+        <SelectionBar
+          count={sel.selected.length}
+          shown={rows.length}
+          onSelectAllShown={() => sel.selectAll(rows.map(o => o.id))}
+          onClear={sel.clear}
+        >
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<Shield />}
+            onClick={() => setBulkMaskCands(selectedCandIds)}
           >
-            All outputs
-          </FilterChip>
-          {TYPES.map(t => (
-            <FilterChip
-              key={t}
-              active={types.includes(t)}
-              icon={TYPE_META[t].icon}
-              count={counts[t]}
-              onClick={() => setTypes(s => (s.includes(t) ? s.filter(x => x !== t) : [...s, t]))}
-            >
-              {t}
-            </FilterChip>
-          ))}
-          <span className="mx-1 h-5 w-px bg-border" />
-          <Select
-            aria-label="Filter by role"
-            value={roleF}
-            onChange={setRoleF}
-            options={[
-              { value: 'all', label: 'All roles' },
-              ...roleIds.map(id => {
-                const r = app.role(id)
-                return { value: id, label: r ? `${r.title} — ${r.company}` : id }
-              }),
-              { value: 'none', label: 'No role' },
+            Select resumes &amp; bulk mask ({selectedCandIds.length})
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<Link2 />}
+            onClick={() => {
+              const urls = selectedRows.map(o => o.shareUrl ?? `https://heroscouter.com/m/${o.roleId ?? 'pool'}/${o.candidateId}`)
+              navigator.clipboard?.writeText(urls.join('\n')).catch(() => {})
+              app.toast(`Copied ${urls.length} shareable web link${urls.length === 1 ? '' : 's'}`)
+            }}
+          >
+            Copy {selectedRows.length} link{selectedRows.length === 1 ? '' : 's'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<Wand2 />}
+            onClick={() => {
+              const firstRole = selectedRows.find(o => o.roleId)?.roleId ?? 'northwind-spm'
+              navigate(`/resumes/masked?candidates=${selectedCandIds.join(',')}&role=${firstRole}`)
+            }}
+          >
+            Open in Studio ({selectedCandIds.length})
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<Mail />}
+            onClick={() => setBulkEmailCands(selectedCandIds)}
+          >
+            Draft email ({selectedCandIds.length})
+          </Button>
+          <Menu
+            align="end"
+            width={235}
+            trigger={({ toggle }) => (
+              <Button variant="outline" size="sm" iconRight={<ChevronDown className="size-3.5 text-muted-foreground" />} onClick={toggle}>
+                More bulk actions
+              </Button>
+            )}
+            items={[
+              {
+                label: `Enable ${selectedRows.length} web link(s)`,
+                icon: <Globe />,
+                onSelect: () => {
+                  selectedRows.forEach(o => app.toggleOutputLink(o.id, true))
+                  app.toast(`Enabled ${selectedRows.length} shareable link${selectedRows.length === 1 ? '' : 's'}`)
+                },
+              },
+              {
+                label: `Revoke / disable ${selectedRows.length} link(s)`,
+                icon: <EyeOff />,
+                onSelect: () => {
+                  selectedRows.forEach(o => app.toggleOutputLink(o.id, false))
+                  app.toast(`Revoked ${selectedRows.length} shareable link${selectedRows.length === 1 ? '' : 's'}`)
+                },
+              },
+              { separator: true, label: '' },
+              {
+                label: `Download ${selectedRows.length} PDFs (ZIP)`,
+                icon: <Download />,
+                onSelect: () => {
+                  app.toast(`Downloaded ${selectedRows.length} resume PDF${selectedRows.length === 1 ? '' : 's'} as ZIP`)
+                  sel.clear()
+                },
+              },
             ]}
           />
-          <Select
-            aria-label="Filter by creator"
-            value={byF}
-            onChange={setByF}
-            options={[{ value: 'all', label: 'Created by anyone' }, ...people.map(p => ({ value: p, label: p }))]}
-          />
-          {filtered && (
-            <Button variant="ghost" size="sm" onClick={clear}>
-              Clear filters
-            </Button>
-          )}
-        </div>
+        </SelectionBar>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <FilterChip
+              active={types.length === 0}
+              icon={<Layers />}
+              count={all.length}
+              onClick={() => setTypes([])}
+            >
+              All outputs
+            </FilterChip>
+            {TYPES.map(t => (
+              <FilterChip
+                key={t}
+                active={types.includes(t)}
+                icon={TYPE_META[t].icon}
+                count={counts[t]}
+                onClick={() => setTypes(s => (s.includes(t) ? s.filter(x => x !== t) : [...s, t]))}
+              >
+                {t}
+              </FilterChip>
+            ))}
+            <span className="mx-1 h-5 w-px bg-border" />
+            <Select
+              aria-label="Filter by role"
+              value={roleF}
+              onChange={setRoleF}
+              options={[
+                { value: 'all', label: 'All roles' },
+                ...roleIds.map(id => {
+                  const r = app.role(id)
+                  return { value: id, label: r ? `${r.title} — ${r.company}` : id }
+                }),
+                { value: 'none', label: 'No role' },
+              ]}
+            />
+            <Select
+              aria-label="Filter by creator"
+              value={byF}
+              onChange={setByF}
+              options={[{ value: 'all', label: 'Created by anyone' }, ...people.map(p => ({ value: p, label: p }))]}
+            />
+            {filtered && (
+              <Button variant="ghost" size="sm" onClick={clear}>
+                Clear filters
+              </Button>
+            )}
+          </div>
 
-        <div className="flex items-center gap-2">
-          <ColumnsMenu
-            options={RESUME_COL_SPECS}
-            visible={colPrefs.visible}
-            onChange={colPrefs.setVisible}
-            onReset={colPrefs.reset}
-          />
+          <div className="flex items-center gap-2">
+            {staleRowIds.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                icon={<AlertTriangle className="text-warning" />}
+                onClick={() => sel.selectAll(staleRowIds)}
+              >
+                Select stale ({staleRowIds.length})
+              </Button>
+            )}
+            {rows.length > 0 && (
+              <Button variant="outline" size="sm" onClick={() => sel.selectAll(rows.map(o => o.id))}>
+                Select all ({rows.length})
+              </Button>
+            )}
+            <ColumnsMenu
+              options={RESUME_COL_SPECS}
+              visible={colPrefs.visible}
+              onChange={colPrefs.setVisible}
+              onReset={colPrefs.reset}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       <DataTable
         caption="Generated resumes and shareable masked links"
         columns={visibleColumns}
         rows={rows}
         loading={wf === 'loading'}
+        selectable
+        selected={sel.selected}
+        onSelectedChange={sel.setSelected}
         onRowClick={o => {
           if (o.type === 'Masked') {
             navigate(`/resumes/masked-view?role=${o.roleId ?? 'northwind-spm'}&candidate=${o.candidateId}`)
@@ -471,7 +583,7 @@ export function ResumesLibrary() {
               title="No resumes yet"
               body="No resumes generated yet. Select candidates for a role and bulk mask their resumes."
               action={
-                <Button variant="primary" icon={<Sparkles />} onClick={() => setBulkMaskOpen(true)}>
+                <Button variant="primary" icon={<Sparkles />} onClick={() => setBulkMaskCands([])}>
                   Select resumes &amp; bulk mask
                 </Button>
               }
@@ -488,18 +600,19 @@ export function ResumesLibrary() {
       />
 
       <BulkMaskForRoleDialog
-        open={bulkMaskOpen}
-        onClose={() => setBulkMaskOpen(false)}
+        open={bulkMaskCands !== null}
+        onClose={() => setBulkMaskCands(null)}
         initialRoleId={roleF !== 'all' && roleF !== 'none' ? roleF : undefined}
+        initialCandidateIds={bulkMaskCands && bulkMaskCands.length > 0 ? bulkMaskCands : undefined}
       />
 
       <CopyEmailDialog
-        key={email?.id ?? 'none'}
-        open={!!email}
-        onClose={() => setEmail(null)}
-        candidateIds={email ? [email.candidateId] : []}
-        roleId={email?.roleId ?? null}
-        initialVariant={email?.type === 'Masked' ? 'prospect' : 'client'}
+        key={email?.id ?? (bulkEmailCands ? bulkEmailCands.join(',') : 'none')}
+        open={!!email || !!bulkEmailCands}
+        onClose={() => { setEmail(null); setBulkEmailCands(null) }}
+        candidateIds={bulkEmailCands ?? (email ? [email.candidateId] : [])}
+        roleId={email?.roleId ?? (selectedRows.find(o => o.roleId)?.roleId ?? null)}
+        initialVariant={(email?.type ?? selectedRows[0]?.type) === 'Masked' ? 'prospect' : 'client'}
       />
     </ScrollPage>
   )

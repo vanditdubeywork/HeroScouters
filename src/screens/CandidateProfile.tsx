@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Pencil, MoreHorizontal, Upload, Phone, PenLine, Trash2, Copy, FileText, Download, RefreshCw, HelpCircle, ListPlus,
-  Check, X, User, Briefcase, Layers, Sparkles, SlidersHorizontal, ShieldCheck, StickyNote, MessageSquareText, Link2, Lightbulb, AlertTriangle, UserX,
+  Check, X, User, Briefcase, Layers, Sparkles, SlidersHorizontal, Shield, ShieldCheck, StickyNote, MessageSquareText, Link2, Lightbulb, AlertTriangle, UserX,
   Star, GitCompare, Wand2, Files, ExternalLink, Plus, Mail, ChevronDown,
 } from 'lucide-react'
 import { ScrollPage, useTopBar } from '../shell/AppShell'
@@ -13,6 +13,7 @@ import {
   AIStepper, Banner, CompletenessMeter, Dialog, FilterChip, InfoNote, MatchChipView, MatchRow, NotCaptured, ProposedChangesList, SourceBadge, WorkAuthChip, useStepper,
 } from '../components/hs'
 import { GatedButton, SelectionBar, SignedTakeBlock, useListSelection } from '../components/v3'
+import { BulkMaskForRoleDialog } from '../components/BulkMaskModal'
 import { ConfirmDialog, CopyEmailDialog, NotInterestedDialog, ProposedChangesDialog } from './Dialogs'
 import { useApp, useWireframeState, whoCanText } from '../store/AppStore'
 import { callChangesPriya } from '../data/mock'
@@ -413,6 +414,7 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
   const [compareTarget, setCompareTarget] = useState<{ resume: Resume; versionN: number } | null>(null)
   const [notInterestedRoleIds, setNotInterestedRoleIds] = useState<string[]>([])
   const [emailDlgOpen, setEmailDlgOpen] = useState(false)
+  const [bulkMaskRoleId, setBulkMaskRoleId] = useState<string | null>(null)
   const [addingLink, setAddingLink] = useState(false)
   const [newLinkLabel, setNewLinkLabel] = useState('')
   const [newLinkUrl, setNewLinkUrl] = useState('')
@@ -460,6 +462,7 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
   const outOfDate = wf === 'outofdate' || keyChanged
   const askQuestions = orderedAsk([...c.askList, ...(app.askAdds[c.id] ?? [])])
   const outputsFor: ResumeOutput[] = app.outputs.filter(o => o.candidateId === c.id)
+  const outputSel = useListSelection(outputsFor.map(o => o.id))
 
   const pill = (
     <span className="inline-flex h-6 items-center gap-2 rounded-md border border-border px-2">
@@ -860,13 +863,28 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
                     sel.selected.forEach(rid => addToShortlist(rid, true))
                     app.toast(`Added ${c.name} to ${count} shortlist${count === 1 ? '' : 's'}`)
                     sel.clear()
-                  }}>Add to shortlists</GatedButton>
+                  }}>Add to shortlists ({sel.selected.length})</GatedButton>
+                  <Button variant="outline" size="sm" icon={<Shield />} onClick={() => setBulkMaskRoleId(sel.selected[0])}>
+                    Select resume &amp; bulk mask ({sel.selected.length})
+                  </Button>
                   <Button variant="outline" size="sm" icon={<X />} onClick={() => setNotInterestedRoleIds(sel.selected)}>Mark not interested</Button>
                   <GatedButton perm="drafts" variant="outline" size="sm" icon={<Mail />} onClick={() => setEmailDlgOpen(true)}>Draft “Roles for you” email</GatedButton>
                 </SelectionBar>
               ) : (
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span className="font-mono tnum">{activeRows.length}</span> open roles where {c.name} passes the must-haves · client and prospect roles · select 2–3 to pitch
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card px-3.5 py-2 text-xs text-muted-foreground">
+                  <div>
+                    <span className="font-mono font-medium text-foreground tnum">{activeRows.length}</span> open roles where {c.name} passes the must-haves · client and prospect roles · select 2–3 to pitch
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {selectableRoleIds.length > 0 && (
+                      <Button variant="ghost" size="sm" onClick={() => sel.selectAll(selectableRoleIds)}>
+                        Select all ({selectableRoleIds.length})
+                      </Button>
+                    )}
+                    <Button variant="outline" size="sm" icon={<Shield />} onClick={() => setBulkMaskRoleId(selectableRoleIds[0] ?? 'northwind-spm')}>
+                      Select resume &amp; bulk mask
+                    </Button>
+                  </div>
                 </div>
               )}
               <ul className={cn('space-y-2', sel.selected.length > 0 && 'any-selected')}>
@@ -899,6 +917,7 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
                         onShortlist={() => addToShortlist(r.roleId)}
                         onReject={() => setNotInterestedRoleIds([r.roleId])}
                         onUndo={() => setRoleStatus(r.roleId, 'new')}
+                        onMask={() => setBulkMaskRoleId(r.roleId)}
                         onAddToAsk={ch => addAsk(`Confirm: ${ch.label.toLowerCase()}?`)}
                         onClick={app.role(r.roleId) ? () => navigate(`/roles/${r.roleId}`) : undefined}
                       />
@@ -1048,8 +1067,69 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
             </div>
           </section>
 
-          <section className="space-y-2">
-            <h2 className="eyebrow text-[10px] text-gray-1000">Generated outputs</h2>
+          <section className="space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="eyebrow text-[10px] text-gray-1000">Generated outputs · {outputsFor.length}</h2>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {outputsFor.length > 0 && (
+                  <Button variant="ghost" size="sm" onClick={() => outputSel.selectAll(outputsFor.map(o => o.id))}>
+                    Select all ({outputsFor.length})
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" icon={<Shield />} onClick={() => setBulkMaskRoleId(outputsFor[0]?.roleId ?? 'northwind-spm')}>
+                  Select resume &amp; bulk mask
+                </Button>
+              </div>
+            </div>
+            {outputSel.selected.length > 0 && (
+              <SelectionBar
+                count={outputSel.selected.length}
+                shown={outputsFor.length}
+                onSelectAllShown={() => outputSel.selectAll(outputsFor.map(o => o.id))}
+                onClear={outputSel.clear}
+              >
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={<Shield />}
+                  onClick={() => setBulkMaskRoleId(outputsFor.find(o => outputSel.isSelected(o.id))?.roleId ?? 'northwind-spm')}
+                >
+                  Select resume &amp; bulk mask ({outputSel.selected.length})
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={<Copy />}
+                  onClick={() => {
+                    const selectedOuts = outputsFor.filter(o => outputSel.isSelected(o.id))
+                    const urls = selectedOuts.map(o => o.shareUrl ?? `https://heroscouter.com/m/${o.roleId ?? 'pool'}/${c.id}`).join('\n')
+                    navigator.clipboard?.writeText(urls).catch(() => {})
+                    app.toast(`Copied ${selectedOuts.length} output link${selectedOuts.length === 1 ? '' : 's'}`)
+                  }}
+                >
+                  Copy {outputSel.selected.length} link{outputSel.selected.length === 1 ? '' : 's'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={<Wand2 />}
+                  onClick={() => navigate(`/resumes/masked?candidates=${c.id}`)}
+                >
+                  Open in Studio
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={<Download />}
+                  onClick={() => {
+                    app.toast(`Downloaded ${outputSel.selected.length} resume PDF${outputSel.selected.length === 1 ? '' : 's'}`)
+                    outputSel.clear()
+                  }}
+                >
+                  Download ({outputSel.selected.length})
+                </Button>
+              </SelectionBar>
+            )}
             {outputsFor.length === 0 ? (
               <div className="rounded-xl border border-border bg-card">
                 <EmptyState icon={<FileText />} title="No resumes generated yet" body="Masked, editable and as-is resumes for this candidate will show here."
@@ -1057,7 +1137,15 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
               </div>
             ) : (
               <div className="overflow-hidden rounded-xl border border-border bg-card">
-                <div className="hidden h-9 grid-cols-[90px_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_110px_80px_minmax(0,1fr)_max-content] items-center gap-3 border-b border-border bg-secondary/70 px-4 lg:grid">
+                <div className="hidden h-9 grid-cols-[28px_90px_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_110px_80px_minmax(0,1fr)_max-content] items-center gap-3 border-b border-border bg-secondary/70 px-4 lg:grid">
+                  <div>
+                    <Checkbox
+                      aria-label="Select all generated outputs"
+                      checked={outputSel.allSelected}
+                      indeterminate={outputSel.someSelected}
+                      onChange={outputSel.toggleAll}
+                    />
+                  </div>
                   {['Type', 'Role', 'Source', 'Template', 'Prompt', 'Revisions', 'Created', ''].map(h => <div key={h} className="eyebrow text-[10px] text-gray-1000">{h}</div>)}
                 </div>
                 {outputsFor.map(o => {
@@ -1073,13 +1161,31 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
                     ? `/resumes/editable?candidates=${c.id}${o.roleId ? `&role=${o.roleId}` : ''}`
                     : `/resumes/masked?candidates=${c.id}${o.roleId ? `&role=${o.roleId}` : ''}`
                   return (
-                    <div key={o.id} className="grid grid-cols-1 items-center gap-2 border-b border-border px-4 py-3 text-sm last:border-0 lg:grid-cols-[90px_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_110px_80px_minmax(0,1fr)_max-content] lg:gap-3">
+                    <div key={o.id} className={cn(
+                      'grid grid-cols-1 items-center gap-2 border-b border-border px-4 py-3 text-sm last:border-0 lg:grid-cols-[28px_90px_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_110px_80px_minmax(0,1fr)_max-content] lg:gap-3',
+                      outputSel.isSelected(o.id) && 'bg-secondary/60',
+                    )}>
+                      <div
+                        onClickCapture={e => {
+                          if (e.shiftKey) {
+                            e.stopPropagation()
+                            e.preventDefault()
+                            outputSel.toggle(o.id, true)
+                          }
+                        }}
+                      >
+                        <Checkbox
+                          aria-label={`Select ${o.type} output`}
+                          checked={outputSel.isSelected(o.id)}
+                          onChange={() => outputSel.toggle(o.id, false)}
+                        />
+                      </div>
                       <div><Tag tone={o.type === 'Masked' ? 'outline' : 'neutral'}>{o.type}</Tag></div>
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <span className="truncate">{r ? `${r.title} — ${r.company}` : 'No role'}</span>
                         {stale
-                          ? <span className="inline-flex h-5 items-center gap-1 rounded-md border border-dashed border-warning px-1.5 text-[11px] text-[#b45309]"><AlertTriangle className="size-3" />Stale · {staleReason}</span>
-                          : <span className="inline-flex h-5 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-gray-1100"><Check className="size-3" />Ready</span>}
+                          ? <span className="inline-flex h-5 max-w-full items-center gap-1 truncate rounded-md border border-dashed border-warning px-1.5 text-[11px] whitespace-nowrap text-[#b45309]"><AlertTriangle className="size-3 shrink-0" /><span className="truncate">Stale · {staleReason}</span></span>
+                          : <span className="inline-flex h-5 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] whitespace-nowrap text-gray-1100"><Check className="size-3 shrink-0" />Ready</span>}
                       </div>
                       <div className="truncate text-xs text-foreground">{sourceText}</div>
                       <div className="truncate text-muted-foreground">{o.template}</div>
@@ -1138,6 +1244,12 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
         initialKind="roles-for-you"
         candidateIds={[c.id]}
         roleId={sel.selected[0] ?? activeRows[0]?.roleId ?? c.cameInForRole ?? null}
+      />
+      <BulkMaskForRoleDialog
+        open={!!bulkMaskRoleId}
+        onClose={() => setBulkMaskRoleId(null)}
+        initialRoleId={bulkMaskRoleId}
+        initialCandidateIds={[c.id]}
       />
       <CandidateMessageDialog open={dlg === 'message'} onClose={() => setDlg(null)} c={c} roles={sel.selected.map(roleOf).filter((r): r is Role => !!r)} />
     </ScrollPage>

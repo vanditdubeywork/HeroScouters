@@ -309,7 +309,7 @@ export function DataTable<T extends { id: string }>({
                     )}
                   >
                     {selectable && (
-                      <td className={cn('w-8 px-2.5 py-2 align-middle', quietCheckbox && !anySel && 'opacity-0 transition-opacity group-hover/row:opacity-100 focus-within:opacity-100')}
+                      <td className={cn('w-8 px-2.5 py-2 align-middle', quietCheckbox && !anySel && 'opacity-70 transition-opacity group-hover/row:opacity-100 focus-within:opacity-100')}
                         onClickCapture={e => { if (e.shiftKey && canSel) { e.stopPropagation(); e.preventDefault(); toggleRow(r.id, !isSel, true) } }}
                         onClick={e => e.stopPropagation()}>
                         {canSel && <Checkbox aria-label="Select row" checked={isSel} onChange={v => toggleRow(r.id, v, false)} />}
@@ -455,7 +455,7 @@ export function MatchRow({
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               {onToggleSelect && (
-                <span className={cn('transition-opacity', selected ? 'opacity-100' : 'opacity-0 group-hover/match:opacity-100 focus-within:opacity-100 [.any-selected_&]:opacity-100')}
+                <span className={cn('transition-opacity', selected ? 'opacity-100' : 'opacity-75 group-hover/match:opacity-100 focus-within:opacity-100 [.any-selected_&]:opacity-100')}
                   onClick={e => { e.stopPropagation(); onToggleSelect(e.shiftKey) }}>
                   <span className="pointer-events-none"><Checkbox aria-label={`Select ${title}`} checked={!!selected} onChange={() => {}} /></span>
                 </span>

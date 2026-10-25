@@ -1239,6 +1239,15 @@ export function CandidatesList() {
         count={count}
         right={
           <>
+            {rows.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelected(rows.map(c => c.id))}
+              >
+                Select all ({rows.length})
+              </Button>
+            )}
             <Switch
               checked={more.includePredicted}
               onChange={v => setMore(m => ({ ...m, includePredicted: v }))}
@@ -1285,6 +1294,23 @@ export function CandidatesList() {
           >
             Open Masked Studio
           </GatedButton>
+          <Menu
+            width={260}
+            trigger={({ toggle }) => (
+              <Button variant="outline" icon={<Briefcase />} iconRight={<ChevronDown />} onClick={toggle}>
+                Add to role shortlist
+              </Button>
+            )}
+            items={app.roles.filter(r => r.status === 'Open').map(r => ({
+              label: `${r.title} · ${r.company}`,
+              hint: r.companyType,
+              onSelect: () => {
+                targetIds.slice(0, 25).forEach(cid => app.setCandidateRoleStatus(cid, r.id, 'shortlisted'))
+                app.toast(`Added ${Math.min(targetIds.length, 25)} candidate${targetIds.length === 1 ? '' : 's'} to ${r.title} shortlist`)
+                clearSel()
+              },
+            }))}
+          />
           <Menu
             width={250}
             trigger={({ toggle }) => <Button variant="outline" icon={<Copy />} iconRight={<ChevronDown />} onClick={toggle}>Copy list</Button>}

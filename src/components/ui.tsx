@@ -118,20 +118,20 @@ export function Select({ value, onChange, options, className, size = 'md', 'aria
 }
 
 /** Circle checkbox size-4 rounded-xl + invisible hit-area expansion */
-export function Checkbox({ checked, onChange, label, description, 'aria-label': ariaLabel, className }: {
-  checked: boolean; onChange: (v: boolean) => void; label?: React.ReactNode; description?: React.ReactNode; 'aria-label'?: string; className?: string
+export function Checkbox({ checked, indeterminate, onChange, label, description, 'aria-label': ariaLabel, className }: {
+  checked: boolean; indeterminate?: boolean; onChange: (v: boolean) => void; label?: React.ReactNode; description?: React.ReactNode; 'aria-label'?: string; className?: string
 }) {
   const box = (
     <button
       type="button"
       role="checkbox"
-      aria-checked={checked}
+      aria-checked={indeterminate && !checked ? 'mixed' : checked}
       aria-label={ariaLabel}
       onClick={e => { e.stopPropagation(); onChange(!checked) }}
       className={cn('relative mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-xl border shadow-xs outline-none transition-shadow after:absolute after:-inset-x-3 after:-inset-y-2 focus-visible:ring-[3px] focus-visible:ring-ring/40',
-        checked ? 'border-primary bg-primary text-primary-foreground' : 'border-gray-700 bg-background')}
+        checked || indeterminate ? 'border-primary bg-primary text-primary-foreground' : 'border-gray-700 bg-background')}
     >
-      {checked && <Check className="size-3" strokeWidth={3} />}
+      {checked ? <Check className="size-3" strokeWidth={3} /> : indeterminate ? <span className="h-0.5 w-2 rounded-full bg-primary-foreground" /> : null}
     </button>
   )
   if (!label) return <span className={className}>{box}</span>
@@ -317,8 +317,8 @@ export function PageHeader({ title, meta, actions, children }: { title: React.Re
 }
 
 /* ---------- Dropdown menu ---------- */
-export interface MenuItem { label: React.ReactNode; onSelect?: () => void; icon?: React.ReactNode; destructive?: boolean; hint?: string; separator?: boolean; disabled?: boolean }
-export function Menu({ trigger, items, align = 'end', width = 220 }: { trigger: (p: { open: boolean; toggle: () => void }) => React.ReactNode; items: MenuItem[]; align?: 'start' | 'end'; width?: number }) {
+export interface MenuItem { label: React.ReactNode; onSelect?: () => void; icon?: React.ReactNode; destructive?: boolean; danger?: boolean; hint?: string; separator?: boolean; disabled?: boolean }
+export function Menu({ trigger, items, align = 'end', width = 220 }: { trigger: React.ReactNode | ((p: { open: boolean; toggle: () => void }) => React.ReactNode); items: MenuItem[]; align?: 'start' | 'end'; width?: number }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -329,9 +329,10 @@ export function Menu({ trigger, items, align = 'end', width = 220 }: { trigger: 
     document.addEventListener('keydown', onKey)
     return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
   }, [open])
+  const toggle = () => setOpen(o => !o)
   return (
     <div ref={ref} className="relative inline-flex">
-      {trigger({ open, toggle: () => setOpen(o => !o) })}
+      {typeof trigger === 'function' ? trigger({ open, toggle }) : <span className="inline-flex" onClick={toggle}>{trigger}</span>}
       {open && (
         <div role="menu" style={{ width }} className={cn('anim-pop absolute top-full z-50 mt-1.5 rounded-xl border border-border bg-popover p-1 shadow-[0_8px_30px_-6px_rgba(0,0,0,0.12),0_2px_6px_rgba(0,0,0,0.04)]', align === 'end' ? 'right-0' : 'left-0')}>
           {items.map((it, i) => it.separator
@@ -340,7 +341,7 @@ export function Menu({ trigger, items, align = 'end', width = 220 }: { trigger: 
               <button
                 key={i} role="menuitem" disabled={it.disabled}
                 onClick={() => { setOpen(false); it.onSelect?.() }}
-                className={cn('flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-sm transition-colors hover:bg-muted disabled:opacity-40 [&_svg]:size-4 [&_svg]:text-muted-foreground', it.destructive && 'text-destructive [&_svg]:text-destructive')}
+                className={cn('flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-sm transition-colors hover:bg-muted disabled:opacity-40 [&_svg]:size-4 [&_svg]:text-muted-foreground', (it.destructive || it.danger) && 'text-destructive [&_svg]:text-destructive')}
               >
                 {it.icon}
                 <span className="flex-1 truncate">{it.label}</span>

@@ -8,11 +8,11 @@ import {
 } from 'lucide-react'
 import { ScrollPage, useTopBar } from '../shell/AppShell'
 import {
-  Avatar, BezelCard, Button, CompanyTypeTag, EmptyState, ExampleMark, PageHeader,
+  Avatar, BezelCard, Button, Checkbox, CompanyTypeTag, EmptyState, ExampleMark, Menu, PageHeader,
   PillTabs, Segmented, Select, Switch, Tag, cn,
 } from '../components/ui'
 import { DataTable, FilterChip, WorkAuthChip, workAuthShort, type Column } from '../components/hs'
-import { RecommendationPill, signature } from '../components/v3'
+import { RecommendationPill, SelectionBar, signature, useListSelection } from '../components/v3'
 import { latestVersion } from '../components/outputs'
 import { BulkMaskForRoleDialog } from '../components/BulkMaskModal'
 import { CopyEmailDialog } from './Dialogs'
@@ -154,6 +154,24 @@ export function RoleMaskedLinksSection({
   const [activeCandId, setActiveCandId] = useState<string>(
     initialCandParam || packetCandidates[0]?.candidate.id || 'priya',
   )
+
+  const packetCandIds = useMemo(() => packetCandidates.map(p => p.candidate.id), [packetCandidates])
+  const sel = useListSelection(packetCandIds)
+  const targetCandIds = sel.selected.length > 0 ? sel.selected : packetCandIds
+
+  const copySelectedLinks = () => {
+    const urls = targetCandIds.map(cid => `https://heroscouter.com/m/${role.id}/${cid}`).join('\n')
+    navigator.clipboard?.writeText(urls).catch(() => {})
+    app.toast(`Copied ${targetCandIds.length} masked link${targetCandIds.length === 1 ? '' : 's'}`)
+  }
+
+  const bulkToggleLinks = (active: boolean) => {
+    targetCandIds.forEach(cid => {
+      const item = packetCandidates.find(p => p.candidate.id === cid)
+      if (item?.output) app.toggleOutputLink(item.output.id, active)
+    })
+    app.toast(`${active ? 'Enabled' : 'Disabled'} ${targetCandIds.length} masked link${targetCandIds.length === 1 ? '' : 's'}`)
+  }
 
   React.useEffect(() => {
     if (!packetCandidates.some(p => p.candidate.id === activeCandId) && packetCandidates[0]) {
@@ -424,11 +442,62 @@ export function RoleMaskedLinksSection({
         </div>
       </section>
 
+      {sel.selected.length > 0 && (
+        <SelectionBar
+          count={sel.selected.length}
+          note={`of ${packetCandidates.length} in role packet`}
+          onClear={sel.clear}
+        >
+          <Button variant="primary" size="sm" icon={<Sparkles />} onClick={() => setBulkModalOpen(true)}>
+            Select resumes &amp; bulk mask ({sel.selected.length})
+          </Button>
+          <Button variant="outline" size="sm" icon={<Copy />} onClick={copySelectedLinks}>
+            Copy {sel.selected.length} masked link{sel.selected.length === 1 ? '' : 's'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<Wand2 />}
+            onClick={() => navigate(`/resumes/masked?role=${role.id}&candidates=${sel.selected.join(',')}`)}
+          >
+            Open in Studio ({sel.selected.length})
+          </Button>
+          <Button variant="outline" size="sm" icon={<Mail />} onClick={() => setEmailOpen(true)}>
+            Draft email ({sel.selected.length})
+          </Button>
+          <Menu
+            trigger={
+              <Button variant="ghost" size="sm" icon={<Globe />}>
+                Link access ▾
+              </Button>
+            }
+            items={[
+              {
+                label: `Enable ${sel.selected.length} link${sel.selected.length === 1 ? '' : 's'}`,
+                onSelect: () => bulkToggleLinks(true),
+              },
+              {
+                label: `Disable / revoke ${sel.selected.length} link${sel.selected.length === 1 ? '' : 's'}`,
+                danger: true,
+                onSelect: () => bulkToggleLinks(false),
+              },
+              {
+                label: `Download ${sel.selected.length} masked PDF${sel.selected.length === 1 ? '' : 's'} (ZIP)`,
+                onSelect: () => app.toast(`Downloaded ${sel.selected.length} masked PDFs`),
+              },
+            ]}
+          />
+        </SelectionBar>
+      )}
+
       {viewMode === 'table' ? (
         <DataTable
           caption={`Masked links for ${role.title}`}
           columns={tableColumns}
           rows={packetCandidates.map(p => ({ ...p, id: p.candidate.id }))}
+          selectable
+          selected={sel.selected}
+          onSelectedChange={sel.setSelected}
           onRowClick={r => {
             setActiveCandId(r.candidate.id)
             setViewMode('portal')
@@ -473,19 +542,32 @@ export function RoleMaskedLinksSection({
             <section className="rounded-2xl border border-border bg-gray-100 p-1">
               <div className="flex items-center justify-between gap-2 px-3.5 py-2.5">
                 <div className="flex items-center gap-2">
-                  <Layers className="size-4 text-muted-foreground" />
+                  <Checkbox
+                    aria-label="Select all packet candidates"
+                    checked={sel.allSelected}
+                    indeterminate={sel.someSelected}
+                    onChange={sel.toggleAll}
+                  />
                   <h3 className="text-xs font-semibold text-foreground">
                     Role Packet ({packetCandidates.length} Masked Links)
                   </h3>
                 </div>
-                <Button variant="ghost" size="sm" icon={<Plus />} onClick={() => setBulkModalOpen(true)}>
-                  + Bulk mask
-                </Button>
+                <div className="flex items-center gap-1">
+                  {sel.selected.length > 0 && (
+                    <Button variant="outline" size="sm" icon={<Copy />} onClick={copySelectedLinks}>
+                      Copy ({sel.selected.length})
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="sm" icon={<Plus />} onClick={() => setBulkModalOpen(true)}>
+                    + Bulk mask
+                  </Button>
+                </div>
               </div>
 
               <div className="mx-0.5 mb-0.5 space-y-1.5 rounded-xl border border-border bg-card p-2">
                 {packetCandidates.map(({ index, candidate: c, match: m, output: o }) => {
                   const isSelected = c.id === activeCand?.id
+                  const isChecked = sel.isSelected(c.id)
                   const resumes = app.resumesFor(c.id)
                   const chosen = getChosenResume(c, m, o)
                   const alias = maskedAliasFor(c, chosen?.headline)
@@ -504,19 +586,36 @@ export function RoleMaskedLinksSection({
                         'group relative flex flex-col gap-2.5 rounded-xl border p-3 text-left transition-all outline-none',
                         isSelected
                           ? 'border-gray-1100 bg-secondary/80 shadow-custom'
-                          : 'border-border bg-background hover:border-gray-700 hover:bg-secondary/35',
+                          : isChecked
+                            ? 'border-gray-800 bg-secondary/50'
+                            : 'border-border bg-background hover:border-gray-700 hover:bg-secondary/35',
                       )}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="inline-flex h-5 items-center rounded-xs border border-border bg-card px-1.5 font-mono text-[10px] font-semibold text-foreground tnum">
-                              Candidate #0{index}
-                            </span>
-                            <RecommendationPill recommendation={rec} />
-                          </div>
-                          <div className="mt-1.5 text-xs font-semibold leading-snug text-foreground">
-                            {alias}
+                        <div className="flex min-w-0 items-start gap-2.5">
+                          <span
+                            className="mt-0.5 shrink-0"
+                            onClick={e => {
+                              e.stopPropagation()
+                              sel.toggle(c.id, e.shiftKey)
+                            }}
+                          >
+                            <Checkbox
+                              aria-label={`Select ${c.name}`}
+                              checked={isChecked}
+                              onChange={() => {}}
+                            />
+                          </span>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="inline-flex h-5 items-center rounded-xs border border-border bg-card px-1.5 font-mono text-[10px] font-semibold text-foreground tnum">
+                                Candidate #0{index}
+                              </span>
+                              <RecommendationPill recommendation={rec} />
+                            </div>
+                            <div className="mt-1.5 text-xs font-semibold leading-snug text-foreground">
+                              {alias}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1010,15 +1109,17 @@ export function RoleMaskedLinksSection({
         open={bulkModalOpen}
         onClose={() => setBulkModalOpen(false)}
         initialRoleId={role.id}
+        initialCandidateIds={sel.selected.length > 0 ? sel.selected : undefined}
         onCompleted={(_rid, cids) => {
           if (cids[0]) setActiveCandId(cids[0])
+          sel.clear()
         }}
       />
 
       <CopyEmailDialog
         open={emailOpen}
         onClose={() => setEmailOpen(false)}
-        candidateIds={packetCandidates.map(p => p.candidate.id)}
+        candidateIds={targetCandIds}
         roleId={role.id}
         initialKind={role.companyType === 'Client' ? 'shortlist' : 'pitch'}
       />

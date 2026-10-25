@@ -420,12 +420,67 @@ export function RolesList() {
               <Button variant="primary" size="sm" icon={<Sparkles />} onClick={() => setBulkMaskRoleId(sel.selected[0])}>
                 Select resumes &amp; bulk mask
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                icon={<RefreshCw />}
+                onClick={() => {
+                  sel.selected.forEach(rid => {
+                    const r = app.role(rid)
+                    if (!r) return
+                    if (r.matchStatus === 'not-run') app.findMatches(rid)
+                    else app.rerun(rid)
+                  })
+                  app.toast(`Scanned / reran matches for ${sel.selected.length} role${sel.selected.length === 1 ? '' : 's'}`)
+                  sel.clear()
+                }}
+              >
+                Bulk rerun / scan ({sel.selected.length})
+              </Button>
               <Button variant="outline" size="sm" icon={<Mail />} onClick={() => setPitchesOpen(true)}>
                 Prepare pitches ({prospectIds.length || sel.selected.length})
               </Button>
               <Button variant="outline" size="sm" icon={<Table2 />} onClick={copyOutreachRows}>
                 Copy rows for outreach sheet
               </Button>
+              <Menu
+                width={200}
+                trigger={
+                  <Button variant="ghost" size="sm" icon={<Layers />}>
+                    Bulk status ▾
+                  </Button>
+                }
+                items={[
+                  {
+                    label: `Set Open (${sel.selected.length})`,
+                    icon: <CircleCheck />,
+                    onSelect: () => {
+                      sel.selected.forEach(rid => app.updateRole(rid, { status: 'Open' }))
+                      app.toast(`Set ${sel.selected.length} roles to Open`)
+                      sel.clear()
+                    },
+                  },
+                  {
+                    label: `Put on hold (${sel.selected.length})`,
+                    icon: <Pause />,
+                    onSelect: () => {
+                      sel.selected.forEach(rid => app.updateRole(rid, { status: 'On hold' }))
+                      app.toast(`Put ${sel.selected.length} roles on hold`)
+                      sel.clear()
+                    },
+                  },
+                  {
+                    label: `Close roles (${sel.selected.length})`,
+                    icon: <Lock />,
+                    danger: true,
+                    onSelect: () => {
+                      sel.selected.forEach(rid => app.updateRole(rid, { status: 'Closed' }))
+                      app.toast(`Closed ${sel.selected.length} roles`)
+                      sel.clear()
+                    },
+                  },
+                ]}
+              />
             </SelectionBar>
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -440,6 +495,15 @@ export function RolesList() {
                 ]}
               />
               <div className="flex flex-wrap items-center gap-2">
+                {tableRows.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => sel.selectAll(tableRows.map(r => r.id))}
+                  >
+                    Select all ({tableRows.length})
+                  </Button>
+                )}
                 <FilterChip
                   active={type === 'Client'}
                   icon={<Building2 />}

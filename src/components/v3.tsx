@@ -72,15 +72,33 @@ export function useListSelection(orderedIds: string[]) {
 
   const selectAll = useCallback((ids: string[] = orderedIds) => setSelected(ids), [orderedIds])
   const clear = useCallback(() => { setSelected([]); anchor.current = null }, [])
-  return { selected, setSelected, toggle, extendTo, selectAll, clear, isSelected: (id: string) => selected.includes(id) }
+  const allSelected = orderedIds.length > 0 && orderedIds.every(id => selected.includes(id))
+  const someSelected = selected.length > 0 && !allSelected
+  const toggleAll = useCallback(() => {
+    if (allSelected) clear()
+    else selectAll(orderedIds)
+  }, [allSelected, clear, selectAll, orderedIds])
+  return {
+    selected,
+    setSelected,
+    toggle,
+    extendTo,
+    selectAll,
+    clear,
+    allSelected,
+    someSelected,
+    toggleAll,
+    isSelected: (id: string) => selected.includes(id),
+  }
 }
 
 /* ---------- N16 · Selection bar ---------- */
 export function SelectionBar({ count, shown, matching, allMatchingSelected, onSelectAllShown, onSelectAllMatching, onClear, note, children, className }: {
-  count: number; shown: number; matching?: number; allMatchingSelected?: boolean
+  count: number; shown?: number; matching?: number; allMatchingSelected?: boolean
   onSelectAllShown?: () => void; onSelectAllMatching?: () => void; onClear: () => void
   note?: React.ReactNode; children: React.ReactNode; className?: string
 }) {
+  const shownCount = shown ?? count
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
@@ -93,10 +111,10 @@ export function SelectionBar({ count, shown, matching, allMatchingSelected, onSe
   return (
     <div role="region" aria-label="Selection" className={cn('anim-slide-up sticky top-0 z-20 flex flex-wrap items-center gap-2 rounded-2xl border border-gray-700 bg-card px-3 py-2 shadow-[var(--shadow-custom)]', className)}>
       <span className="inline-flex h-6 items-center rounded-md bg-primary px-2 font-mono text-[11px] font-medium text-primary-foreground tnum">{allMatchingSelected && matching ? matching : count} selected</span>
-      {!allMatchingSelected && count < shown && onSelectAllShown && (
-        <Button variant="link" className="text-xs" onClick={onSelectAllShown}>Select all {shown} shown</Button>
+      {!allMatchingSelected && count < shownCount && onSelectAllShown && (
+        <Button variant="link" className="text-xs" onClick={onSelectAllShown}>Select all {shownCount} shown</Button>
       )}
-      {!allMatchingSelected && matching !== undefined && matching > shown && count >= shown && onSelectAllMatching && (
+      {!allMatchingSelected && matching !== undefined && matching > shownCount && count >= shownCount && onSelectAllMatching && (
         <Button variant="link" className="text-xs" onClick={onSelectAllMatching}>Select all {matching} that match</Button>
       )}
       {allMatchingSelected && matching !== undefined && <span className="text-xs text-muted-foreground">All {matching} that match are selected.</span>}

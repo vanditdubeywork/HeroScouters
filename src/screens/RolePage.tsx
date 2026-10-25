@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle, ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Download, Eye, FileText, Filter, GripVertical,
+  AlertTriangle, ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Copy, Download, Eye, FileText, Filter, GripVertical,
   History as HistoryIcon, ListChecks, Mail, MessageSquarePlus, MoreHorizontal, Pencil, Plus, RefreshCw, Search, Send, Shield, Sparkles, Table2, UserX, Wand2, X,
 } from 'lucide-react'
 import { ScrollPage, useTopBar } from '../shell/AppShell'
@@ -673,9 +673,11 @@ function RoleView({ role }: { role: Role }) {
 
   const eliminatedView = elimOpen && (
     <EliminatedView
+      roleId={id}
       pool={elim.pool} pass={passCount} rules={elim.rules} rows={elim.rows}
       included={app.included[id] ?? []}
       onInclude={row => setIncludeTarget(row)}
+      onBulkMask={cids => setBulkMaskCandIds(cids)}
       onClose={() => setElimOpen(false)}
       noneMode={view === 'none'}
     />
@@ -775,6 +777,25 @@ function RoleView({ role }: { role: Role }) {
             >
               Select resumes &amp; bulk mask ({selectedMatches.length})
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<Wand2 />}
+              onClick={() => navigate(`/resumes/masked?role=${id}&candidates=${selectedMatches.map(m => m.candidateId).join(',')}`)}
+            >
+              Open in Studio ({selectedMatches.length})
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<Mail />}
+              onClick={() => {
+                setEmailInitialKind(role.companyType === 'Client' ? 'shortlist' : 'pitch')
+                setEmailCandidateIds(selectedMatches.map(m => m.candidateId))
+              }}
+            >
+              Draft email ({selectedMatches.length})
+            </Button>
             <GatedButton perm="reject" variant="outline" size="sm" icon={<X />} kbd="X" disabled={!eligibleForReject.length} onClick={() => setBatchRejectOpen(true)}>
               Reject
             </GatedButton>
@@ -812,7 +833,28 @@ function RoleView({ role }: { role: Role }) {
                   Sorted by similarity to the JD. Not a score. Prune with filters or reject (X) before spending AI scores.
                 </p>
               </div>
-              <ScoreControl unscored={totalUnscoredPool || unscoredRows.length} onScore={n => triggerScore(n)} />
+              <div className="flex flex-wrap items-center gap-2">
+                {unscoredRows.length > 0 && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => sel.selectAll(unscoredRows.filter(m => m.status !== 'rejected').map(m => m.id))}
+                    >
+                      Select all ({unscoredRows.filter(m => m.status !== 'rejected').length})
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      icon={<Shield />}
+                      onClick={() => setBulkMaskCandIds(unscoredRows.map(m => m.candidateId))}
+                    >
+                      Bulk mask ({unscoredRows.length})
+                    </Button>
+                  </>
+                )}
+                <ScoreControl unscored={totalUnscoredPool || unscoredRows.length} onScore={n => triggerScore(n)} />
+              </div>
             </div>
 
             <div className="space-y-2" aria-label="Stage-1 passers">
@@ -828,6 +870,67 @@ function RoleView({ role }: { role: Role }) {
         ) : (
           /* Scored state: ranked scored rows on top + collapsible Not scored (N) */
           <div className="space-y-4">
+            {scoredRows.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card px-3.5 py-2">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <Checkbox
+                    aria-label="Select all scored candidates"
+                    checked={scoredRows.filter(m => m.status !== 'rejected').length > 0 && scoredRows.filter(m => m.status !== 'rejected').every(m => sel.isSelected(m.id))}
+                    indeterminate={scoredRows.some(m => sel.isSelected(m.id)) && !scoredRows.filter(m => m.status !== 'rejected').every(m => sel.isSelected(m.id))}
+                    onChange={() => {
+                      const ids = scoredRows.filter(m => m.status !== 'rejected').map(m => m.id)
+                      const allIn = ids.every(mid => sel.isSelected(mid))
+                      if (allIn) sel.clear()
+                      else sel.selectAll(ids)
+                    }}
+                  />
+                  <span className="font-medium text-foreground">
+                    Scored matches ({scoredRows.length})
+                  </span>
+                  <span>·</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const strongIds = scoredRows
+                        .filter(m => m.status !== 'rejected' && (m.recommendation ?? (m.band === 'Strong' ? 'Strong' : 'Mild')) === 'Strong')
+                        .map(m => m.id)
+                      if (strongIds.length) sel.selectAll(strongIds)
+                    }}
+                    className="font-medium text-foreground underline-offset-4 hover:underline"
+                  >
+                    Select Strong ({scoredRows.filter(m => m.status !== 'rejected' && (m.recommendation ?? (m.band === 'Strong' ? 'Strong' : 'Mild')) === 'Strong').length})
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={<Check />}
+                    onClick={() => {
+                      const strongUnshortlisted = scoredRows
+                        .filter(m => m.status !== 'shortlisted' && m.status !== 'rejected' && (m.recommendation ?? (m.band === 'Strong' ? 'Strong' : 'Mild')) === 'Strong')
+                        .map(m => m.id)
+                      if (strongUnshortlisted.length) {
+                        app.shortlistMany(strongUnshortlisted, { onOpenShortlist: () => setTab('shortlist') })
+                      } else {
+                        app.toast('All Strong candidates are already shortlisted')
+                      }
+                    }}
+                  >
+                    Shortlist all Strong
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    icon={<Shield />}
+                    onClick={() => setBulkMaskCandIds(scoredRows.map(m => m.candidateId))}
+                  >
+                    Bulk mask scored ({scoredRows.length})
+                  </Button>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2" aria-label="Ranked matches">
               {scoredRows.length > 0 ? (
                 scoredRows.map(m => renderRow(m))
@@ -851,7 +954,27 @@ function RoleView({ role }: { role: Role }) {
                     <span>Not scored ({unscoredRows.length})</span>
                     <span className="text-xs font-normal text-muted-foreground">· Sorted by similarity to the JD. Not a score.</span>
                   </button>
-                  <ScoreControl unscored={unscoredRows.length} more onScore={n => triggerScore(n)} />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setUnscoredOpen(true)
+                        sel.selectAll(unscoredRows.filter(m => m.status !== 'rejected').map(m => m.id))
+                      }}
+                    >
+                      Select all ({unscoredRows.filter(m => m.status !== 'rejected').length})
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      icon={<Shield />}
+                      onClick={() => setBulkMaskCandIds(unscoredRows.map(m => m.candidateId))}
+                    >
+                      Bulk mask ({unscoredRows.length})
+                    </Button>
+                    <ScoreControl unscored={unscoredRows.length} more onScore={n => triggerScore(n)} />
+                  </div>
                 </div>
                 {unscoredOpen && (
                   <div className="space-y-2 rounded-xl border border-border bg-card p-2">
@@ -1060,20 +1183,47 @@ function RoleView({ role }: { role: Role }) {
 }
 
 /* ---------- §6.4 Eliminated view ---------- */
-function EliminatedView({ pool, pass, rules, rows, included, onInclude, onClose, noneMode }: {
-  pool: number; pass: number; rules: { rule: string; count: number }[]; rows: Eliminated[]; included: string[]
-  onInclude: (r: Eliminated) => void; onClose: () => void; noneMode?: boolean
+function EliminatedView({ roleId, pool, pass, rules, rows, included, onInclude, onBulkMask, onClose, noneMode }: {
+  roleId: string; pool: number; pass: number; rules: { rule: string; count: number }[]; rows: Eliminated[]; included: string[]
+  onInclude: (r: Eliminated) => void; onBulkMask: (cids: string[]) => void; onClose: () => void; noneMode?: boolean
 }) {
-  const { candidate } = useApp()
+  const app = useApp()
+  const { candidate } = app
   const sorted = [...rows].sort((a, b) => a.failing.length - b.failing.length)
   const near = sorted.filter(r => r.failing.length === 1)
   const rest = sorted.filter(r => r.failing.length > 1)
+  const selectableIds = sorted.filter(r => !included.includes(r.candidateId)).map(r => r.candidateId)
+  const sel = useListSelection(selectableIds)
+
+  const bulkIncludeSelected = () => {
+    const toInc = sel.selected.filter(cid => !included.includes(cid))
+    toInc.forEach(cid => app.includeAnyway(roleId, cid, 'Included in bulk from eliminated view'))
+    sel.clear()
+  }
+
   const Row = ({ r }: { r: Eliminated }) => {
     const c = candidate(r.candidateId)
     if (!c) return null
     const done = included.includes(r.candidateId)
     return (
       <li className="flex flex-wrap items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+        {!done && (
+          <span
+            onClickCapture={e => {
+              if (e.shiftKey) {
+                e.stopPropagation()
+                e.preventDefault()
+                sel.toggle(r.candidateId, true)
+              }
+            }}
+          >
+            <Checkbox
+              aria-label={`Select ${c.name}`}
+              checked={sel.isSelected(r.candidateId)}
+              onChange={() => sel.toggle(r.candidateId, false)}
+            />
+          </span>
+        )}
         <Avatar initials={c.initials} size={32} />
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium">{c.name}</div>
@@ -1082,15 +1232,48 @@ function EliminatedView({ pool, pass, rules, rows, included, onInclude, onClose,
         <div className="flex flex-wrap items-center gap-1.5">{r.failing.map(f => <MatchChipView key={f} chip={{ kind: 'gap', label: f }} />)}</div>
         {done
           ? <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Check className="size-3.5" />Included in ranking</span>
-          : <Button variant="ghost" onClick={() => onInclude(r)}>Include anyway</Button>}
+          : (
+            <div className="flex items-center gap-1.5">
+              <Button variant="ghost" size="sm" icon={<Shield />} onClick={() => onBulkMask([r.candidateId])}>Mask</Button>
+              <Button variant="ghost" size="sm" onClick={() => onInclude(r)}>Include anyway</Button>
+            </div>
+          )}
       </li>
     )
   }
   return (
     <BezelCard icon={<Filter />} title={<span className="flex items-center gap-2">Eliminated <span className="font-mono text-xs font-normal text-muted-foreground tnum">{pool - pass}</span></span>}
-      action={<Button variant="ghost" size="sm" onClick={onClose} iconRight={<X />}>Hide</Button>}
+      action={
+        <div className="flex items-center gap-1.5">
+          {near.filter(r => !included.includes(r.candidateId)).length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => sel.selectAll(near.filter(r => !included.includes(r.candidateId)).map(r => r.candidateId))}
+            >
+              Select near misses ({near.filter(r => !included.includes(r.candidateId)).length})
+            </Button>
+          )}
+          {selectableIds.length > 0 && (
+            <Button variant="ghost" size="sm" onClick={() => sel.selectAll(selectableIds)}>
+              Select all ({selectableIds.length})
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" onClick={onClose} iconRight={<X />}>Hide</Button>
+        </div>
+      }
       description="A candidate can fail more than one rule, so the counts add up to more than the total. No must-have is final: include anyone who deserves a look.">
       <div className="space-y-5">
+        {sel.selected.length > 0 && (
+          <SelectionBar count={sel.selected.length} note="eliminated selected" onClear={sel.clear}>
+            <Button variant="primary" size="sm" icon={<Check />} onClick={bulkIncludeSelected}>
+              Include {sel.selected.length} anyway
+            </Button>
+            <Button variant="outline" size="sm" icon={<Shield />} onClick={() => onBulkMask(sel.selected)}>
+              Select resumes &amp; bulk mask ({sel.selected.length})
+            </Button>
+          </SelectionBar>
+        )}
         <div className="flex flex-wrap gap-1.5">
           {rules.map(r => (
             <span key={r.rule} className="inline-flex h-7 items-center gap-2 rounded-lg border border-border bg-background px-2.5 text-xs">
@@ -1206,9 +1389,61 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onOpenEmail
           <Button variant="primary" size="sm" icon={<Shield />} onClick={() => onOpenBulkMask(activeIds)}>
             Select resumes &amp; bulk mask ({activeIds.length})
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<Copy />}
+            onClick={() => {
+              const urls = activeIds.map(cid => `https://heroscouter.com/m/${role.id}/${cid}`).join('\n')
+              navigator.clipboard?.writeText(urls).catch(() => {})
+              app.toast(`Copied ${activeIds.length} masked link${activeIds.length === 1 ? '' : 's'}`)
+            }}
+          >
+            Copy {activeIds.length} masked link{activeIds.length === 1 ? '' : 's'}
+          </Button>
           <Button variant="outline" size="sm" icon={<Mail />} onClick={() => onOpenEmail(isClient ? 'shortlist' : 'pitch', activeIds)}>
             Draft emails / prompts
           </Button>
+          <Menu
+            align="end"
+            width={250}
+            trigger={({ toggle }) => (
+              <Button variant="outline" size="sm" icon={<ListChecks />} iconRight={<ChevronDown className="size-3.5 text-muted-foreground" />} onClick={toggle}>
+                Bulk alignment
+              </Button>
+            )}
+            items={[
+              {
+                label: 'Candidate: Interested',
+                onSelect: () => {
+                  activeItems.forEach(m => app.updateAlignment(m.id, 'candidate', 'interested'))
+                  app.toast(`Marked ${activeItems.length} candidates as Interested`)
+                },
+              },
+              {
+                label: 'Candidate: Asked (waiting)',
+                onSelect: () => {
+                  activeItems.forEach(m => app.updateAlignment(m.id, 'candidate', 'asked'))
+                  app.toast(`Marked ${activeItems.length} candidates as Asked`)
+                },
+              },
+              { separator: true, label: '' },
+              {
+                label: `${isClient ? 'Client' : 'Prospect'}: Interested`,
+                onSelect: () => {
+                  activeItems.forEach(m => app.updateAlignment(m.id, isClient ? 'client' : 'prospect', 'interested'))
+                  app.toast(`Marked ${isClient ? 'Client' : 'Prospect'} Interested for ${activeItems.length} candidates`)
+                },
+              },
+              {
+                label: isClient ? 'Client: Sent' : 'Prospect: Pitched',
+                onSelect: () => {
+                  activeItems.forEach(m => app.updateAlignment(m.id, isClient ? 'client' : 'prospect', isClient ? 'sent' : 'pitched'))
+                  app.toast(`Marked ${activeItems.length} candidates as ${isClient ? 'Sent' : 'Pitched'}`)
+                },
+              },
+            ]}
+          />
           {isClient && (
             <GatedButton perm="genIdentity" variant="outline" size="sm" icon={<FileText />} onClick={editable}>
               Prepare editable resumes

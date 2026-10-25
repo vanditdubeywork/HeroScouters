@@ -154,7 +154,7 @@ export function Switch({ checked, onChange, label, 'aria-label': ariaLabel }: { 
         onClick={() => onChange(!checked)}
         className={cn('relative h-[18px] w-8 rounded-full border transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40', checked ? 'border-primary bg-primary' : 'border-gray-700 bg-gray-500')}
       >
-        <span className={cn('absolute top-[1px] size-3.5 rounded-full shadow-sm transition-transform', checked ? 'translate-x-[15px] bg-primary-foreground' : 'translate-x-[1px] bg-white')} />
+        <span className={cn('absolute top-[1px] left-0 size-3.5 rounded-full shadow-sm transition-transform', checked ? 'translate-x-[15px] bg-primary-foreground' : 'translate-x-[1px] bg-white')} />
       </button>
       {label && <span className="btn-type text-foreground">{label}</span>}
     </label>

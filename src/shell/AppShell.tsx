@@ -386,11 +386,29 @@ function WireframeToolbar() {
 }
 
 /** Standard scrolling page body for list screens (full width, 24px rhythm) */
-export function ScrollPage({ children, className, footer }: { children: React.ReactNode; className?: string; footer?: React.ReactNode }) {
+export function ScrollPage({
+  children,
+  className,
+  footer,
+  viewportLocked = false,
+}: {
+  children: React.ReactNode
+  className?: string
+  footer?: React.ReactNode
+  viewportLocked?: boolean
+}) {
   return (
     <div className="flex h-full flex-col">
-      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto">
-        <div className={cn('mx-auto flex min-h-full w-full flex-col gap-3.5 px-4 pt-4 pb-2.5 sm:px-6', className)}>{children}</div>
+      <div className={cn('min-h-0 flex-1', viewportLocked ? 'overflow-hidden' : 'no-scrollbar overflow-y-auto')}>
+        <div
+          className={cn(
+            'mx-auto flex w-full flex-col gap-3 px-4 pt-3.5 pb-2.5 sm:px-6',
+            viewportLocked ? 'h-full overflow-hidden' : 'min-h-full',
+            className,
+          )}
+        >
+          {children}
+        </div>
       </div>
       {footer}
     </div>

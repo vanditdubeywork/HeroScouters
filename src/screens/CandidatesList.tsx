@@ -1225,6 +1225,17 @@ export function CandidatesList() {
             <span className="block text-xs text-muted-foreground">Names and emails. For internal use.</span>
           </span>
         </button>
+        <button
+          role="menuitem"
+          onClick={() => { app.toast(`Exported ${count} candidates to CSV`); setCopyOpen(false) }}
+          className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-muted"
+        >
+          <Download className="mt-0.5 size-4 text-muted-foreground" />
+          <span className="flex-1">
+            <span className="block text-sm font-medium">Export CSV</span>
+            <span className="block text-xs text-muted-foreground">Download structured spreadsheet of current view.</span>
+          </span>
+        </button>
         <div className="mx-2.5 mt-1 border-t border-border pt-2 pb-1 font-mono text-[10.5px] leading-relaxed text-muted-foreground">
           {(rows[0] ? maskedLine(rows.find(r => r.id === 'marcus') ?? rows[0]) : 'Growth Marketing Manager · 6 yrs · B2B SaaS · NYC (hybrid) · US citizen')}
         </div>
@@ -1244,48 +1255,78 @@ export function CandidatesList() {
 
   const activeCandidate = rows.find(r => r.id === activeId) ?? rows[0] ?? null
 
-  /* ---------- V03/V04 Sheets-Style FilterBar + Columns Menu ---------- */
+  /* ---------- V03/V04 Sheets-Style FilterBar + Columns Menu (Unified Single-Row Column-Divided Bar) ---------- */
   const sheetsFilterBar = (
-    <div ref={barRef}>
-      <FilterBar
-        fields={fields}
-        rows={consoleFiltered}
-        state={sheetsFilters}
-        onChange={s => setSheetsFilters(s)}
-        count={count}
-        right={
-          <>
-            {rows.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSelected(rows.map(c => c.id))}
-              >
-                Select all ({rows.length})
-              </Button>
-            )}
-            <Switch
-              checked={more.includePredicted}
-              onChange={v => setMore(m => ({ ...m, includePredicted: v }))}
-              label="Include ◇ predicted"
-            />
-            <ColumnsMenu
-              options={COLUMN_OPTIONS}
-              visible={visibleKeys}
-              onChange={k => setVisible(['name', ...k.filter(x => x !== 'name')])}
-              onReset={reset}
-            />
-          </>
-        }
-      />
+    <div ref={barRef} className="flex flex-wrap items-center divide-x divide-border lg:flex-nowrap">
+      {/* Col 1: Search */}
+      <div className="w-full shrink-0 px-3 py-2 sm:w-56">
+        <div className="relative">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            aria-label="Search the pool"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search name, company, skill…"
+            className="h-8 pl-8 text-xs"
+          />
+        </div>
+      </div>
+
+      {/* Col 2: Column FilterBar + Authoritative Match Count */}
+      <div className="min-w-0 flex-1 px-3 py-2">
+        <FilterBar
+          fields={fields}
+          rows={consoleFiltered}
+          state={sheetsFilters}
+          onChange={s => setSheetsFilters(s)}
+          count={count}
+        />
+      </div>
+
+      {/* Col 3: Table & View Controls */}
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-3 py-2">
+        <FilterChip
+          active={more.includePredicted}
+          onClick={() => setMore(m => ({ ...m, includePredicted: !m.includePredicted }))}
+        >
+          ◇ Predicted
+        </FilterChip>
+        <Button
+          variant={consoleExpanded ? 'primary' : 'outline'}
+          size="sm"
+          icon={<SlidersHorizontal />}
+          iconRight={consoleExpanded ? <ChevronUp /> : <ChevronDown />}
+          onClick={() => setConsoleExpanded(x => !x)}
+        >
+          All filters{totalActiveFilters > 0 ? ` (${totalActiveFilters})` : ''}
+        </Button>
+        <ColumnsMenu
+          options={COLUMN_OPTIONS}
+          visible={visibleKeys}
+          onChange={k => setVisible(['name', ...k.filter(x => x !== 'name')])}
+          onReset={reset}
+        />
+        <Segmented
+          size="sm"
+          aria-label="View layout"
+          value={layout}
+          onChange={v => setLayout(v as 'table' | 'split')}
+          options={[
+            { value: 'table', label: 'Table' },
+            { value: 'split', label: 'Split' },
+          ]}
+        />
+        {copyMenu}
+      </div>
     </div>
   )
 
   /* ---------- Shared Candidate Table View ---------- */
   const renderCandidateTableSection = (compactForSplitWorkspace = false) => (
-    <div className={cn('flex flex-1 flex-col', compactForSplitWorkspace ? 'space-y-3' : 'space-y-4')}>
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
       {(selected.length > 0 || allMatching) && (
         <SelectionBar
+          className="shrink-0"
           count={selected.length}
           shown={rows.length}
           matching={rows.length}
@@ -1362,7 +1403,7 @@ export function CandidatesList() {
           onMask={id => setBulkMaskCandIds([id])}
         />
       ) : (
-        <div className="flex flex-1 flex-col" onKeyDown={onTableKey}>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden" onKeyDown={onTableKey}>
           <DataTable
             caption="Candidates pool"
             dense={compactForSplitWorkspace}
@@ -1377,13 +1418,6 @@ export function CandidatesList() {
             onRowClick={c => setPreview(c.id)}
             defaultPageSize={10}
             totalPoolCount={count}
-            maxHeight={
-              compactForSplitWorkspace
-                ? 'h-[calc(100vh-285px)] max-h-[calc(100vh-285px)]'
-                : consoleExpanded
-                  ? 'h-[calc(100vh-520px)] max-h-[calc(100vh-520px)] min-h-[260px]'
-                  : 'h-[calc(100vh-352px)] max-h-[calc(100vh-352px)]'
-            }
             rowActions={c => compactForSplitWorkspace ? (
               <>
                 <Button variant="outline" size="sm" icon={<Shield />} title="Select resume & mask for a role" onClick={() => setBulkMaskCandIds([c.id])}>Mask</Button>
@@ -1409,9 +1443,12 @@ export function CandidatesList() {
   )
 
   return (
-    <ScrollPage className="max-w-[1440px]">
-      {/* Page Header Bar (Rightfit spacing: space-y-6 rhythm) */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <ScrollPage
+      className="max-w-[1440px]"
+      viewportLocked={wf !== 'phone' && !emptyPool && (screenMode === 'manual' || aiStage === 'results')}
+    >
+      {/* Page Header Bar */}
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <h1 className="title-type text-[18px] text-foreground">Candidates</h1>
           <ExampleMark />
@@ -1812,10 +1849,10 @@ export function CandidatesList() {
           </div>
         ) : (
           /* -------------------- STAGE 3: 3/4 TABLE & DATA + 1/4 SAAS AI CHATBOT SPLIT SCREEN -------------------- */
-          <section className="anim-fade rounded-2xl border border-border bg-gray-100 p-1 shadow-custom">
-            <div className="grid min-h-[calc(100vh-10.5rem)] grid-cols-1 divide-y divide-border overflow-hidden rounded-xl border border-border bg-card lg:grid-cols-[3fr_1fr] lg:divide-x lg:divide-y-0">
+          <section className="anim-fade flex min-h-0 flex-1 flex-col rounded-2xl border border-border bg-gray-100 p-1 shadow-custom">
+            <div className="grid min-h-0 flex-1 grid-cols-1 divide-y divide-border overflow-hidden rounded-xl border border-border bg-card lg:grid-cols-[3fr_1fr] lg:divide-x lg:divide-y-0">
               {/* ==================== LEFT 3/4 PANE (75%): CANDIDATE TABLE & STRUCTURED DATA ==================== */}
-              <div className="flex min-w-0 flex-col">
+              <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
                 {/* Rightfit Split-Pane Sub-Header: single crisp h-12 row */}
                 <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border bg-gray-100/90 px-4">
                   <div className="flex min-w-0 items-center gap-2">
@@ -1861,11 +1898,11 @@ export function CandidatesList() {
                   </div>
                 </div>
 
-                {/* Left 3/4 Content Body: p-4 (16px) | space-y-4 (16px) */}
-                <div className="flex-1 space-y-4 p-4">
+                {/* Left 3/4 Content Body: dynamic viewport-bounded flex column */}
+                <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3">
                   {/* Active Must-Haves Bar */}
                   {anyFilter && (
-                    <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border bg-background/50 px-3 py-2">
+                    <div className="flex shrink-0 flex-wrap items-center gap-1.5 rounded-xl border border-border bg-background/50 px-3 py-2">
                       <span className="eyebrow mr-1 text-[10px] text-gray-1000">Must-haves:</span>
                       {cats.map(k => (
                         <FilterChip key={k} active onClick={() => toggleCat(k)}>Function: {k} ×</FilterChip>
@@ -1912,7 +1949,7 @@ export function CandidatesList() {
               </div>
 
               {/* ==================== RIGHT 1/4 PANE (25%): SAAS AI CHATBOT COPILOT ==================== */}
-              <aside className="flex min-w-[300px] flex-col bg-background/40">
+              <aside className="flex min-h-0 min-w-[300px] flex-col overflow-hidden bg-background/40">
                 {/* Rightfit Split-Pane Sub-Header: h-12 (48px) | px-4 (16px) */}
                 <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border bg-gray-100/90 px-4">
                   <div className="flex items-center gap-2">
@@ -1930,7 +1967,7 @@ export function CandidatesList() {
                 </div>
 
                 {/* Scrollable SaaS Conversation Thread: p-4 space-y-4 */}
-                <div className="no-scrollbar flex-1 space-y-4 overflow-y-auto p-4">
+                <div className="no-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
                   {chatMessages.map(msg => (
                     <div key={msg.id} className="anim-slide-up space-y-1.5">
                       {msg.role === 'user' ? (
@@ -2101,98 +2138,23 @@ export function CandidatesList() {
         /* ======================================================================
            SCREEN 2: MANUAL FILTERS & POOL
            Includes BOTH:
-           1. Sheets-style FilterBar (N17: repeated column = OR, AND across columns) + Columns Menu (N18)
-           2. 11-Dimension Structured Filter Console (expandable/collapsible)
-           3. Table View (with row click opening S-08 Slide-Over Sidebar) & Split Detail View (CandidateSplitView)
+           1. Compact Unified Search + Sheets-style FilterBar (N17) + Columns Menu (N18)
+           2. 11-Dimension Structured Filter Grid (expandable/collapsible rows & columns)
+           3. Dynamic Viewport-Bounded Table View & Split Detail View (CandidateSplitView)
            ====================================================================== */
-        <div className="flex flex-1 flex-col gap-4">
-          {/* Unified Double-Bezel Command & Filter Console (Sheets FilterBar + Quick Presets + Expandable 11-Dimension Grid) */}
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+          {/* Unified Double-Bezel Command & Filter Bar */}
           <section className="relative z-20 shrink-0 rounded-2xl border border-border bg-gray-100 p-1">
-            <div className="divide-y divide-border rounded-xl border border-border bg-card">
-              {/* Row 1: Single-Line Unified Command Bar (Search · Quick Presets · 11-Dim Drawer Toggle · View Switcher · Export) */}
-              <div className="flex h-12 flex-wrap items-center justify-between gap-2 rounded-t-xl bg-gray-100/90 px-4">
-                <div className="flex min-w-0 items-center gap-2">
-                  <div className="relative w-56">
-                    <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      aria-label="Search the pool"
-                      value={query}
-                      onChange={e => setQuery(e.target.value)}
-                      placeholder="Search name, company, skill…"
-                      className="h-8 pl-8 text-xs"
-                    />
-                  </div>
-                  {/* Quick Saved Filter Presets */}
-                  <div className="hidden items-center gap-1 lg:flex">
-                    <span className="eyebrow mr-0.5 text-[9.5px] text-gray-1000">Presets:</span>
-                    <button
-                      type="button"
-                      onClick={() => { setCats(['Product']); setSubs([]); setMore({ ...MORE_DEFAULT, metro: 'NYC', yearsMin: '5', skills: ['Payments'] }) }}
-                      className="rounded-md border border-border bg-secondary/70 px-2 py-0.5 text-[11px] whitespace-nowrap text-gray-1100 hover:bg-secondary hover:text-foreground cursor-pointer"
-                    >
-                      NYC Fintech PMs
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setCats(['Marketing']); setSubs(['Growth']); setMore({ ...MORE_DEFAULT, yearsMin: '5', includePredicted: true }) }}
-                      className="rounded-md border border-border bg-secondary/70 px-2 py-0.5 text-[11px] whitespace-nowrap text-gray-1100 hover:bg-secondary hover:text-foreground cursor-pointer"
-                    >
-                      Growth 5y+
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setCats(['Engineering']); setSubs(['Full-stack']); setMore({ ...MORE_DEFAULT, skills: ['React', 'TypeScript'] }) }}
-                      className="rounded-md border border-border bg-secondary/70 px-2 py-0.5 text-[11px] whitespace-nowrap text-gray-1100 hover:bg-secondary hover:text-foreground cursor-pointer"
-                    >
-                      React/TS
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setCats([]); setSubs([]); setMore({ ...MORE_DEFAULT, auth: ['US citizen', 'Green card'], sponsorship: 'No' }) }}
-                      className="rounded-md border border-border bg-secondary/70 px-2 py-0.5 text-[11px] whitespace-nowrap text-gray-1100 hover:bg-secondary hover:text-foreground cursor-pointer"
-                    >
-                      No Sponsor
-                    </button>
-                  </div>
-                </div>
-
-                {/* Right Controls: 11-Dim Drawer Toggle + View Switcher + Copy/Export */}
-                <div className="flex shrink-0 items-center gap-1.5">
-                  <Button
-                    variant={consoleExpanded ? 'primary' : 'outline'}
-                    size="sm"
-                    icon={<SlidersHorizontal />}
-                    iconRight={consoleExpanded ? <ChevronUp /> : <ChevronDown />}
-                    onClick={() => setConsoleExpanded(x => !x)}
-                  >
-                    11-Dim Grid{totalActiveFilters > 0 ? ` (${totalActiveFilters})` : ''}
-                  </Button>
-                  <Segmented
-                    size="sm"
-                    aria-label="View layout"
-                    value={layout}
-                    onChange={v => setLayout(v as 'table' | 'split')}
-                    options={[
-                      { value: 'table', label: 'Table' },
-                      { value: 'split', label: 'Split' },
-                    ]}
-                  />
-                  {copyMenu}
-                  <Button variant="ghost" size="sm" icon={<Download />} onClick={() => app.toast(`Exported ${count} candidates to CSV`)}>CSV</Button>
-                </div>
-              </div>
-
-              {/* Row 2: Sheets-Style Column FilterBar + Columns Menu + Single Authoritative Match Count */}
-              <div className="bg-card px-2 py-1">
-                {sheetsFilterBar}
-              </div>
+            <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+              {/* Single-Row Column-Divided Search + FilterBar + Controls */}
+              {sheetsFilterBar}
 
               {consoleExpanded && (
-                <>
+                <div className="max-h-[34vh] divide-y divide-border overflow-y-auto">
                   {/* ROW 1: Function Category · Specialty Track · Experience / Seniority */}
                   <div className="grid grid-cols-1 divide-y divide-border lg:grid-cols-[1.35fr_1.15fr_0.95fr] lg:divide-x lg:divide-y-0">
                     {/* Col 1: Category */}
-                    <div className="space-y-2 p-4">
+                    <div className="space-y-1.5 p-3">
                       <div className="flex items-center justify-between">
                         <span className="eyebrow text-[10px] text-gray-1000">1. FUNCTION / CATEGORY</span>
                         {cats.length > 0 && (
@@ -2217,7 +2179,7 @@ export function CandidatesList() {
                     </div>
 
                     {/* Col 2: Specialty / Sub-category */}
-                    <div className="space-y-2 p-4">
+                    <div className="space-y-1.5 p-3">
                       <div className="flex items-center justify-between">
                         <span className="eyebrow text-[10px] text-gray-1000">2. SPECIALTY / SUB-CATEGORY</span>
                         {subs.length > 0 && (
@@ -2243,7 +2205,7 @@ export function CandidatesList() {
                     </div>
 
                     {/* Col 3: Tenure / Seniority */}
-                    <div className="space-y-2 p-4">
+                    <div className="space-y-1.5 p-3">
                       <div className="flex items-center justify-between">
                         <span className="eyebrow text-[10px] text-gray-1000">3. EXPERIENCE & TENURE</span>
                         {(more.yearsMin || more.yearsMax) && (
@@ -2296,7 +2258,7 @@ export function CandidatesList() {
                   {/* ROW 2: Location / Metro · Work Mode & Relocation · Work Authorization · Sponsorship */}
                   <div className="grid grid-cols-1 divide-y divide-border lg:grid-cols-[1.15fr_1.05fr_1.15fr_0.85fr] lg:divide-x lg:divide-y-0">
                     {/* Col 1: Metro / Location */}
-                    <div className="space-y-2 p-4">
+                    <div className="space-y-1.5 p-3">
                       <div className="flex items-center justify-between">
                         <span className="eyebrow text-[10px] text-gray-1000">4. LOCATION / METRO</span>
                         {more.metro !== 'Any' && (
@@ -2319,7 +2281,7 @@ export function CandidatesList() {
                     </div>
 
                     {/* Col 2: Work Mode & Relocation */}
-                    <div className="space-y-2 p-4">
+                    <div className="space-y-1.5 p-3">
                       <div className="flex items-center justify-between">
                         <span className="eyebrow text-[10px] text-gray-1000">5. WORK MODE & RELOCATION</span>
                         {(more.modes.length > 0 || more.relocate !== 'Any') && (
@@ -2352,7 +2314,7 @@ export function CandidatesList() {
                     </div>
 
                     {/* Col 3: Work Authorization */}
-                    <div className="space-y-2 p-4">
+                    <div className="space-y-1.5 p-3">
                       <div className="flex items-center justify-between">
                         <span className="eyebrow text-[10px] text-gray-1000">6. WORK AUTHORIZATION</span>
                         {more.auth.length > 0 && (
@@ -2378,7 +2340,7 @@ export function CandidatesList() {
                     </div>
 
                     {/* Col 4: Sponsorship */}
-                    <div className="space-y-2 p-4">
+                    <div className="space-y-1.5 p-3">
                       <div className="flex items-center justify-between">
                         <span className="eyebrow text-[10px] text-gray-1000">7. SPONSORSHIP</span>
                       </div>
@@ -2399,7 +2361,7 @@ export function CandidatesList() {
                   {/* ROW 3: Skills + ◇ AI Predicted · Target Pay Cap · Timing & Search Status · Profile Completeness */}
                   <div className="grid grid-cols-1 divide-y divide-border lg:grid-cols-[1.5fr_0.9fr_0.95fr_0.85fr] lg:divide-x lg:divide-y-0">
                     {/* Col 1: Explicit + AI-Predicted Skills */}
-                    <div className="space-y-2 p-4">
+                    <div className="space-y-1.5 p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="eyebrow text-[10px] text-gray-1000">8. SKILLS & ◇ AI ADJACENCY GRAPH</span>
                         <button
@@ -2429,7 +2391,7 @@ export function CandidatesList() {
                     </div>
 
                     {/* Col 2: Target Compensation Cap */}
-                    <div className="space-y-2 p-4">
+                    <div className="space-y-1.5 p-3">
                       <div className="flex items-center justify-between">
                         <span className="eyebrow text-[10px] text-gray-1000">9. TARGET PAY CAP</span>
                       </div>
@@ -2453,7 +2415,7 @@ export function CandidatesList() {
                     </div>
 
                     {/* Col 3: Availability & Search Status */}
-                    <div className="space-y-2 p-4">
+                    <div className="space-y-1.5 p-3">
                       <div className="flex items-center justify-between">
                         <span className="eyebrow text-[10px] text-gray-1000">10. AVAILABILITY & INTENT</span>
                       </div>
@@ -2483,7 +2445,7 @@ export function CandidatesList() {
                     </div>
 
                     {/* Col 4: Profile Completeness */}
-                    <div className="space-y-2 p-4">
+                    <div className="space-y-1.5 p-3">
                       <div className="flex items-center justify-between">
                         <span className="eyebrow text-[10px] text-gray-1000">11. COMPLETENESS</span>
                       </div>
@@ -2505,63 +2467,34 @@ export function CandidatesList() {
                       </div>
                     </div>
                   </div>
-                </>
+                </div>
               )}
 
-              {/* Bottom Status & Active Filter Summary Strip */}
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-b-xl bg-secondary/40 px-4 py-2.5">
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span aria-live="polite" className="font-mono font-semibold text-foreground tnum">
-                    {count} candidate{count === 1 ? '' : 's'} match
-                  </span>
-                  <span className="text-muted-foreground">·</span>
-                  {anyFilter ? (
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {cats.map(c => (
-                        <span key={c} className="inline-flex h-5 items-center gap-1 rounded-xs border border-border bg-card px-1.5 text-[11px] text-foreground">
-                          {c}
-                          <button onClick={() => toggleCat(c)} className="text-muted-foreground hover:text-foreground">×</button>
-                        </span>
-                      ))}
-                      {subs.map(s => (
-                        <span key={s} className="inline-flex h-5 items-center gap-1 rounded-xs border border-border bg-card px-1.5 text-[11px] text-foreground">
-                          {s}
-                          <button onClick={() => setSubs(x => x.filter(y => y !== s))} className="text-muted-foreground hover:text-foreground">×</button>
-                        </span>
-                      ))}
-                      {checks.map(ch => (
-                        <span key={ch.label} className="inline-flex h-5 items-center rounded-xs border border-border bg-card px-1.5 text-[11px] text-gray-1100">
-                          {ch.label}
-                        </span>
-                      ))}
-                      <Button variant="link" className="h-5 px-1 text-xs" onClick={clearAll}>Clear all</Button>
-                    </div>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">Showing full talent pool · missing fields never hide candidates (P3)</span>
-                  )}
+              {/* Compact Active Filter Strip — shown ONLY when 11-Dim Grid filters are active */}
+              {(cats.length > 0 || subs.length > 0 || checks.length > 0) && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-b-xl bg-secondary/40 px-3 py-1.5 text-xs">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {cats.map(c => (
+                      <span key={c} className="inline-flex h-5 items-center gap-1 rounded-xs border border-border bg-card px-1.5 text-[11px] text-foreground">
+                        {c}
+                        <button onClick={() => toggleCat(c)} className="text-muted-foreground hover:text-foreground">×</button>
+                      </span>
+                    ))}
+                    {subs.map(s => (
+                      <span key={s} className="inline-flex h-5 items-center gap-1 rounded-xs border border-border bg-card px-1.5 text-[11px] text-foreground">
+                        {s}
+                        <button onClick={() => setSubs(x => x.filter(y => y !== s))} className="text-muted-foreground hover:text-foreground">×</button>
+                      </span>
+                    ))}
+                    {checks.map(ch => (
+                      <span key={ch.label} className="inline-flex h-5 items-center rounded-xs border border-border bg-card px-1.5 text-[11px] text-gray-1100">
+                        {ch.label}
+                      </span>
+                    ))}
+                    <Button variant="link" className="h-5 px-1 text-xs" onClick={clearAll}>Clear all</Button>
+                  </div>
                 </div>
-
-                <button
-                  onClick={() => {
-                    if (chatMessages.length === 0) {
-                      setChatMessages([
-                        {
-                          id: 'a-init',
-                          role: 'assistant',
-                          timestamp: 'Just now',
-                          text: `Loaded ${count} candidates from your manual filter selection. Ask any follow-up here to refine the table on the left.`,
-                        },
-                      ])
-                    }
-                    setAiStage('results')
-                    switchScreen('ai')
-                  }}
-                  className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground hover:underline cursor-pointer"
-                >
-                  <Sparkles className="size-3.5" />
-                  <span>Open in 3/4 Table + 1/4 AI Chat →</span>
-                </button>
-              </div>
+              )}
             </div>
           </section>
 
@@ -2784,12 +2717,12 @@ function CandidateSplitView({
   const allSel = rows.length > 0 && selected.length === rows.length
 
   return (
-    <section className="rounded-2xl border border-border bg-gray-100 p-1">
-      <div className="overflow-hidden rounded-xl border border-border bg-card">
-        <div className="grid grid-cols-1 divide-y divide-border lg:grid-cols-[1.06fr_1fr] lg:divide-x lg:divide-y-0">
-          {/* ==================== LEFT PANE: Locked-Height Scrollable Table ==================== */}
-          <div className="flex min-w-0 flex-col">
-            <div tabIndex={0} role="region" aria-label="Candidates split list" className="h-[calc(100vh-352px)] max-h-[calc(100vh-352px)] overflow-y-auto outline-none">
+    <section className="flex min-h-0 flex-1 flex-col rounded-2xl border border-border bg-gray-100 p-1">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card">
+        <div className="grid min-h-0 flex-1 grid-cols-1 divide-y divide-border overflow-hidden lg:grid-cols-[1.06fr_1fr] lg:divide-x lg:divide-y-0">
+          {/* ==================== LEFT PANE: Dynamic Viewport-Bounded Scrollable Table ==================== */}
+          <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+            <div tabIndex={0} role="region" aria-label="Candidates split list" className="min-h-0 flex-1 overflow-y-auto outline-none">
               <table className="w-full table-fixed border-separate border-spacing-0 text-left text-xs">
                 <thead className="sticky top-0 z-20 bg-gray-100">
                   <tr className="h-10 divide-x divide-border bg-gray-100/95 text-gray-1000 [&>th]:border-b [&>th]:border-border">
@@ -2877,9 +2810,9 @@ function CandidateSplitView({
 
           {/* ==================== RIGHT PANE: Structured Candidate Details (Overview Grid + About + History) ==================== */}
           {active && (
-            <div className="flex max-h-[460px] min-w-0 flex-col overflow-y-auto bg-background/40">
+            <div className="flex min-h-0 min-w-0 flex-col overflow-y-auto bg-background/40">
             {/* Top Bar: Details Header */}
-            <div className="flex h-10 items-center justify-between border-b border-border bg-gray-100/90 px-4">
+            <div className="flex h-10 shrink-0 items-center justify-between border-b border-border bg-gray-100/90 px-4">
               <span className="inline-flex items-center gap-2 text-xs font-medium text-gray-1100">
                 <Briefcase className="size-3.5 text-gray-900" />
                 <span>Details</span>

@@ -435,8 +435,8 @@ export function FilterBar<T>({ fields, rows, state, onChange, count, countLabel 
         )}
       </Popover>
 
-      <div className="ml-auto flex items-center gap-2">
-        <span className="font-mono text-[11px] text-muted-foreground tnum" aria-live="polite"><span className="text-foreground">{count}</span> {countLabel}</span>
+      <div className="ml-auto flex shrink-0 items-center gap-2 whitespace-nowrap">
+        <span className="font-mono text-[11px] whitespace-nowrap text-muted-foreground tnum" aria-live="polite"><span className="text-foreground">{count}</span> {countLabel}</span>
         {activeKeys.length > 0 && <Button variant="link" className="text-xs" onClick={() => onChange({})}>Clear all</Button>}
         {right}
       </div>

@@ -394,7 +394,7 @@ export function RolesList() {
   }
 
   return (
-    <ScrollPage className="max-w-[1440px]">
+    <ScrollPage className="max-w-[1440px]" viewportLocked={!isEmpty}>
       <PageHeader
         title={<span className="flex items-center gap-2">Roles <ExampleMark /></span>}
         meta={<span className="tnum">{isEmpty ? 0 : openCount} open · {outputs.filter(o => o.type === 'Masked').length} masked links</span>}
@@ -416,7 +416,7 @@ export function RolesList() {
             action={<Button icon={<Plus />} onClick={() => navigate('/roles/new')}>New role</Button>} />
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
           {wf === 'error' && (
             <Banner variant="error" actions={<Button onClick={() => setWf('default')}>Try again</Button>}>
               Couldn't load roles. Check your connection and try again.

@@ -155,7 +155,7 @@ function parseColStyle(w?: string): React.CSSProperties | undefined {
 export function DataTable<T extends { id: string }>({
   columns, rows, onRowClick, selectable, selected, onSelectedChange, loading, empty, rowActions, rowClassName, dense,
   columnMenu, isSelectable, quietCheckbox, caption, toolbar, stickyActions = true,
-  defaultPageSize = 10, pageSizeOptions = [5, 10, 25, 50, 100], totalPoolCount, footerNote, maxHeight = 'h-[calc(100vh-280px)] max-h-[calc(100vh-280px)]', paginated = true,
+  defaultPageSize = 10, pageSizeOptions = [5, 10, 25, 50, 100], totalPoolCount, footerNote, maxHeight = 'min-h-[240px]', paginated = true,
 }: {
   columns: Column<T>[]; rows: T[]; onRowClick?: (r: T) => void
   selectable?: boolean; selected?: string[]; onSelectedChange?: (ids: string[]) => void
@@ -219,20 +219,20 @@ export function DataTable<T extends { id: string }>({
   }
 
   return (
-    <section className="flex flex-col rounded-2xl border border-border bg-gray-100 p-1">
+    <section className="flex min-h-0 flex-1 flex-col rounded-2xl border border-border bg-gray-100 p-1">
       {toolbar && (
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2">
           {toolbar}
         </div>
       )}
-      <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
-        {/* Locked-height internal scroll container with sticky header */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card">
+        {/* Dynamic viewport-bounded internal scroll container with sticky header */}
         <div
           tabIndex={0}
           role="region"
           aria-label={caption ?? 'Data table'}
           className={cn(
-            'overflow-auto bg-card outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40',
+            'min-h-0 flex-1 overflow-auto bg-card outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40',
             !loading && sorted.length > 0 && maxHeight,
           )}
         >

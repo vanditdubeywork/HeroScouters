@@ -326,7 +326,7 @@ export function ResumesLibrary() {
   const counts = Object.fromEntries(TYPES.map(t => [t, all.filter(o => o.type === t).length])) as Record<OutputType, number>
 
   return (
-    <ScrollPage className="max-w-[1440px]">
+    <ScrollPage className="max-w-[1440px]" viewportLocked={all.length > 0}>
       <PageHeader
         title={
           <span className="inline-flex items-center gap-2">

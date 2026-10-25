@@ -549,7 +549,41 @@ export function NewCandidate() {
           <ReadOnlyProfile c={draft} />
         </>
       ) : (
-        <EmptyState icon={<UserPlus />} title="No profile yet" body="Paste a Google Drive, Dropbox, or LinkedIn resume link, or import rows from an outreach sheet." />
+        <div className="flex min-h-[380px] flex-col items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-gray-100 p-1">
+            <div className="space-y-4 rounded-xl border border-border bg-card p-5 text-center">
+              <div className="mx-auto flex size-10 items-center justify-center rounded-xl border border-border bg-secondary">
+                <UserPlus className="size-4 text-muted-foreground" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-foreground">Extracted profile will appear here</h3>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Paste a Google Drive, Dropbox, or LinkedIn link on the left, or try an example intake flow with 1 click.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:justify-center">
+                <Button variant="primary" icon={<Sparkles />} onClick={useExampleDriveLink}>
+                  Try example Drive resume
+                </Button>
+                <Button
+                  variant="outline"
+                  icon={<Table2 />}
+                  onClick={() => {
+                    setMode('sheet')
+                    setSheetLoaded(true)
+                    setSheetPaste(
+                      outreachSheetCandidates
+                        .map(r => `${r.nameLabel ?? r.name}\t${r.headline}\t${r.link}\t${SHEET_DEFAULTS[r.id]?.cameInFor ?? ''}\t${SHEET_DEFAULTS[r.id]?.notes ?? ''}`)
+                        .join('\n')
+                    )
+                  }}
+                >
+                  Load 3 outreach sheet rows
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

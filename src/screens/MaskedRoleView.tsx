@@ -420,11 +420,6 @@ export function RoleMaskedLinksSection({
             <Button variant="outline" size="sm" icon={<Mail />} onClick={() => setEmailOpen(true)}>
               Draft email with links
             </Button>
-            {embedded && (
-              <Button variant="primary" size="sm" icon={<Sparkles />} onClick={() => setBulkModalOpen(true)}>
-                Select resumes &amp; bulk mask
-              </Button>
-            )}
           </div>
         </div>
       </section>

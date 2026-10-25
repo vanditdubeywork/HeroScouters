@@ -323,9 +323,9 @@ function WireframeToolbar() {
   }
 
   return (
-    <div className="fixed bottom-4 left-1/2 z-[55] -translate-x-1/2">
+    <div className="fixed right-4 bottom-16 z-[55]">
       {open && (
-        <div className="anim-pop absolute bottom-full left-1/2 mb-2 w-[380px] -translate-x-1/2 rounded-2xl border border-white/10 bg-[#111] p-1.5 text-white shadow-2xl">
+        <div className="anim-pop absolute right-0 bottom-full mb-2 w-[380px] rounded-2xl border border-white/10 bg-[#111] p-1.5 text-white shadow-2xl">
           {open === 'states' && cur && (
             <div>
               <div className="px-2.5 pt-1.5 pb-2 font-mono text-[10px] tracking-[0.12em] text-white/50 uppercase">{cur.screenId} · {cur.title} · states</div>

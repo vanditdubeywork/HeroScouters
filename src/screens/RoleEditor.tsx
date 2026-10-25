@@ -539,7 +539,53 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
   const right = phase === 'extracting' ? (
     <AIStepper title="Extracting role details" steps={STEPS} current={wf === 'extracting' ? 2 : stepper.step} />
   ) : !d ? (
-    <EmptyState icon={<FileText />} title="No role details yet" body="Paste a JD and extract to see role details here." />
+    <div className="flex h-full flex-col items-center justify-center p-6">
+      <div className="w-full max-w-md rounded-2xl border border-border bg-gray-100 p-1">
+        <div className="space-y-4 rounded-xl border border-border bg-card p-5 text-center">
+          <div className="mx-auto flex size-10 items-center justify-center rounded-xl border border-border bg-secondary">
+            <FileText className="size-4 text-muted-foreground" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold text-foreground">Role details will appear here</h3>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Paste a job description on the left to extract requirements automatically, or start with a quick-fill option below.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:justify-center">
+            <Button
+              variant="primary"
+              icon={<Sparkles />}
+              onClick={() => {
+                setSrc(EXAMPLE_SOURCE)
+                setFailed(false)
+                setDirty(true)
+                setPhase('extracting')
+                if (wf !== 'live') setWf('live')
+              }}
+            >
+              Load example JD &amp; extract
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const x = extractDraft(EXAMPLE_SOURCE)
+                setDraft({
+                  ...x.draft,
+                  title: src.noJdTitle || 'Senior Product Manager',
+                  location: 'NYC',
+                  workMode: 'Hybrid',
+                })
+                setSources({ title: 'EDITED', category: 'EDITED', location: 'EDITED', workMode: 'EDITED' })
+                setBaseline(x.draft)
+                setPhase('extracted')
+              }}
+            >
+              Enter requirements manually
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
   ) : (
     <div className="space-y-6 p-2 sm:p-4">
       <Field label={<Lbl src={sources.title}>Role title</Lbl>}>

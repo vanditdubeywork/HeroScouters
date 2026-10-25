@@ -1071,10 +1071,109 @@ export function CandidatesList() {
 
   /* Compact 4-column layout for the 3/4 Split Workspace so all columns + sticky row actions fit with zero horizontal scroll */
   const splitWorkspaceColumns: Column<Candidate>[] = [
-    allColumnsMap.name,
-    allColumnsMap.cat,
-    allColumnsMap.loc,
-    allColumnsMap.skills,
+    {
+      ...allColumnsMap.name,
+      header: 'Candidate',
+      render: c => {
+        const rs = app.resumesFor(c.id)
+        return (
+          <div className="flex min-w-0 items-center gap-2" data-cid={c.id}>
+            <Avatar initials={c.initials} size={28} />
+            <div className="min-w-0">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={e => { e.stopPropagation(); navigate(`/candidates/${c.id}`) }}
+                  className="max-w-[95px] truncate text-left text-[13px] font-[590] tracking-[-0.014em] text-foreground hover:underline"
+                >
+                  {c.name}
+                </button>
+                {rs.length > 1 && (
+                  <button
+                    type="button"
+                    title="Select resume version for role masking"
+                    onClick={e => { e.stopPropagation(); setBulkMaskCandIds([c.id]) }}
+                    className="inline-flex h-4 items-center gap-0.5 rounded-xs border border-border bg-card px-1 font-mono text-[9px] text-foreground hover:bg-secondary cursor-pointer"
+                  >
+                    <span>{rs.length}v</span>
+                  </button>
+                )}
+              </div>
+              <div className="max-w-[116px] truncate text-[11px] text-muted-foreground">
+                {c.companies[0] ? `${c.companies[0].title} · ${c.companies[0].name}` : c.headline}
+              </div>
+            </div>
+          </div>
+        )
+      },
+    },
+    {
+      ...allColumnsMap.cat,
+      header: 'Function & Exp',
+      render: c => (
+        <div className="flex flex-col gap-0.5 whitespace-nowrap">
+          <div className="flex items-center gap-1">
+            <span className="inline-flex h-5 items-center rounded-sm border border-border bg-secondary px-1.5 text-[11px] font-medium text-foreground">
+              {c.category}
+            </span>
+            <span className="max-w-[56px] truncate text-[11px] text-gray-1100">{c.subcategory}</span>
+          </div>
+          <div className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground tnum">
+            <span>{c.years !== null ? `${c.years}y` : '?y'}</span>
+            <span>·</span>
+            <span>{c.pay ?? '? Pay'}</span>
+          </div>
+        </div>
+      ),
+    },
+    {
+      ...allColumnsMap.loc,
+      header: 'Location & Auth',
+      render: c => {
+        const s = workAuthShort(c.workAuth)
+        return (
+          <div className="flex flex-col gap-0.5 whitespace-nowrap">
+            <div className="flex items-center gap-1">
+              {c.metro ? <span className="max-w-[68px] truncate text-xs font-medium text-foreground">{c.metro}</span> : <NotCaptured />}
+              {c.workModes && (
+                <span className="inline-flex h-[18px] items-center rounded-xs border border-border bg-secondary/70 px-1 font-mono text-[9.5px] text-gray-1100">
+                  {c.workModes[0].toLowerCase()}
+                </span>
+              )}
+            </div>
+            <span className="max-w-[98px] truncate font-mono text-[10px] text-muted-foreground">
+              {s ?? 'Auth assumed'}
+            </span>
+          </div>
+        )
+      },
+    },
+    {
+      ...allColumnsMap.skills,
+      header: 'Skills & ◇ AI',
+      render: c => (
+        <div className="flex max-w-[130px] flex-wrap items-center gap-1">
+          {c.skills.slice(0, 1).map(sk => (
+            <span
+              key={sk}
+              className="inline-flex h-5 max-w-[80px] items-center truncate rounded-xs border border-border bg-secondary px-1.5 text-[10px] text-gray-1100 whitespace-nowrap"
+            >
+              {sk}
+            </span>
+          ))}
+          {c.predicted.slice(0, 1).map(p => (
+            <span
+              key={p.name}
+              title={`Predicted skill: ${p.basis}`}
+              className="inline-flex h-5 max-w-[80px] items-center gap-0.5 truncate rounded-xs border border-dashed border-border bg-secondary/50 px-1 text-[10px] text-gray-1000 whitespace-nowrap"
+            >
+              <span>◇</span>
+              <span className="truncate">{p.name}</span>
+            </span>
+          ))}
+        </div>
+      ),
+    },
   ]
 
   // Space on a focused row → quick look sidebar (S-08)
@@ -1137,7 +1236,7 @@ export function CandidatesList() {
         rows={consoleFiltered}
         state={sheetsFilters}
         onChange={s => setSheetsFilters(s)}
-        count={rows.length}
+        count={count}
         right={
           <>
             <Switch
@@ -1223,6 +1322,7 @@ export function CandidatesList() {
         <div onKeyDown={onTableKey}>
           <DataTable
             caption="Candidates pool"
+            dense={compactForSplitWorkspace}
             columns={compactForSplitWorkspace ? splitWorkspaceColumns : columns}
             rows={rows}
             loading={isLoading}
@@ -1232,10 +1332,16 @@ export function CandidatesList() {
             onSelectedChange={ids => { setSelected(ids); setAllMatching(false) }}
             columnMenu={columnMenu}
             onRowClick={c => setPreview(c.id)}
-            rowActions={c => (
+            rowActions={c => compactForSplitWorkspace ? (
+              <>
+                <Button variant="outline" size="sm" icon={<Shield />} title="Select resume & mask for a role" onClick={() => setBulkMaskCandIds([c.id])}>Mask</Button>
+                <Button variant="ghost" size="icon-sm" aria-label={`Preview ${c.name}`} title="Open preview sidebar (Space)" icon={<PanelRightOpen />} onClick={() => setPreview(c.id)} />
+                <Button variant="ghost" size="icon-sm" aria-label={`Find matching roles for ${c.name}`} title="Find matching roles" icon={<Briefcase />} onClick={() => navigate(`/candidates/${c.id}?tab=roles`)} />
+              </>
+            ) : (
               <>
                 <Button variant="outline" size="sm" icon={<Shield />} title="Select resume & mask for a role" onClick={() => setBulkMaskCandIds([c.id])}>Mask for role</Button>
-                <Button variant="ghost" size="sm" icon={<PanelRightOpen />} title="Open preview sidebar (Space)" onClick={() => setPreview(c.id)}>Preview</Button>
+                <Button variant="ghost" size="icon-sm" aria-label={`Preview ${c.name}`} title="Open preview sidebar (Space)" icon={<PanelRightOpen />} onClick={() => setPreview(c.id)} />
                 <Button variant="ghost" size="sm" title="Find matching roles" onClick={() => navigate(`/candidates/${c.id}?tab=roles`)}>Roles</Button>
               </>
             )}
@@ -1670,15 +1776,15 @@ export function CandidatesList() {
             <div className="grid min-h-[calc(100vh-10.5rem)] grid-cols-1 divide-y divide-border overflow-hidden rounded-xl border border-border bg-card lg:grid-cols-[3fr_1fr] lg:divide-x lg:divide-y-0">
               {/* ==================== LEFT 3/4 PANE (75%): CANDIDATE TABLE & STRUCTURED DATA ==================== */}
               <div className="flex min-w-0 flex-col">
-                {/* Rightfit Split-Pane Sub-Header: h-12 (48px) | px-4 (16px) | border-b | bg-gray-100/90 */}
-                <div className="flex h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-gray-100/90 px-4">
-                  <div className="flex items-center gap-2">
-                    <Users className="size-4 text-gray-1000" />
-                    <span className="font-mono text-xs font-semibold text-foreground tnum">
-                      {count} candidates pass
+                {/* Rightfit Split-Pane Sub-Header: single crisp h-12 row */}
+                <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border bg-gray-100/90 px-4">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Users className="size-4 shrink-0 text-gray-1000" />
+                    <span className="font-mono text-xs font-semibold whitespace-nowrap text-foreground tnum">
+                      {count} match
                     </span>
-                    <span className="hidden rounded-sm border border-border bg-card px-2 py-0.5 font-mono text-[10.5px] text-muted-foreground xl:inline-block tnum">
-                      {poolSize} pool → {count} pass · {eliminatedCount} filtered out
+                    <span className="hidden rounded-sm border border-border bg-card px-2 py-0.5 font-mono text-[10.5px] whitespace-nowrap text-muted-foreground 2xl:inline-block tnum">
+                      {poolSize} pool · {eliminatedCount} filtered out
                     </span>
                     <Button
                       variant="outline"
@@ -1686,18 +1792,18 @@ export function CandidatesList() {
                       icon={<SlidersHorizontal />}
                       onClick={() => switchScreen('manual')}
                     >
-                      Manual Console ({totalActiveFilters})
+                      Filters{totalActiveFilters > 0 ? ` (${totalActiveFilters})` : ''}
                     </Button>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <div className="relative hidden w-44 sm:block">
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <div className="relative hidden w-36 xl:block">
                       <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         aria-label="Search matched candidates"
                         value={query}
                         onChange={e => setQuery(e.target.value)}
-                        placeholder="Search within matches…"
+                        placeholder="Search match…"
                         className="h-8 pl-8 text-xs"
                       />
                     </div>
@@ -1707,14 +1813,11 @@ export function CandidatesList() {
                       value={layout}
                       onChange={v => setLayout(v as 'table' | 'split')}
                       options={[
-                        { value: 'table', label: 'Full table' },
-                        { value: 'split', label: 'Split view' },
+                        { value: 'table', label: 'Table' },
+                        { value: 'split', label: 'Split' },
                       ]}
                     />
                     {copyMenu}
-                    <Button variant="ghost" size="sm" icon={<Download />} onClick={() => app.toast(`Exported ${count} candidates to CSV`)}>
-                      CSV
-                    </Button>
                   </div>
                 </div>
 
@@ -1963,92 +2066,85 @@ export function CandidatesList() {
            3. Table View (with row click opening S-08 Slide-Over Sidebar) & Split Detail View (CandidateSplitView)
            ====================================================================== */
         <div className="space-y-4">
-          {/* V03/V04 Sheets-Style FilterBar + Columns Menu */}
-          {sheetsFilterBar}
-
-          {/* Structured Multi-Row Double-Bezel Filter Console */}
+          {/* Unified Double-Bezel Command & Filter Console (Sheets FilterBar + Quick Presets + Expandable 11-Dimension Grid) */}
           <section className="rounded-2xl border border-border bg-gray-100 p-1">
             <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
-              {/* Console Top Control Bar (h-12 px-4) */}
-              <div className="flex min-h-12 flex-wrap items-center justify-between gap-2 bg-gray-100/90 px-4 py-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                    <Filter className="size-3.5 text-gray-1000" />
-                    <span>Structured Filter Console</span>
-                  </span>
-                  {totalActiveFilters > 0 ? (
-                    <span className="inline-flex h-5 items-center rounded-sm bg-primary px-1.5 font-mono text-[10.5px] font-semibold text-primary-foreground tnum">
-                      {totalActiveFilters} active
-                    </span>
-                  ) : (
-                    <span className="font-mono text-[11px] text-muted-foreground">All 11 dimensions</span>
-                  )}
-                  <div className="mx-1 hidden h-4 w-px bg-border sm:block" />
-                  {/* Quick Saved Filter Presets */}
-                  <div className="hidden flex-wrap items-center gap-1 xl:flex">
-                    <span className="eyebrow mr-1 text-[9.5px] text-gray-1000">Presets:</span>
-                    <button
-                      onClick={() => { setCats(['Product']); setSubs([]); setMore({ ...MORE_DEFAULT, metro: 'NYC', yearsMin: '5', skills: ['Payments'] }) }}
-                      className="rounded-md border border-border bg-secondary/70 px-2 py-0.5 text-[11px] text-gray-1100 hover:bg-secondary hover:text-foreground cursor-pointer"
-                    >
-                      NYC Fintech PMs
-                    </button>
-                    <button
-                      onClick={() => { setCats(['Marketing']); setSubs(['Growth']); setMore({ ...MORE_DEFAULT, yearsMin: '5', includePredicted: true }) }}
-                      className="rounded-md border border-border bg-secondary/70 px-2 py-0.5 text-[11px] text-gray-1100 hover:bg-secondary hover:text-foreground cursor-pointer"
-                    >
-                      Growth Marketing (5y+)
-                    </button>
-                    <button
-                      onClick={() => { setCats(['Engineering']); setSubs(['Full-stack']); setMore({ ...MORE_DEFAULT, skills: ['React', 'TypeScript'] }) }}
-                      className="rounded-md border border-border bg-secondary/70 px-2 py-0.5 text-[11px] text-gray-1100 hover:bg-secondary hover:text-foreground cursor-pointer"
-                    >
-                      Full-Stack React/TS
-                    </button>
-                    <button
-                      onClick={() => { setCats([]); setSubs([]); setMore({ ...MORE_DEFAULT, auth: ['US citizen', 'Green card'], sponsorship: 'No' }) }}
-                      className="rounded-md border border-border bg-secondary/70 px-2 py-0.5 text-[11px] text-gray-1100 hover:bg-secondary hover:text-foreground cursor-pointer"
-                    >
-                      No Sponsorship Needed
-                    </button>
-                  </div>
-                </div>
-
-                {/* Right Controls: Search + Popover + Collapse + View Switcher + Copy/Export */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="relative w-52">
+              {/* Row 1: Single-Line Unified Command Bar (Search · Quick Presets · 11-Dim Drawer Toggle · View Switcher · Export) */}
+              <div className="flex h-12 flex-wrap items-center justify-between gap-2 bg-gray-100/90 px-4">
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="relative w-56">
                     <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       aria-label="Search the pool"
                       value={query}
                       onChange={e => setQuery(e.target.value)}
-                      placeholder="Name, company, skill…"
+                      placeholder="Search name, company, skill…"
                       className="h-8 pl-8 text-xs"
                     />
                   </div>
-                  {moreFiltersPopover}
+                  {/* Quick Saved Filter Presets */}
+                  <div className="hidden items-center gap-1 lg:flex">
+                    <span className="eyebrow mr-0.5 text-[9.5px] text-gray-1000">Presets:</span>
+                    <button
+                      type="button"
+                      onClick={() => { setCats(['Product']); setSubs([]); setMore({ ...MORE_DEFAULT, metro: 'NYC', yearsMin: '5', skills: ['Payments'] }) }}
+                      className="rounded-md border border-border bg-secondary/70 px-2 py-0.5 text-[11px] whitespace-nowrap text-gray-1100 hover:bg-secondary hover:text-foreground cursor-pointer"
+                    >
+                      NYC Fintech PMs
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setCats(['Marketing']); setSubs(['Growth']); setMore({ ...MORE_DEFAULT, yearsMin: '5', includePredicted: true }) }}
+                      className="rounded-md border border-border bg-secondary/70 px-2 py-0.5 text-[11px] whitespace-nowrap text-gray-1100 hover:bg-secondary hover:text-foreground cursor-pointer"
+                    >
+                      Growth 5y+
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setCats(['Engineering']); setSubs(['Full-stack']); setMore({ ...MORE_DEFAULT, skills: ['React', 'TypeScript'] }) }}
+                      className="rounded-md border border-border bg-secondary/70 px-2 py-0.5 text-[11px] whitespace-nowrap text-gray-1100 hover:bg-secondary hover:text-foreground cursor-pointer"
+                    >
+                      React/TS
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setCats([]); setSubs([]); setMore({ ...MORE_DEFAULT, auth: ['US citizen', 'Green card'], sponsorship: 'No' }) }}
+                      className="rounded-md border border-border bg-secondary/70 px-2 py-0.5 text-[11px] whitespace-nowrap text-gray-1100 hover:bg-secondary hover:text-foreground cursor-pointer"
+                    >
+                      No Sponsor
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right Controls: 11-Dim Drawer Toggle + View Switcher + Copy/Export */}
+                <div className="flex shrink-0 items-center gap-1.5">
                   <Button
-                    variant="ghost"
+                    variant={consoleExpanded ? 'primary' : 'outline'}
                     size="sm"
-                    icon={consoleExpanded ? <ChevronUp /> : <ChevronDown />}
+                    icon={<SlidersHorizontal />}
+                    iconRight={consoleExpanded ? <ChevronUp /> : <ChevronDown />}
                     onClick={() => setConsoleExpanded(x => !x)}
                   >
-                    {consoleExpanded ? 'Compact' : 'Expand'}
+                    11-Dim Grid{totalActiveFilters > 0 ? ` (${totalActiveFilters})` : ''}
                   </Button>
-                  <div className="mx-0.5 h-4 w-px bg-border" />
                   <Segmented
                     size="sm"
                     aria-label="View layout"
                     value={layout}
                     onChange={v => setLayout(v as 'table' | 'split')}
                     options={[
-                      { value: 'table', label: 'Full table' },
-                      { value: 'split', label: 'Split view' },
+                      { value: 'table', label: 'Table' },
+                      { value: 'split', label: 'Split' },
                     ]}
                   />
                   {copyMenu}
                   <Button variant="ghost" size="sm" icon={<Download />} onClick={() => app.toast(`Exported ${count} candidates to CSV`)}>CSV</Button>
                 </div>
+              </div>
+
+              {/* Row 2: Sheets-Style Column FilterBar + Columns Menu + Single Authoritative Match Count */}
+              <div className="bg-card px-2 py-1">
+                {sheetsFilterBar}
               </div>
 
               {consoleExpanded && (

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle, CircleCheck, Copy, Download, EyeOff, LayoutTemplate, Link2, Lock, MessageSquareQuote, RefreshCw, Sparkles, Target,
+  AlertTriangle, CircleCheck, Copy, Download, Eye, EyeOff, LayoutTemplate, Link2, Lock, MessageSquareQuote, RefreshCw, Sparkles, Target,
 } from 'lucide-react'
 import { ScrollPage, SplitPane, useTopBar } from '../shell/AppShell'
 import { BezelCard, Button, Checkbox, EmptyState, ExampleMark, Field, Input, Segmented, Select, Skeleton, Switch, Textarea, cn } from '../components/ui'
@@ -814,7 +814,14 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
   const footer = (
     <div className="flex flex-wrap items-center gap-2">
       <Button icon={<Copy />} onClick={() => setEmailOpen(true)}>Copy email text</Button>
-      <span className="eyebrow ml-1 hidden text-gray-1000 sm:inline">
+      <Button
+        variant="outline"
+        icon={<Eye />}
+        onClick={() => navigate(`/resumes/masked-view?role=${r?.id ?? 'northwind-spm'}&candidate=${cur.id}`)}
+      >
+        Client Portal →
+      </Button>
+      <span className="eyebrow ml-1 hidden text-gray-1000 lg:inline">
         {style === 'traditional' ? 'Traditional' : 'Creative'} · {TEMPLATE_LABEL[template]} · {resumeLabel(activeSourceResume)} · {promptVersionLabel} · {r ? `${r.title} — ${r.company}` : target === 'url' ? 'Public posting' : 'No specific role'}
       </span>
       <div className="ml-auto flex items-center gap-2">

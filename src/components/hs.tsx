@@ -354,7 +354,7 @@ export function DataTable<T extends { id: string }>({
 export function MatchRow({
   rank, initials, title, subtitle, tag, band, score: _score, reason, chips, status, rejectReason, delta, focused,
   candidate, role,
-  onPreview, onShortlist, onReject, onUndo, onAddToAsk, shortlistLabel = 'Shortlist', rejectLabel = 'Reject', onClick,
+  onPreview, onShortlist, onReject, onUndo, onMask, onAddToAsk, shortlistLabel = 'Shortlist', rejectLabel = 'Reject', onClick,
   selected, onToggleSelect, notScored, skipped, meta, footer, actionsDisabled,
   recommendation, suggested, requirementsMet, greenFlags, redFlags, notInterestedReason,
 }: {
@@ -363,7 +363,7 @@ export function MatchRow({
   status: MatchRowStatus | 'not-a-fit'; rejectReason?: string; delta?: 'new' | 'moved' | 'requalified'
   dimmed?: boolean; focused?: boolean
   candidate?: Candidate; role?: Role
-  onPreview?: () => void; onShortlist?: () => void; onReject?: () => void; onUndo?: () => void; onAddToAsk?: (c: MatchChip) => void
+  onPreview?: () => void; onShortlist?: () => void; onReject?: () => void; onUndo?: () => void; onMask?: () => void; onAddToAsk?: (c: MatchChip) => void
   shortlistLabel?: string; rejectLabel?: string; onClick?: () => void
   selected?: boolean; onToggleSelect?: (shift: boolean) => void
   notScored?: boolean; skipped?: boolean
@@ -525,6 +525,7 @@ export function MatchRow({
             shortlisted ? (
               <button
                 type="button"
+                title="Click to undo shortlist"
                 onClick={onUndo}
                 className="flex h-9 w-full max-w-[190px] items-center justify-center gap-2 rounded-xl border border-emerald-400/70 bg-emerald-500/20 px-4 text-xs font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/30"
               >
@@ -545,8 +546,16 @@ export function MatchRow({
             )
           )}
 
-          {/* 2. Colored Reject Button */}
-          {onReject && (
+          {/* 2. Next-Step Mask Action (when shortlisted) OR Colored Reject Button */}
+          {shortlisted && onMask ? (
+            <button
+              type="button"
+              onClick={onMask}
+              className="flex h-9 w-full max-w-[190px] items-center justify-center gap-2 rounded-xl border border-foreground bg-foreground px-4 text-xs font-semibold text-background transition-opacity hover:opacity-90"
+            >
+              <span>Mask link →</span>
+            </button>
+          ) : onReject && (
             <button
               type="button"
               onClick={onReject}
@@ -581,31 +590,69 @@ export function MatchRow({
 /* ---------- §7.2 Funnel line (v0.4: 412 in pool → 385 eliminated → 27 not scored → 5 suggested → 3 shortlisted) ---------- */
 export function FunnelLine({
   pool, pass, top, onSeeEliminated, eliminatedOpen,
-  notScored, suggested, shortlisted,
+  notScored, suggested, shortlisted, onSelectStage,
 }: {
   pool: number; pass: number; top: number; onSeeEliminated?: () => void; eliminatedOpen?: boolean
   notScored?: number; suggested?: number; shortlisted?: number
+  onSelectStage?: (stage: 'eliminated' | 'not-scored' | 'scored' | 'shortlisted') => void
 }) {
   const elim = Math.max(0, pool - pass)
-  const Step = ({ n, label, muted }: { n: number; label: string; muted?: boolean }) => (
-    <span className="inline-flex items-baseline gap-1.5">
-      <span className={cn('font-mono text-sm font-medium tnum', muted ? 'text-muted-foreground' : 'text-foreground')}>{n}</span>
-      <span className="text-xs text-muted-foreground">{label}</span>
-    </span>
-  )
+  const Step = ({ n, label, muted, onClick, active }: { n: number; label: string; muted?: boolean; onClick?: () => void; active?: boolean }) => {
+    const inner = (
+      <>
+        <span className={cn('font-mono text-sm font-medium tnum', muted ? 'text-muted-foreground' : 'text-foreground')}>{n}</span>
+        <span className="text-xs text-muted-foreground">{label}</span>
+      </>
+    )
+    if (!onClick) {
+      return <span className="inline-flex items-baseline gap-1.5 px-1.5 py-0.5">{inner}</span>
+    }
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          'inline-flex items-baseline gap-1.5 rounded-lg border px-2 py-0.5 transition-colors cursor-pointer',
+          active
+            ? 'border-gray-900 bg-card text-foreground shadow-2xs'
+            : 'border-transparent hover:border-border hover:bg-card/80',
+        )}
+      >
+        {inner}
+      </button>
+    )
+  }
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-border bg-secondary/60 px-4 py-2.5">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-border bg-secondary/60 px-3.5 py-2">
       <Step n={pool} label="in pool" />
       <span className="text-gray-800">→</span>
-      <Step n={elim} label="eliminated" muted />
+      <Step
+        n={elim}
+        label="eliminated"
+        muted
+        active={eliminatedOpen}
+        onClick={onSeeEliminated ?? (onSelectStage ? () => onSelectStage('eliminated') : undefined)}
+      />
       <span className="text-gray-800">→</span>
-      <Step n={notScored ?? Math.max(0, pass - top)} label="not scored" />
+      <Step
+        n={notScored ?? Math.max(0, pass - top)}
+        label="not scored"
+        onClick={onSelectStage ? () => onSelectStage('not-scored') : undefined}
+      />
       <span className="text-gray-800">→</span>
-      <Step n={suggested ?? top} label={suggested !== undefined ? 'suggested / scored' : 'scored'} />
+      <Step
+        n={suggested ?? top}
+        label={suggested !== undefined ? 'suggested / scored' : 'scored'}
+        onClick={onSelectStage ? () => onSelectStage('scored') : undefined}
+      />
       {shortlisted !== undefined && (
         <>
           <span className="text-gray-800">→</span>
-          <Step n={shortlisted} label="shortlisted" />
+          <Step
+            n={shortlisted}
+            label="shortlisted"
+            onClick={onSelectStage ? () => onSelectStage('shortlisted') : undefined}
+          />
         </>
       )}
       {onSeeEliminated && (

@@ -665,6 +665,7 @@ function RoleView({ role }: { role: Role }) {
         onShortlist={() => doShortlist(m)}
         onReject={() => setRejectTarget(m)}
         onUndo={() => m.status === 'not-interested' ? app.undoNotInterested(m.candidateId, role.id) : doUndo(m)}
+        onMask={() => setBulkMaskCandIds([m.candidateId])}
         onAddToAsk={chip => ask(m, chip)}
       />
     )
@@ -739,6 +740,17 @@ function RoleView({ role }: { role: Role }) {
           shortlisted={shortlisted.length}
           onSeeEliminated={() => setElimOpen(o => !o)}
           eliminatedOpen={elimOpen}
+          onSelectStage={stage => {
+            if (stage === 'eliminated') setElimOpen(o => !o)
+            else if (stage === 'not-scored') {
+              setUnscoredOpen(true)
+              window.setTimeout(() => document.getElementById('unscored-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)
+            } else if (stage === 'scored') {
+              setFilters(f => ({ ...f, scored: { kind: 'values', values: ['Scored'], includeMissing: false } }))
+            } else if (stage === 'shortlisted') {
+              setTab('shortlist')
+            }
+          }}
         />
 
         {view === 'few' && <InfoNote>Only 3 candidates pass the must-haves. All of them are shown.</InfoNote>}
@@ -827,7 +839,7 @@ function RoleView({ role }: { role: Role }) {
             </div>
 
             {unscoredRows.length > 0 && (
-              <section className="rounded-2xl border border-border bg-gray-100 p-1">
+              <section id="unscored-section" className="rounded-2xl border border-border bg-gray-100 p-1">
                 <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
                   <button
                     type="button"
@@ -933,6 +945,8 @@ function RoleView({ role }: { role: Role }) {
           onPreview={cid => { setPreviewFrom('shortlist'); setPreviewId(cid) }}
           onOpenEmail={(kind, cids) => { setEmailInitialKind(kind); setEmailCandidateIds(cids) }}
           onMarkNotInterested={cid => setNotInterestedCandId(cid)}
+          onOpenBulkMask={cids => setBulkMaskCandIds(cids)}
+          onOpenMaskedLinks={() => setTab('masked-links')}
           onGoMatches={() => setTab('matches')} />
       )}
       {tab === 'masked-links' && <RoleMaskedLinksSection roleId={id} embedded />}
@@ -1104,7 +1118,7 @@ function EliminatedView({ pool, pass, rules, rows, included, onInclude, onClose,
 }
 
 /* ---------- Shortlist tab (§7.5, C2, C3, C4, N26, N27, D-09) ---------- */
-function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onOpenEmail, onMarkNotInterested, onGoMatches }: {
+function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onOpenEmail, onMarkNotInterested, onOpenBulkMask, onOpenMaskedLinks, onGoMatches }: {
   role: Role
   items: Match[]
   onReorder: (ids: string[]) => void
@@ -1112,6 +1126,8 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onOpenEmail
   onPreview: (cid: string) => void
   onOpenEmail: (kind: EmailDraftKind, candidateIds: string[]) => void
   onMarkNotInterested: (candidateId: string) => void
+  onOpenBulkMask: (candidateIds: string[]) => void
+  onOpenMaskedLinks: () => void
   onGoMatches: () => void
 }) {
   const app = useApp()
@@ -1187,51 +1203,87 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onOpenEmail
           onSelectAllShown={() => sel.selectAll(orderedIds)}
           onClear={sel.clear}
         >
-          {isClient && (
-            <GatedButton perm="genIdentity" variant="primary" size="sm" icon={<FileText />} onClick={editable}>
-              Prepare editable resumes
-            </GatedButton>
-          )}
-          <Button variant={isClient ? 'outline' : 'primary'} size="sm" icon={<Sparkles />} onClick={masked}>
-            Generate masked resumes
+          <Button variant="primary" size="sm" icon={<Shield />} onClick={() => onOpenBulkMask(activeIds)}>
+            Select resumes &amp; bulk mask ({activeIds.length})
           </Button>
           <Button variant="outline" size="sm" icon={<Mail />} onClick={() => onOpenEmail(isClient ? 'shortlist' : 'pitch', activeIds)}>
             Draft emails / prompts
           </Button>
-          <Button variant="outline" size="sm" icon={<Send />} onClick={() => setGmailDraftsOpen(true)}>
-            Create Gmail drafts
-          </Button>
-          <Button variant="outline" size="sm" icon={<Table2 />} onClick={copyOutreachSheetRows}>
-            Copy rows for outreach sheet
-          </Button>
+          {isClient && (
+            <GatedButton perm="genIdentity" variant="outline" size="sm" icon={<FileText />} onClick={editable}>
+              Prepare editable resumes
+            </GatedButton>
+          )}
+          <Menu
+            align="end"
+            width={240}
+            trigger={({ toggle }) => (
+              <Button variant="outline" size="sm" icon={<Send />} iconRight={<ChevronDown className="size-3.5 text-muted-foreground" />} onClick={toggle}>
+                Export &amp; Handoff
+              </Button>
+            )}
+            items={[
+              { label: 'Create Gmail drafts…', icon: <Send />, onSelect: () => setGmailDraftsOpen(true) },
+              { label: 'Copy rows for outreach sheet', icon: <Table2 />, onSelect: copyOutreachSheetRows },
+              { label: 'Open Masked Studio', icon: <Wand2 />, onSelect: masked },
+            ]}
+          />
         </SelectionBar>
       ) : (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="font-mono text-foreground tnum">{items.length}</span> shortlisted · drag to set the order clients see
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {isClient && (
-              <GatedButton perm="genIdentity" variant="primary" icon={<FileText />} onClick={editable}>
-                Prepare editable resumes
-              </GatedButton>
-            )}
-            <Button variant={isClient ? 'outline' : 'primary'} icon={<Sparkles />} onClick={masked}>
-              Generate masked resumes
-            </Button>
-            <Button variant="outline" icon={<Mail />} onClick={() => onOpenEmail(isClient ? 'shortlist' : 'pitch', activeIds)}>
-              Draft emails / prompts
-            </Button>
-            <Button variant="outline" icon={<Send />} onClick={() => setGmailDraftsOpen(true)}>
-              Create Gmail drafts
-            </Button>
-            <Button variant="outline" icon={<Table2 />} onClick={copyOutreachSheetRows}>
-              Copy rows for outreach sheet
-            </Button>
-            <Button variant="outline" icon={<Download />} disabled={!readyCount} title={readyCount ? undefined : 'No resumes generated yet'}
-              onClick={() => { app.toast(`Downloaded ${readyCount} resume${readyCount === 1 ? '' : 's'} as one ZIP`); app.log({ what: `Downloaded ${readyCount} resumes (ZIP)`, record: `${role.title} — ${role.company}`, recordHref: `/roles/${role.id}`, kind: 'Outputs' }) }}>
-              Download
-            </Button>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-gray-100 p-1">
+          <div className="flex flex-1 flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-2.5">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span className="font-mono font-semibold text-foreground tnum">{items.length}</span> shortlisted · drag to set the order {isClient ? 'clients' : 'prospects'} see
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* 1 Primary CTA (P6: One primary action per view) */}
+              <Button variant="primary" icon={<Shield />} onClick={() => onOpenBulkMask(activeIds)}>
+                Select resumes &amp; bulk mask
+              </Button>
+
+              {/* 2 Secondary Contextual Actions */}
+              <Button variant="outline" icon={<Eye />} onClick={onOpenMaskedLinks}>
+                Client Portal Links
+              </Button>
+              <Button variant="outline" icon={<Mail />} onClick={() => onOpenEmail(isClient ? 'shortlist' : 'pitch', activeIds)}>
+                Draft emails &amp; prompts
+              </Button>
+
+              {/* Consolidated Export & Handoff Dropdown Menu */}
+              <Menu
+                align="end"
+                width={250}
+                trigger={({ toggle }) => (
+                  <Button variant="outline" icon={<Send />} iconRight={<ChevronDown className="size-3.5 text-muted-foreground" />} onClick={toggle}>
+                    Export &amp; Handoff
+                  </Button>
+                )}
+                items={[
+                  ...(isClient
+                    ? [{
+                        label: 'Prepare editable resumes',
+                        icon: <FileText />,
+                        disabled: !app.can('genIdentity'),
+                        hint: !app.can('genIdentity') ? whoCanText('genIdentity') : undefined,
+                        onSelect: editable,
+                      }]
+                    : []),
+                  { label: 'Open Masked Studio', icon: <Wand2 />, onSelect: masked },
+                  { separator: true, label: '' },
+                  { label: 'Create Gmail drafts…', icon: <Send />, onSelect: () => setGmailDraftsOpen(true) },
+                  { label: 'Copy rows for outreach sheet', icon: <Table2 />, onSelect: copyOutreachSheetRows },
+                  {
+                    label: readyCount ? `Download ${readyCount} PDFs (ZIP)` : 'Download PDFs (none ready)',
+                    icon: <Download />,
+                    disabled: !readyCount,
+                    onSelect: () => {
+                      app.toast(`Downloaded ${readyCount} resume${readyCount === 1 ? '' : 's'} as one ZIP`)
+                      app.log({ what: `Downloaded ${readyCount} resumes (ZIP)`, record: `${role.title} — ${role.company}`, recordHref: `/roles/${role.id}`, kind: 'Outputs' })
+                    },
+                  },
+                ]}
+              />
+            </div>
           </div>
         </div>
       )}
@@ -1321,13 +1373,40 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onOpenEmail
               <div className="flex w-[240px] flex-wrap items-center gap-1.5">
                 {types.map(t => {
                   const o = outFor(c.id, t)
+                  const handlePillClick = () => {
+                    if (t === 'Masked') {
+                      if (o) navigate(`/resumes/masked-view?role=${role.id}&candidate=${c.id}`)
+                      else onOpenBulkMask([c.id])
+                    } else if (t === 'Editable') {
+                      navigate(`/resumes/editable?role=${role.id}&candidates=${c.id}`)
+                    } else {
+                      navigate(`/resumes/editable?role=${role.id}&candidates=${c.id}`)
+                    }
+                  }
                   return (
-                    <span key={t} title={o ? `${t} · ${o.template} · ${o.created}` : `No ${t.toLowerCase()} resume yet`}
-                      className={cn('inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-xs',
-                        o?.stale ? 'border-dashed border-warning text-[#b45309]' : o ? 'border-border bg-background text-foreground' : 'border-border bg-muted/50 text-muted-foreground')}>
-                      {t}
-                      {o?.stale ? <><AlertTriangle className="size-3" />Stale</> : o ? <Check className="size-3" /> : <span aria-label="none">—</span>}
-                    </span>
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={handlePillClick}
+                      title={o ? `Open ${t.toLowerCase()} resume (${o.template} · ${o.created})` : `Click to generate ${t.toLowerCase()} resume for ${c.name}`}
+                      className={cn(
+                        'inline-flex h-6 items-center gap-1 rounded-md border px-2 text-xs transition-colors cursor-pointer',
+                        o?.stale
+                          ? 'border-dashed border-warning text-[#b45309] hover:bg-warning/10'
+                          : o
+                            ? 'border-border bg-secondary text-foreground hover:border-gray-800 hover:bg-muted'
+                            : 'border-dashed border-border bg-background/60 text-muted-foreground hover:border-gray-800 hover:bg-secondary hover:text-foreground',
+                      )}
+                    >
+                      <span>{t}</span>
+                      {o?.stale ? (
+                        <><AlertTriangle className="size-3" />Stale</>
+                      ) : o ? (
+                        <Check className="size-3 text-success" />
+                      ) : (
+                        <Plus className="size-3 opacity-70" />
+                      )}
+                    </button>
                   )
                 })}
               </div>

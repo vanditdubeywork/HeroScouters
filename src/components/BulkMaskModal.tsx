@@ -309,11 +309,11 @@ export function BulkMaskForRoleDialog({
             </div>
           </section>
 
-          <section className="rounded-2xl border border-border bg-gray-100 p-1">
-            <div className="px-3 py-2 text-xs font-semibold text-foreground">
+          <section className="rounded-2xl border border-border bg-gray-100">
+            <div className="px-4 py-2.5 text-xs font-semibold text-foreground">
               Generated Masked Links for {selectedRole?.company} ({selectedIds.length})
             </div>
-            <div className="divide-y divide-border rounded-xl border border-border bg-card">
+            <div className="mx-1 mb-1 divide-y divide-border rounded-xl border border-border bg-card">
               {selectedIds.map((cid, i) => {
                 const c = app.candidate(cid)
                 if (!c) return null
@@ -375,9 +375,9 @@ export function BulkMaskForRoleDialog({
       ) : (
         <div className="space-y-4">
           {/* Step 1: Role Selector + Output Settings */}
-          <section className="rounded-2xl border border-border bg-gray-100 p-1">
-            <div className="flex items-center gap-2 px-3 py-2">
-              <Briefcase className="size-3.5 text-muted-foreground" />
+          <section className="rounded-2xl border border-border bg-gray-100">
+            <div className="flex items-center gap-2 px-4 py-2.5">
+              <Briefcase className="size-4 text-muted-foreground" />
               <span className="text-xs font-semibold text-foreground">1. Target Role &amp; Masking Preset</span>
               {selectedRole && (
                 <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -386,8 +386,8 @@ export function BulkMaskForRoleDialog({
                 </span>
               )}
             </div>
-            <div className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-card p-3.5 md:grid-cols-3">
-              <div className="space-y-1.5 md:col-span-1">
+            <div className="mx-1 mb-1 grid grid-cols-1 gap-4 rounded-xl border border-border bg-card p-4 md:grid-cols-3">
+              <div className="space-y-2 md:col-span-1">
                 <label className="eyebrow block text-[10px] text-gray-1000">Target Role</label>
                 <Select
                   aria-label="Target role for bulk masking"
@@ -400,7 +400,7 @@ export function BulkMaskForRoleDialog({
                   }))}
                 />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <label className="eyebrow block text-[10px] text-gray-1000">Masked Template</label>
                 <Select
                   aria-label="Masked template"
@@ -410,7 +410,7 @@ export function BulkMaskForRoleDialog({
                   options={['C · Role-fit', 'A · Compact', 'B · Achievement-led']}
                 />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <label className="eyebrow block text-[10px] text-gray-1000">Link &amp; Document Style</label>
                 <Segmented
                   size="sm"
@@ -427,10 +427,10 @@ export function BulkMaskForRoleDialog({
           </section>
 
           {/* Step 2: Candidate & Resume Selector */}
-          <section className="rounded-2xl border border-border bg-gray-100 p-1">
-            <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+          <section className="rounded-2xl border border-border bg-gray-100">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
               <div className="flex items-center gap-2">
-                <Users className="size-3.5 text-muted-foreground" />
+                <Users className="size-4 text-muted-foreground" />
                 <span className="text-xs font-semibold text-foreground">
                   2. Select Candidates &amp; Pick Resume per Candidate
                 </span>
@@ -457,7 +457,7 @@ export function BulkMaskForRoleDialog({
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-xl border border-border bg-card">
+            <div className="mx-1 mb-1 overflow-hidden rounded-xl border border-border bg-card">
               <div className="flex items-center justify-between border-b border-border bg-secondary/60 px-3.5 py-2 text-[11px] text-muted-foreground">
                 <label className="inline-flex cursor-pointer items-center gap-2 font-medium text-foreground">
                   <Checkbox

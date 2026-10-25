@@ -162,11 +162,11 @@ export function CandidatePreview({ open, onClose, candidateId, list, onNavigate,
         </div>
       )}
     >
-      <div className="space-y-4 p-4">
+      <div className="space-y-6 p-4">
         {match && (
-          <section className="rounded-2xl border border-border bg-gray-100 p-3">
-            <h3 className="mb-2 px-1 text-sm font-semibold text-foreground">Why they fit</h3>
-            <div className="space-y-2.5 rounded-xl border border-border bg-card p-3.5 text-xs">
+          <section className="rounded-2xl border border-border bg-gray-100">
+            <h3 className="px-4 py-2.5 text-sm font-semibold text-foreground">Why they fit</h3>
+            <div className="mx-1 mb-1 space-y-2.5 rounded-xl border border-border bg-card p-4 text-xs">
               <p className="leading-relaxed text-foreground">“{match.reason}”</p>
               {(match.requirementsMet?.length || match.greenFlags?.length || match.redFlags?.length) ? (
                 <RecommendationBlock
@@ -182,14 +182,14 @@ export function CandidatePreview({ open, onClose, candidateId, list, onNavigate,
           </section>
         )}
         {!match && candRoleMatches.length > 0 && (
-          <section className="rounded-2xl border border-border bg-gray-100 p-3">
-            <div className="mb-2 flex items-center justify-between px-1">
+          <section className="rounded-2xl border border-border bg-gray-100">
+            <div className="flex items-center justify-between gap-2 px-4 py-2.5">
               <h3 className="text-sm font-semibold text-foreground">Matching open roles ({candRoleMatches.length})</h3>
               <button type="button" onClick={() => { onClose(); navigate(`/candidates/${c.id}?tab=roles`) }} className="text-xs text-muted-foreground hover:text-foreground">
                 See all →
               </button>
             </div>
-            <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+            <div className="mx-1 mb-1 divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
               {candRoleMatches.slice(0, 3).map(m => {
                 const r = role(m.roleId)
                 if (!r) return null
@@ -198,7 +198,7 @@ export function CandidatePreview({ open, onClose, candidateId, list, onNavigate,
                     key={m.roleId}
                     type="button"
                     onClick={() => { onClose(); navigate(`/roles/${r.id}?tab=matches`) }}
-                    className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-xs transition-colors hover:bg-muted/60"
+                    className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-xs transition-colors hover:bg-muted/60"
                   >
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 font-medium text-foreground">
@@ -216,21 +216,21 @@ export function CandidatePreview({ open, onClose, candidateId, list, onNavigate,
           </section>
         )}
         {take?.status === 'signed' && (
-          <section className="rounded-2xl border border-border bg-gray-100 p-3">
-            <div className="mb-2 flex items-center justify-between px-1">
+          <section className="rounded-2xl border border-border bg-gray-100">
+            <div className="flex items-center justify-between gap-2 px-4 py-2.5">
               <h3 className="text-sm font-semibold text-foreground">Our take</h3>
               <TakeMarker candidateId={c.id} />
             </div>
-            <blockquote className="rounded-xl border border-border bg-card p-3.5 text-xs leading-relaxed text-foreground">
+            <blockquote className="mx-1 mb-1 rounded-xl border border-border bg-card p-4 text-xs leading-relaxed text-foreground">
               “{take.text}”
               <footer className="mt-1.5 text-[11px] text-muted-foreground">{signature(takeAuthor)}</footer>
             </blockquote>
           </section>
         )}
         {match && gaps.length > 0 && (
-          <section className="rounded-2xl border border-border bg-gray-100 p-3">
-            <h3 className="mb-2 px-1 text-sm font-semibold text-foreground">Gaps & assumptions</h3>
-            <ul className="space-y-1.5 rounded-xl border border-border bg-card p-3">
+          <section className="rounded-2xl border border-border bg-gray-100">
+            <h3 className="px-4 py-2.5 text-sm font-semibold text-foreground">Gaps & assumptions</h3>
+            <ul className="mx-1 mb-1 space-y-1.5 rounded-xl border border-border bg-card p-4">
               {gaps.map((g, i) => (
                 <li key={i} className="flex items-center justify-between gap-2">
                   <MatchChipView chip={g} />

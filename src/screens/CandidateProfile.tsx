@@ -837,7 +837,7 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
 
       {/* ---------- Matching roles tab ---------- */}
       {tab === 'roles' && (
-        <div className="space-y-4">
+        <div className="space-y-6">
           {outOfDate && (
             <Banner variant="warning" actions={<Button variant="outline" icon={<RefreshCw />} onClick={() => { setKeyChanged(false); setFinding(true); app.toast('Rechecked 14 open roles') }}>Recheck roles</Button>}>
               Matches are out of date. Preferences or work authorization changed since roles were last checked.

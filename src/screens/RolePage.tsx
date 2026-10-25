@@ -712,7 +712,7 @@ function RoleView({ role }: { role: Role }) {
     }
 
     return (
-      <div className={cn('space-y-4', sel.selected.length > 0 && 'any-selected')}>
+      <div className={cn('space-y-6', sel.selected.length > 0 && 'any-selected')}>
         {scoringCount !== null && (
           <Banner variant="info" progress={progress}>
             Scoring <span className="font-mono tnum">{scoringCount}</span> candidates… <span className="text-muted-foreground">You can keep working. We'll let you know when it's ready.</span>
@@ -869,7 +869,7 @@ function RoleView({ role }: { role: Role }) {
           </div>
         ) : (
           /* Scored state: ranked scored rows on top + collapsible Not scored (N) */
-          <div className="space-y-4">
+          <div className="space-y-6">
             {scoredRows.length > 0 && (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card px-3.5 py-2">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -942,8 +942,8 @@ function RoleView({ role }: { role: Role }) {
             </div>
 
             {unscoredRows.length > 0 && (
-              <section id="unscored-section" className="rounded-2xl border border-border bg-gray-100 p-1">
-                <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+              <section id="unscored-section" className="rounded-2xl border border-border bg-gray-100">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
                   <button
                     type="button"
                     aria-expanded={unscoredOpen}
@@ -977,7 +977,7 @@ function RoleView({ role }: { role: Role }) {
                   </div>
                 </div>
                 {unscoredOpen && (
-                  <div className="space-y-2 rounded-xl border border-border bg-card p-2">
+                  <div className="mx-1 mb-1 space-y-2 rounded-xl border border-border bg-card p-3">
                     {unscoredRows.map(m => renderRow(m, { forceUnscored: true }))}
                   </div>
                 )}
@@ -988,15 +988,15 @@ function RoleView({ role }: { role: Role }) {
 
         {/* v0.4 · §7.4 / C10 Collapsed Not interested (N) group */}
         {notInterestedRows.length > 0 && (
-          <details className="group rounded-2xl border border-border bg-gray-100 p-1">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-sm font-semibold text-foreground select-none">
+          <details className="group rounded-2xl border border-border bg-gray-100">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-2.5 text-sm font-semibold text-foreground select-none">
               <span className="inline-flex items-center gap-2">
                 <ChevronRight className="size-4 text-muted-foreground transition-transform group-open:rotate-90" />
                 <span>Not interested ({notInterestedRows.length})</span>
                 <span className="text-xs font-normal text-muted-foreground">· never suggested again for this role</span>
               </span>
             </summary>
-            <div className="space-y-2 rounded-xl border border-border bg-card p-2">
+            <div className="mx-1 mb-1 space-y-2 rounded-xl border border-border bg-card p-3">
               {notInterestedRows.map(m => renderRow(m))}
             </div>
           </details>
@@ -1378,7 +1378,7 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onOpenEmail
   const allSelected = items.length > 0 && sel.selected.length === items.length
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {sel.selected.length > 0 ? (
         <SelectionBar
           count={sel.selected.length}

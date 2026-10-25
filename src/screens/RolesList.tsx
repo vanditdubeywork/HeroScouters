@@ -397,7 +397,7 @@ export function RolesList() {
             action={<Button icon={<Plus />} onClick={() => navigate('/roles/new')}>New role</Button>} />
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-6">
           {wf === 'error' && (
             <Banner variant="error" actions={<Button onClick={() => setWf('default')}>Try again</Button>}>
               Couldn't load roles. Check your connection and try again.

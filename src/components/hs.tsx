@@ -955,12 +955,12 @@ export interface OverviewRow {
 
 export function OverviewGrid({ title = 'Overview', action, rows }: { title?: string; action?: React.ReactNode; rows: OverviewRow[] }) {
   return (
-    <section className="rounded-2xl border border-border bg-gray-100 p-3">
-      <div className="mb-2.5 flex items-center justify-between px-1">
+    <section className="rounded-2xl border border-border bg-gray-100">
+      <div className="flex items-center justify-between gap-2 px-4 py-2.5">
         <h3 className="text-sm font-semibold text-foreground">{title}</h3>
         {action}
       </div>
-      <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="mx-1 mb-1 overflow-hidden rounded-xl border border-border bg-card">
         <table className="w-full border-collapse text-left text-xs">
           <thead>
             <tr className="h-8 divide-x divide-border border-b border-border bg-secondary/50">

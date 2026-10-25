@@ -1267,7 +1267,7 @@ export function CandidatesList() {
 
   /* ---------- Shared Candidate Table View ---------- */
   const renderCandidateTableSection = (compactForSplitWorkspace = false) => (
-    <div className="space-y-3">
+    <div className={compactForSplitWorkspace ? 'space-y-3' : 'space-y-6'}>
       {(selected.length > 0 || allMatching) && (
         <SelectionBar
           count={selected.length}
@@ -2091,7 +2091,7 @@ export function CandidatesList() {
            2. 11-Dimension Structured Filter Console (expandable/collapsible)
            3. Table View (with row click opening S-08 Slide-Over Sidebar) & Split Detail View (CandidateSplitView)
            ====================================================================== */
-        <div className="space-y-4">
+        <div className="space-y-6">
           {/* Unified Double-Bezel Command & Filter Console (Sheets FilterBar + Quick Presets + Expandable 11-Dimension Grid) */}
           <section className="rounded-2xl border border-border bg-gray-100 p-1">
             <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
@@ -2914,9 +2914,9 @@ function CandidateSplitView({
               />
 
               {/* Card 2: About the Candidate */}
-              <section className="rounded-2xl border border-border bg-gray-100 p-3">
-                <h3 className="mb-2.5 px-1 text-sm font-semibold text-foreground">About the candidate</h3>
-                <div className="space-y-3 rounded-xl border border-border bg-card p-3.5 text-xs leading-relaxed text-gray-1100">
+              <section className="rounded-2xl border border-border bg-gray-100">
+                <h3 className="px-4 py-2.5 text-sm font-semibold text-foreground">About the candidate</h3>
+                <div className="mx-1 mb-1 space-y-3 rounded-xl border border-border bg-card p-4 text-xs leading-relaxed text-gray-1100">
                   <p>
                     {active.ourTake
                       ? active.ourTake
@@ -2941,9 +2941,9 @@ function CandidateSplitView({
 
               {/* Card 3: Experience & Work History Table (Row & Column Divided) */}
               {active.companies.length > 0 && (
-                <section className="rounded-2xl border border-border bg-gray-100 p-3">
-                  <h3 className="mb-2.5 px-1 text-sm font-semibold text-foreground">Work history</h3>
-                  <div className="overflow-hidden rounded-xl border border-border bg-card">
+                <section className="rounded-2xl border border-border bg-gray-100">
+                  <h3 className="px-4 py-2.5 text-sm font-semibold text-foreground">Work history</h3>
+                  <div className="mx-1 mb-1 overflow-hidden rounded-xl border border-border bg-card">
                     <table className="w-full border-collapse text-left text-xs">
                       <thead>
                         <tr className="h-8 divide-x divide-border border-b border-border bg-secondary/50">

@@ -362,7 +362,7 @@ export function RoleMaskedLinksSection({
       )}
 
       {/* Role Packet Command Bar (Double-Bezel Section) */}
-      <section className="rounded-2xl border border-border bg-gray-100 p-1">
+      <section className="rounded-2xl border border-border bg-gray-100">
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
           <div className="flex flex-wrap items-center gap-2">
             <Shield className="size-4 text-muted-foreground" />
@@ -539,8 +539,8 @@ export function RoleMaskedLinksSection({
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           {/* Left Rail (4 cols): Masked Candidates in this Role Packet */}
           <div className="space-y-4 lg:col-span-4">
-            <section className="rounded-2xl border border-border bg-gray-100 p-1">
-              <div className="flex items-center justify-between gap-2 px-3.5 py-2.5">
+            <section className="rounded-2xl border border-border bg-gray-100">
+              <div className="flex items-center justify-between gap-2 px-4 py-2.5">
                 <div className="flex items-center gap-2">
                   <Checkbox
                     aria-label="Select all packet candidates"
@@ -564,7 +564,7 @@ export function RoleMaskedLinksSection({
                 </div>
               </div>
 
-              <div className="mx-0.5 mb-0.5 space-y-1.5 rounded-xl border border-border bg-card p-2">
+              <div className="mx-1 mb-1 space-y-2 rounded-xl border border-border bg-card p-3">
                 {packetCandidates.map(({ index, candidate: c, match: m, output: o }) => {
                   const isSelected = c.id === activeCand?.id
                   const isChecked = sel.isSelected(c.id)
@@ -689,9 +689,9 @@ export function RoleMaskedLinksSection({
           {/* Right Viewport (8 cols): What the Client / Prospect Sees When Opening the Masked Link */}
           <div className="lg:col-span-8">
             {activeCand ? (
-              <section className="rounded-2xl border border-border bg-gray-100 p-1">
+              <section className="rounded-2xl border border-border bg-gray-100">
                 {/* Browser / Client Portal Chrome Bar */}
-                <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
                   <div className="flex items-center gap-1.5">
                     <span className="size-2.5 rounded-full bg-gray-600" />
                     <span className="size-2.5 rounded-full bg-gray-600" />
@@ -843,8 +843,8 @@ export function RoleMaskedLinksSection({
                       /* ==================== Creative SaaS Masked Link View (Rightfit Double-Bezel) ==================== */
                       <>
                         {/* Hero Alias & Client Decision Bar */}
-                        <section className="rounded-2xl border border-border bg-gray-100 p-1">
-                          <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2">
+                        <section className="rounded-2xl border border-border bg-gray-100">
+                          <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
                             <div className="flex items-center gap-2">
                               <span className="eyebrow text-[10px] text-gray-1000">
                                 CANDIDATE #0{activeItem.index} · VERIFIED MASKED PROFILE
@@ -860,7 +860,7 @@ export function RoleMaskedLinksSection({
                             </span>
                           </div>
 
-                          <div className="mx-1 mb-1 rounded-xl border border-border bg-card p-5">
+                          <div className="mx-1 mb-1 rounded-xl border border-border bg-card p-4">
                             <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
                               <div className="space-y-2.5">
                                 <div className="flex flex-wrap items-center gap-2">
@@ -919,12 +919,12 @@ export function RoleMaskedLinksSection({
 
                         {/* 2-Column Grid: Why We Recommend + Signed Recruiter Take */}
                         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                          <section className="rounded-2xl border border-border bg-gray-100 p-1">
-                            <div className="flex items-center gap-2 px-3.5 py-2">
-                              <Sparkles className="size-3.5 text-muted-foreground" />
+                          <section className="rounded-2xl border border-border bg-gray-100">
+                            <div className="flex items-center gap-2 px-4 py-2.5">
+                              <Sparkles className="size-4 text-muted-foreground" />
                               <h3 className="text-xs font-semibold text-foreground">Why we recommend for {role.title}</h3>
                             </div>
-                            <div className="mx-0.5 mb-0.5 space-y-2 rounded-xl border border-border bg-card p-4 text-xs">
+                            <div className="mx-1 mb-1 space-y-2 rounded-xl border border-border bg-card p-4 text-xs">
                               <p className="font-medium leading-relaxed text-foreground">
                                 “{activeMatch?.reason ?? `Strong ${activeCand.years ?? 6}+ year track record across ${activeCand.subcategory} and ${activeCand.skills.slice(0, 3).join(', ')}.`}”
                               </p>
@@ -942,15 +942,15 @@ export function RoleMaskedLinksSection({
                             </div>
                           </section>
 
-                          <section className="rounded-2xl border border-border bg-gray-100 p-1">
-                            <div className="flex items-center justify-between gap-2 px-3.5 py-2">
+                          <section className="rounded-2xl border border-border bg-gray-100">
+                            <div className="flex items-center justify-between gap-2 px-4 py-2.5">
                               <span className="flex items-center gap-2 text-xs font-semibold text-foreground">
-                                <MessageSquare className="size-3.5 text-muted-foreground" />
+                                <MessageSquare className="size-4 text-muted-foreground" />
                                 Our take (Human vouch)
                               </span>
                               <span className="eyebrow text-[9px] text-success">SIGNED</span>
                             </div>
-                            <div className="mx-0.5 mb-0.5 flex h-[calc(100%-2.25rem)] flex-col justify-between rounded-xl border border-border bg-card p-4 text-xs">
+                            <div className="mx-1 mb-1 flex h-[calc(100%-2.5rem)] flex-col justify-between rounded-xl border border-border bg-card p-4 text-xs">
                               <blockquote className="leading-relaxed text-foreground">
                                 “{activeTake?.status === 'signed' ? activeTake.text : activeCand.ourTake}”
                               </blockquote>
@@ -963,17 +963,17 @@ export function RoleMaskedLinksSection({
                         </div>
 
                         {/* Role Requirements Match Breakdown */}
-                        <section className="rounded-2xl border border-border bg-gray-100 p-1">
-                          <div className="flex items-center justify-between gap-2 px-3.5 py-2">
+                        <section className="rounded-2xl border border-border bg-gray-100">
+                          <div className="flex items-center justify-between gap-2 px-4 py-2.5">
                             <span className="flex items-center gap-2 text-xs font-semibold text-foreground">
-                              <FileCheck className="size-3.5 text-muted-foreground" />
+                              <FileCheck className="size-4 text-muted-foreground" />
                               Role Requirements Verification ({role.title})
                             </span>
                             <span className="font-mono text-[11px] text-muted-foreground">
                               Verified against resume &amp; intake call
                             </span>
                           </div>
-                          <div className="mx-0.5 mb-0.5 grid grid-cols-1 gap-2 rounded-xl border border-border bg-card p-3.5 sm:grid-cols-2">
+                          <div className="mx-1 mb-1 grid grid-cols-1 gap-2 rounded-xl border border-border bg-card p-4 sm:grid-cols-2">
                             {(activeMatch?.requirementsMet?.length
                               ? activeMatch.requirementsMet
                               : roleReqs.slice(0, 6).map(r => ({
@@ -1000,17 +1000,17 @@ export function RoleMaskedLinksSection({
                         </section>
 
                         {/* Redacted Experience Timeline */}
-                        <section className="rounded-2xl border border-border bg-gray-100 p-1">
-                          <div className="flex items-center justify-between gap-2 px-3.5 py-2">
+                        <section className="rounded-2xl border border-border bg-gray-100">
+                          <div className="flex items-center justify-between gap-2 px-4 py-2.5">
                             <span className="flex items-center gap-2 text-xs font-semibold text-foreground">
-                              <Building2 className="size-3.5 text-muted-foreground" />
+                              <Building2 className="size-4 text-muted-foreground" />
                               Redacted Experience &amp; Impact Timeline
                             </span>
                             <span className="text-[11px] text-muted-foreground">
                               Employer names replaced with verified descriptors
                             </span>
                           </div>
-                          <div className="mx-0.5 mb-0.5 divide-y divide-border rounded-xl border border-border bg-card p-4">
+                          <div className="mx-1 mb-1 divide-y divide-border rounded-xl border border-border bg-card p-4">
                             {activeCand.companies.map((co, i) => (
                               <div key={i} className="py-3 first:pt-0 last:pb-0">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1049,9 +1049,9 @@ export function RoleMaskedLinksSection({
 
                         {/* Verified Skills & Education Footer */}
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                          <section className="rounded-2xl border border-border bg-gray-100 p-1">
-                            <div className="px-3.5 py-2 text-xs font-semibold text-foreground">Explicit Verified Skills</div>
-                            <div className="mx-0.5 mb-0.5 flex flex-wrap gap-1.5 rounded-xl border border-border bg-card p-3.5">
+                          <section className="rounded-2xl border border-border bg-gray-100">
+                            <div className="px-4 py-2.5 text-xs font-semibold text-foreground">Explicit Verified Skills</div>
+                            <div className="mx-1 mb-1 flex flex-wrap gap-1.5 rounded-xl border border-border bg-card p-4">
                               {(activeResume?.emphasis?.length
                                 ? Array.from(new Set([...activeResume.emphasis, ...activeCand.skills]))
                                 : activeCand.skills
@@ -1061,12 +1061,12 @@ export function RoleMaskedLinksSection({
                             </div>
                           </section>
 
-                          <section className="rounded-2xl border border-border bg-gray-100 p-1">
-                            <div className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-foreground">
-                              <GraduationCap className="size-3.5 text-muted-foreground" />
+                          <section className="rounded-2xl border border-border bg-gray-100">
+                            <div className="flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-foreground">
+                              <GraduationCap className="size-4 text-muted-foreground" />
                               Education (Institution Masked)
                             </div>
-                            <div className="mx-0.5 mb-0.5 rounded-xl border border-border bg-card p-3.5 text-xs">
+                            <div className="mx-1 mb-1 rounded-xl border border-border bg-card p-4 text-xs">
                               {activeCand.education ? (
                                 <div className="flex items-center justify-between">
                                   <span className="font-medium text-foreground">{activeCand.education.degree} · {activeCand.education.field}</span>

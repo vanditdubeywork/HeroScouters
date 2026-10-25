@@ -1,0 +1,1381 @@
+<title>HeroScouter Talent Engine</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: Rightfit "operate" shell (256px sidebar + 48px top bar) wrapping an obsidian "persuade" hero, then double-bezel cards on a monochrome canvas. Color only carries meaning: iris = tool, cyan = automation, solid = people. */
+:root{
+  --bg:#fcfcfc; --fg:#000000; --card:#ffffff; --secondary:#f6f6f6; --muted:#f0f0f0;
+  --muted-fg:#646464; --subtle:#8d8d8d; --label:#838383;
+  --border:#e8e8e8; --border-strong:#d9d9d9; --primary:#000000; --primary-fg:#ffffff;
+  --sidebar:#fcfcfc; --promo-top:rgba(240,240,240,.6); --bar-bg:rgba(252,252,252,.86);
+  --iris:#6366f1; --iris-soft:rgba(99,102,241,.08); --iris-line:rgba(99,102,241,.28);
+  --info:#0891b2; --info-soft:rgba(6,182,212,.09); --info-line:rgba(6,182,212,.32);
+  --success:#16a34a; --success-soft:rgba(34,197,94,.10);
+  --warning:#b45309; --warning-soft:rgba(245,158,11,.12);
+  --destructive:#e5484d; --destructive-soft:rgba(229,72,77,.10);
+  --shadow:0 0 0 1px #0000000f,0 1px 2px -1px #0000000f,0 2px 4px 0 #0000000a;
+  --focus:0 0 0 3px rgba(0,0,0,.12);
+  /* the hero stage is obsidian in both themes */
+  --hero-bg:#000000; --hero-fg:#ffffff; --hero-muted:#a3a3a3; --hero-line:rgba(255,255,255,.09);
+  --hero-shell:#0b0b0b; --hero-well:#141414; --hero-chip:#1d1d1d;
+  --chroma-bg:#ffffff; --chroma-fg:#1c1d1f; --chroma-line:rgba(0,0,0,.08);
+  --font-sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --font-mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#000000; --fg:#eeeeee; --card:#191919; --secondary:#222222; --muted:#222222;
+    --muted-fg:#a8a8a8; --subtle:#7b7b7b; --label:#7b7b7b;
+    --border:#2a2a2a; --border-strong:#3a3a3a; --primary:#eeeeee; --primary-fg:#000000;
+    --sidebar:#111111; --promo-top:rgba(42,42,42,.6); --bar-bg:rgba(0,0,0,.82);
+    --iris:#818cf8; --iris-soft:rgba(129,140,248,.12); --iris-line:rgba(129,140,248,.34);
+    --info:#22d3ee; --info-soft:rgba(34,211,238,.10); --info-line:rgba(34,211,238,.32);
+    --success:#4ade80; --success-soft:rgba(74,222,128,.12);
+    --warning:#fbbf24; --warning-soft:rgba(251,191,36,.12);
+    --destructive:#f2555a; --destructive-soft:rgba(242,85,90,.14);
+    --shadow:0 0 0 1px #ffffff14; --focus:0 0 0 3px rgba(255,255,255,.16);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#000000; --fg:#eeeeee; --card:#191919; --secondary:#222222; --muted:#222222;
+  --muted-fg:#a8a8a8; --subtle:#7b7b7b; --label:#7b7b7b;
+  --border:#2a2a2a; --border-strong:#3a3a3a; --primary:#eeeeee; --primary-fg:#000000;
+  --sidebar:#111111; --promo-top:rgba(42,42,42,.6); --bar-bg:rgba(0,0,0,.82);
+  --iris:#818cf8; --iris-soft:rgba(129,140,248,.12); --iris-line:rgba(129,140,248,.34);
+  --info:#22d3ee; --info-soft:rgba(34,211,238,.10); --info-line:rgba(34,211,238,.32);
+  --success:#4ade80; --success-soft:rgba(74,222,128,.12);
+  --warning:#fbbf24; --warning-soft:rgba(251,191,36,.12);
+  --destructive:#f2555a; --destructive-soft:rgba(242,85,90,.14);
+  --shadow:0 0 0 1px #ffffff14; --focus:0 0 0 3px rgba(255,255,255,.16);
+  color-scheme:dark;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;font-feature-settings:"cv11","ss01"}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}*,*::before,*::after{animation:none!important;transition:none!important}}
+h1,h2,h3,h4{margin:0;text-wrap:balance}
+p{margin:0}
+ul,ol{margin:0;padding:0;list-style:none}
+a{color:inherit}
+svg.i{width:16px;height:16px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.no-scrollbar{scrollbar-width:none}
+.no-scrollbar::-webkit-scrollbar{display:none}
+.mono{font-family:var(--font-mono)}
+.tnum{font-variant-numeric:tabular-nums}
+:focus-visible{outline:none;box-shadow:var(--focus)}
+
+/* ---------- shell ---------- */
+.shell{display:flex;min-height:100vh}
+.sidebar{display:none;width:256px;flex-shrink:0;position:sticky;top:0;height:100vh;border-right:1px solid var(--border);background:var(--sidebar);flex-direction:column}
+@media (min-width:1024px){.sidebar{display:flex}}
+.sb-head{height:48px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--border);flex-shrink:0}
+.brand{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:20px;font-size:12px;font-weight:510;letter-spacing:-.011em;text-decoration:none;border:1px solid transparent}
+.brand:hover{border-color:var(--border);background:var(--muted)}
+.logo{width:16px;height:16px;border-radius:4px;background:var(--primary);color:var(--primary-fg);display:inline-grid;place-items:center;font-size:10px;font-weight:700;letter-spacing:0}
+.sb-content{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column}
+.sb-group{padding:12px;display:flex;flex-direction:column}
+.sb-group + .sb-group{padding-top:0}
+.sb-label{height:24px;display:flex;align-items:center;padding:0 12px;font-size:12px;font-weight:500;letter-spacing:.05em;text-transform:uppercase;color:var(--label)}
+.sb-menu{display:flex;flex-direction:column;gap:2px}
+.nav-item{display:flex;align-items:center;gap:10px;height:32px;padding:0 12px;border-radius:12px;border:1px solid transparent;color:var(--muted-fg);font-size:14px;font-weight:500;text-decoration:none;transition:background-color .2s ease-out,color .2s ease-out}
+.nav-item:hover{background:var(--muted);color:var(--fg)}
+.nav-item.active{border-color:var(--border);background:var(--muted);color:var(--fg)}
+.sb-foot{padding:8px;display:flex;flex-direction:column;gap:8px;flex-shrink:0}
+.promo{border:1px solid var(--border);border-radius:16px;background:linear-gradient(to bottom,var(--promo-top),var(--card));padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.promo h3{font-size:14px;font-weight:600}
+.promo p{margin-top:2px;font-size:12px;line-height:1.55;color:var(--muted-fg)}
+.promo .btn{margin-top:12px;width:100%}
+.sb-user{display:flex;align-items:center;gap:8px;padding:4px 4px 0;font-size:13px}
+.avatar{width:24px;height:24px;border-radius:8px;background:var(--muted);border:1px solid var(--border);display:inline-grid;place-items:center;font-size:10px;font-weight:600;color:var(--fg)}
+
+.main{flex:1;min-width:0}
+.topbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:30;background:var(--bar-bg);backdrop-filter:saturate(1.4) blur(10px);-webkit-backdrop-filter:saturate(1.4) blur(10px);border-bottom:1px solid var(--border)}
+.tb-row{height:48px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.tb-left{display:flex;align-items:center;gap:8px;min-width:0}
+.tb-brand{display:inline-flex}
+@media (min-width:1024px){.tb-brand{display:none}}
+.status{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:12px;padding:4px 10px;font-size:12px;color:var(--muted-fg);white-space:nowrap}
+.status .dot{width:6px;height:6px;border-radius:99px;background:var(--warning)}
+.crumb{font-size:12px;color:var(--subtle);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:560px){.crumb{display:none}}
+.mnav{display:flex;gap:2px;overflow-x:auto;padding:0 max(16px,env(safe-area-inset-right,0px)) 8px max(16px,env(safe-area-inset-left,0px))}
+@media (min-width:1024px){.mnav{display:none}}
+.mnav a{flex-shrink:0;text-decoration:none;font-size:12px;font-weight:500;color:var(--subtle);padding:6px 12px;border-radius:12px;border:1px solid transparent;white-space:nowrap}
+.mnav a.active{color:var(--fg);background:var(--muted);border-color:var(--border)}
+
+/* ---------- buttons, tags ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border-radius:20px;font-family:var(--font-sans);font-size:12px;font-weight:510;letter-spacing:-.011em;white-space:nowrap;text-decoration:none;border:1px solid transparent;cursor:pointer;transition:transform .15s ease-out,box-shadow .2s ease-out,background-color .2s}
+.btn:active{transform:scale(.98)}
+.btn-outline{background:var(--bg);color:var(--fg);border-color:var(--border);box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.btn-outline:hover{background:var(--muted)}
+.btn-chroma{background:var(--chroma-bg);color:var(--chroma-fg);border-color:var(--chroma-line);box-shadow:0 1px 2px rgba(0,0,0,.05),0 4px 12px -2px rgba(0,0,0,.05)}
+.btn-chroma:hover{box-shadow:0 2px 6px rgba(0,0,0,.08),0 8px 20px -4px rgba(0,0,0,.08)}
+.btn-lg{height:40px;padding:0 24px;font-size:14px}
+.btn-dark{background:transparent;color:var(--hero-fg);border-color:var(--hero-line)}
+.btn-dark:hover{background:rgba(255,255,255,.06)}
+.chroma-text-out{-webkit-text-fill-color:transparent;-webkit-background-clip:text;background-clip:text;background-image:linear-gradient(90deg,transparent 0%,transparent 33.33%,#c679c4 40%,#fa3d1d 45%,#ffb005 50%,#e1e1fe 55%,#0358f7 60%,var(--chroma-fg) 66.67%,var(--chroma-fg) 100%),linear-gradient(270deg,transparent 0%,transparent 33.33%,#c679c4 40%,#fa3d1d 45%,#ffb005 50%,#e1e1fe 55%,#0358f7 60%,var(--chroma-fg) 66.67%,var(--chroma-fg) 100%);background-position:100% 0,100% 0;background-size:300% 100%,300% 100%}
+.btn-chroma:hover .chroma-text-out,.btn-chroma:focus-visible .chroma-text-out{animation:2s cubic-bezier(.25,.46,.45,.94) infinite chroma}
+@keyframes chroma{0%{background-position:100% 0,100% 0}50%{background-position:0 0,0 0}50.1%{background-position:100% 0,100% 0}to{background-position:100% 0,100% 0}}
+
+.tag{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 7px;border-radius:6px;font-family:var(--font-mono);font-size:10px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--border);color:var(--muted-fg);background:var(--secondary);white-space:nowrap}
+.tag::before{content:"";width:5px;height:5px;border-radius:99px;background:currentColor}
+.tag.tool{color:var(--iris);background:var(--iris-soft);border-color:var(--iris-line)}
+.tag.auto{color:var(--info);background:var(--info-soft);border-color:var(--info-line)}
+.tag.people{color:var(--primary-fg);background:var(--primary);border-color:var(--primary)}
+.tag.next{color:var(--subtle);background:transparent;border-style:dashed}
+.tag.plain::before{display:none}
+.tags{display:flex;flex-wrap:wrap;gap:4px}
+.mot{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:500;color:var(--destructive)}
+.mot::before{content:"";width:8px;height:8px;border-radius:99px;background:var(--destructive);box-shadow:0 0 0 2px var(--destructive-soft)}
+
+/* ---------- hero ---------- */
+.hero{background:var(--hero-bg);color:var(--hero-fg);border-bottom:1px solid var(--hero-line)}
+.hero-inner{max-width:1120px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:56px 60px;display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:48px;align-items:center}
+@media (min-width:1024px){.hero-inner{padding-left:max(40px,env(safe-area-inset-left,0px));padding-right:max(40px,env(safe-area-inset-right,0px))}}
+@media (max-width:1240px){.hero-inner{grid-template-columns:minmax(0,1fr);gap:36px;padding-block:44px 48px}.mock{max-width:560px}}
+.eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--label)}
+.hero .eyebrow{color:var(--hero-muted)}
+.hero h1{margin-top:16px;font-size:clamp(2.25rem,4.5vw,3.75rem);font-weight:590;line-height:1.06;letter-spacing:-.022em}
+.hero-lede{margin-top:16px;font-size:16px;line-height:1.6;color:var(--hero-muted);max-width:52ch}
+.hero-points{margin-top:24px;display:grid;gap:10px}
+.hero-points li{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--hero-fg)}
+.hero-points svg{margin-top:2px;color:var(--hero-muted)}
+.hero-cta{margin-top:28px;display:flex;flex-wrap:wrap;gap:10px}
+
+.mock{background:var(--hero-shell);border:1px solid var(--hero-line);border-radius:20px;box-shadow:0 30px 80px -30px rgba(0,0,0,.8)}
+.mock-head{display:flex;align-items:center;gap:8px;padding:10px 16px;font-size:13px;font-weight:600}
+.mock-head .ex{margin-left:auto;font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--hero-muted);border:1px dashed var(--hero-line);border-radius:6px;padding:2px 6px}
+.mock-well{margin:0 4px 4px;background:var(--hero-well);border:1px solid var(--hero-line);border-radius:16px;padding:16px}
+.mock-role{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.mock-role .k{font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--hero-muted)}
+.mock-role .t{margin-top:4px;font-size:16px;font-weight:590;letter-spacing:-.015em}
+.mock-role .s{font-size:12px;color:var(--hero-muted)}
+.mock-btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:20px;background:var(--hero-fg);color:var(--hero-bg);font-size:12px;font-weight:510;white-space:nowrap}
+.mock-chips{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px}
+.chip-d{height:22px;display:inline-flex;align-items:center;padding:0 8px;border-radius:8px;background:var(--hero-chip);border:1px solid var(--hero-line);font-size:11px;color:var(--hero-fg)}
+.mock-list{margin-top:14px;display:flex;flex-direction:column;border-top:1px solid var(--hero-line)}
+.mock-list li{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:12px;align-items:start;padding:12px 0;border-bottom:1px solid var(--hero-line)}
+.av-d{width:28px;height:28px;border-radius:8px;background:var(--hero-chip);border:1px solid var(--hero-line);display:grid;place-items:center;font-size:10px;font-weight:600;color:var(--hero-fg)}
+.mc-name{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;font-weight:600}
+.fit{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;padding:2px 6px;border-radius:6px;border:1px solid var(--hero-line);color:var(--hero-muted)}
+.fit.strong{color:#86efac;border-color:rgba(134,239,172,.3)}
+.fit.gap{color:#fcd34d;border-color:rgba(252,211,77,.3)}
+.mc-why{margin-top:2px;font-size:12px;line-height:1.5;color:var(--hero-muted)}
+.mc-act{display:flex;gap:4px}
+.ib{width:26px;height:26px;border-radius:10px;border:1px solid var(--hero-line);display:grid;place-items:center;color:var(--hero-muted)}
+.ib.ok{color:var(--hero-fg);background:var(--hero-chip)}
+.ib svg{width:13px;height:13px}
+.mock-foot{margin-top:12px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:11.5px;color:var(--hero-muted)}
+
+/* ---------- content ---------- */
+.content{max-width:1120px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:56px 96px;display:flex;flex-direction:column;gap:88px}
+@media (min-width:1024px){.content{padding-left:max(40px,env(safe-area-inset-left,0px));padding-right:max(40px,env(safe-area-inset-right,0px))}}
+.sec{scroll-margin-top:104px;display:flex;flex-direction:column;gap:24px;min-width:0}
+@media (min-width:1024px){.sec{scroll-margin-top:68px}}
+.sec-head{display:flex;flex-direction:column;gap:10px;max-width:760px}
+.sec-head h2{font-size:clamp(1.5rem,3vw,2.25rem);font-weight:590;line-height:1.15;letter-spacing:-.022em}
+.lede{font-size:15px;line-height:1.65;color:var(--muted-fg);max-width:64ch}
+.part{display:flex;align-items:center;gap:12px;padding-top:8px}
+.part .eyebrow{color:var(--fg)}
+.part::after{content:"";flex:1;height:1px;background:var(--border)}
+
+.bezel{border:1px solid var(--border);border-radius:20px;background:var(--bg);min-width:0;display:flex;flex-direction:column}
+.bz-head{display:flex;align-items:center;gap:8px;padding:10px 16px;font-size:14px;font-weight:600;flex-wrap:wrap}
+.bz-head .aside{margin-left:auto;font-size:12px;font-weight:400;color:var(--muted-fg)}
+.bz-well{margin:0 4px 4px;border:1px solid var(--border);border-radius:16px;background:var(--card);padding:16px;flex:1;min-width:0}
+.bz-desc{font-size:13px;color:var(--muted-fg);margin-bottom:14px}
+.hscroll{overflow-x:auto;min-width:0;border-radius:16px}
+
+/* problem */
+.problem-grid{display:grid;grid-template-columns:minmax(0,1fr) 40px minmax(0,1fr);gap:12px;align-items:stretch}
+@media (max-width:860px){.problem-grid{grid-template-columns:minmax(0,1fr)}.problem-arrow{transform:rotate(90deg);height:32px}}
+.problem-arrow{display:grid;place-items:center;color:var(--subtle)}
+.sources{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.src{border:1px dashed var(--border-strong);border-radius:12px;padding:12px;background:var(--secondary);display:flex;flex-direction:column;gap:6px}
+.src svg{color:var(--muted-fg)}
+.src b{font-size:13px;font-weight:600}
+.src span{font-size:12px;color:var(--muted-fg)}
+.costs{display:flex;flex-direction:column;gap:12px}
+.costs li{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px}
+.cost-ic{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:var(--destructive-soft);color:var(--destructive)}
+.costs b{display:block;font-size:13px;font-weight:600}
+.costs span{font-size:13px;color:var(--muted-fg)}
+.quote{margin:0;display:grid;grid-template-columns:minmax(0,1fr);gap:8px;padding:20px 24px;border-left:2px solid var(--fg)}
+.quote blockquote{margin:0;font-size:clamp(1.05rem,2vw,1.3rem);font-weight:500;line-height:1.45;letter-spacing:-.012em;max-width:58ch}
+.quote figcaption{font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--label)}
+.callout{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border:1px solid var(--border);border-radius:16px;background:var(--card);box-shadow:var(--shadow)}
+.callout svg{margin-top:2px}
+.callout p{font-size:14px;color:var(--muted-fg)}
+.callout strong{color:var(--fg);font-weight:600}
+
+/* who */
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:860px){.grid3{grid-template-columns:minmax(0,1fr)}}
+.who-role{font-size:13px;color:var(--muted-fg);margin-bottom:12px}
+.gets-label{font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--label);margin-bottom:8px}
+.ticks{display:flex;flex-direction:column;gap:8px}
+.ticks li{display:flex;gap:8px;font-size:13px;line-height:1.45}
+.ticks svg{margin-top:1px;width:15px;height:15px;color:var(--success)}
+.badge-use{margin-left:auto;font-size:11px;font-weight:500;padding:2px 8px;border-radius:8px;border:1px solid var(--border);color:var(--muted-fg)}
+.badge-use.on{background:var(--primary);color:var(--primary-fg);border-color:var(--primary)}
+.note{font-size:13px;color:var(--muted-fg)}
+
+/* engine */
+.engine{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:28px;position:relative}
+.eng-col{display:flex;flex-direction:column;gap:8px;position:relative;min-width:0}
+.eng-col + .eng-col::before{content:"";position:absolute;left:-22px;top:38px;width:16px;height:16px;background:currentColor;color:var(--subtle);-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6'/%3E%3C/svg%3E") center/contain no-repeat}
+.eng-k{height:24px;display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--label)}
+.eng-k b{font-weight:500;color:var(--fg)}
+.node{border:1px solid var(--border);border-radius:12px;background:var(--card);padding:10px 12px;display:flex;flex-direction:column;gap:6px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+.node b{font-size:13px;font-weight:600;line-height:1.35}
+.node span{font-size:12px;line-height:1.45;color:var(--muted-fg)}
+.node.src-node{background:var(--secondary);border-style:dashed}
+.node.dim{border-style:dashed;background:transparent}
+.loop{grid-column:3 / 6;display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px dashed var(--border-strong);border-radius:12px;font-size:13px;color:var(--muted-fg)}
+.loop svg{color:var(--fg)}
+@media (max-width:980px){
+  .engine{grid-template-columns:minmax(0,1fr);gap:30px}
+  .eng-col + .eng-col::before{left:50%;top:-24px;transform:translateX(-50%) rotate(90deg)}
+  .loop{grid-column:auto}
+  .eng-col .node-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+}
+.node-row{display:flex;flex-direction:column;gap:8px}
+.under{display:flex;gap:10px;align-items:center;padding:12px 16px;border-radius:16px;background:var(--primary);color:var(--primary-fg);font-size:13px}
+.under svg{flex-shrink:0}
+
+/* principle */
+.principle{font-size:clamp(1.25rem,2.6vw,1.75rem);font-weight:590;letter-spacing:-.02em;line-height:1.25;max-width:30ch}
+.principle em{font-style:normal;color:var(--muted-fg)}
+.plist{display:flex;flex-direction:column;gap:8px}
+.plist li{font-size:13px;line-height:1.45;padding-left:14px;position:relative}
+.plist li::before{content:"";position:absolute;left:0;top:8px;width:5px;height:5px;border-radius:2px;background:var(--border-strong)}
+
+/* candidate journey */
+.journey{display:grid;grid-template-columns:116px repeat(6,minmax(150px,1fr));min-width:1040px}
+.jl,.jc{padding:12px;border-bottom:1px solid var(--border)}
+.jc + .jc{border-left:1px solid var(--border)}
+.jl{font-family:var(--font-mono);font-size:10px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--label);border-right:1px solid var(--border);background:var(--secondary)}
+.jrow-last > *{border-bottom:none}
+.jh{display:flex;flex-direction:column;gap:6px}
+.jh .n{font-family:var(--font-mono);font-size:10px;color:var(--label);letter-spacing:.1em}
+.jh b{font-size:14px;font-weight:600;letter-spacing:-.01em}
+.jc p{font-size:12.5px;line-height:1.5}
+.jc .q{color:var(--muted-fg);font-style:italic}
+.jc.mot-col{background:var(--destructive-soft)}
+.curve-cell{grid-column:2 / 8;padding:10px 0;border-bottom:1px solid var(--border);position:relative}
+.curve-plot{position:relative;height:96px;margin:0}
+.curve-plot svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.curve-plot .ln-today{fill:none;stroke:var(--subtle);stroke-width:1.5;stroke-dasharray:5 5}
+.curve-plot .ln-now{fill:none;stroke:var(--fg);stroke-width:2}
+.cdot{position:absolute;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:99px;background:var(--fg);border:2px solid var(--card)}
+.cdot.t{background:var(--subtle);width:8px;height:8px;margin:-4px 0 0 -4px}
+.curve-axis{display:flex;flex-direction:column;justify-content:space-between;height:100%;gap:6px}
+.curve-axis span{font-family:var(--font-sans);letter-spacing:0;text-transform:none;font-size:11px;color:var(--muted-fg)}
+.legend{display:flex;flex-wrap:wrap;gap:16px;align-items:center;font-size:12px;color:var(--muted-fg)}
+.legend i{display:inline-block;width:22px;height:0;border-top:2px solid var(--fg);vertical-align:middle;margin-right:6px}
+.legend i.d{border-top:2px dashed var(--subtle)}
+
+/* lanes */
+.lane{display:grid;grid-template-columns:150px minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:860px){.lane{grid-template-columns:minmax(0,1fr)}}
+.lane-k{display:flex;flex-direction:column;gap:6px;padding-top:10px}
+.lane-k b{font-size:14px;font-weight:600}
+.lane-k span{font-size:12px;color:var(--muted-fg)}
+.lane-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:22px;position:relative}
+.lane-steps.three{grid-template-columns:repeat(3,minmax(0,1fr)) minmax(0,1fr)}
+.step-card{border:1px solid var(--border);border-radius:14px;background:var(--card);padding:12px;display:flex;flex-direction:column;gap:8px;position:relative;min-width:0}
+.step-card + .step-card::before{content:"";position:absolute;left:-17px;top:22px;width:12px;height:12px;background:var(--subtle);-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 6l6 6-6 6'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 6l6 6-6 6'/%3E%3C/svg%3E") center/contain no-repeat}
+.step-card.mot-card{border-color:var(--destructive);box-shadow:0 0 0 3px var(--destructive-soft)}
+.sc-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sc-top .n{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;color:var(--label)}
+.step-card b{font-size:13.5px;font-weight:600}
+.step-card p{font-size:12.5px;line-height:1.45}
+.step-card .we{color:var(--muted-fg)}
+.step-card .we strong{color:var(--fg);font-weight:500}
+.step-card.ghost{border-style:dashed;background:transparent;justify-content:center}
+@media (max-width:980px){
+  .lane-steps,.lane-steps.three{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .step-card + .step-card::before{display:none}
+}
+@media (max-width:520px){.lane-steps,.lane-steps.three{grid-template-columns:minmax(0,1fr)}}
+.lane-join{display:flex;align-items:center;gap:10px;margin-left:166px;font-size:12px;color:var(--muted-fg)}
+.lane-join span{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--border);border-radius:99px;background:var(--card)}
+@media (max-width:860px){.lane-join{margin-left:0}}
+
+/* tabs + flows */
+.tabbar{display:flex;gap:2px;overflow-x:auto;padding:4px;border:1px solid var(--border);border-radius:16px;background:var(--bg);width:max-content;max-width:100%}
+.tab{position:relative;border:1px solid transparent;background:transparent;border-radius:12px;padding:6px 12px;font-family:var(--font-sans);font-size:12.5px;font-weight:500;color:var(--subtle);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.tab:hover{color:var(--fg)}
+.tab[aria-selected="true"]{color:var(--fg);background:var(--muted);border-color:var(--border)}
+.compare{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:12px}
+@media (max-width:860px){.compare{grid-template-columns:minmax(0,1fr)}}
+.steps{display:flex;flex-direction:column;gap:6px;counter-reset:s}
+.st{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:12px;align-items:start;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--card)}
+.st::before{counter-increment:s;content:counter(s);width:24px;height:24px;border-radius:8px;background:var(--muted);border:1px solid var(--border);display:grid;place-items:center;font-family:var(--font-mono);font-size:11px;color:var(--fg)}
+.st b{display:block;font-size:13px;font-weight:600;line-height:1.4}
+.st span{display:block;font-size:12px;color:var(--muted-fg);margin-top:2px}
+.st .tags{justify-content:flex-end;padding-top:2px}
+@media (max-width:520px){.st{grid-template-columns:24px minmax(0,1fr)}.st .tags{grid-column:2;justify-content:flex-start}}
+.st.dim{background:transparent;border-style:dashed}
+.st.dim b{font-weight:500;color:var(--muted-fg)}
+.end{margin-top:6px;display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:12px;font-size:13px;font-weight:600}
+.end.bad{background:var(--destructive-soft);color:var(--destructive)}
+.end.good{background:var(--success-soft);color:var(--success)}
+.colhead{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;font-weight:600}
+.colhead .eyebrow{margin-left:auto}
+
+/* story map */
+.smap{display:grid;grid-template-columns:150px repeat(5,minmax(160px,1fr));min-width:980px;border:1px solid var(--border);border-radius:16px;overflow:hidden;background:var(--card)}
+.smap > div{padding:12px;border-bottom:1px solid var(--border);border-left:1px solid var(--border);min-width:0}
+.smap > div.rl{border-left:none}
+.smap .hd{background:var(--secondary);font-size:13px;font-weight:600}
+.smap .hd small{display:block;font-family:var(--font-mono);font-size:10px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--label);margin-bottom:4px}
+.rl b{display:block;font-size:13px;font-weight:600}
+.rl span{display:block;font-size:12px;color:var(--muted-fg);margin-top:2px}
+.rl .tag{margin-bottom:8px}
+.smap .mvp{background:var(--card)}
+.smap .nx{background:var(--bg)}
+.smap .lt{background:var(--bg);color:var(--muted-fg)}
+.items{display:flex;flex-direction:column;gap:6px}
+.items li{font-size:12.5px;line-height:1.4;padding:6px 8px;border-radius:8px;border:1px solid var(--border);background:var(--card)}
+.mvp .items li{border-color:var(--border-strong);font-weight:500}
+.items li.could{border-style:dashed;font-weight:400;color:var(--muted-fg)}
+.lt .items li{background:transparent}
+.smap .span-all{grid-column:2 / 7;display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted-fg)}
+.smap .last > div{border-bottom:none}
+.rowline{display:contents}
+
+/* risks + tests */
+.risks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:860px){.risks{grid-template-columns:minmax(0,1fr)}}
+.risk{border:1px solid var(--border);border-radius:16px;background:var(--card);padding:14px;display:flex;flex-direction:column;gap:8px}
+.risk .rk{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600}
+.risk .rk svg{color:var(--warning)}
+.risk p{font-size:13px;color:var(--muted-fg)}
+.risk .how{margin-top:auto;padding-top:10px;border-top:1px solid var(--border);font-size:12.5px;color:var(--fg);display:flex;gap:8px;align-items:flex-start}
+.risk .how svg{margin-top:1px;color:var(--success)}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media (max-width:860px){.grid2{grid-template-columns:minmax(0,1fr)}}
+.poc-sub{display:flex;flex-direction:column;gap:10px}
+.poc-part{padding:10px 12px;border-radius:12px;background:var(--secondary);border:1px solid var(--border)}
+.poc-part b{display:block;font-size:13px;font-weight:600}
+.poc-part span{display:block;font-size:12.5px;color:var(--muted-fg);margin-top:2px}
+.verdicts{margin-top:12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+@media (max-width:420px){.verdicts{grid-template-columns:minmax(0,1fr)}}
+.verdict{border-radius:12px;padding:10px 12px;font-size:12.5px;line-height:1.45}
+.verdict b{display:block;font-family:var(--font-mono);font-size:10px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;margin-bottom:4px}
+.verdict.pass{background:var(--success-soft)}
+.verdict.pass b{color:var(--success)}
+.verdict.fail{background:var(--destructive-soft)}
+.verdict.fail b{color:var(--destructive)}
+.decides{margin-top:12px;font-size:13px;display:flex;gap:8px;align-items:flex-start}
+.decides svg{margin-top:2px}
+.foot-note{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted-fg)}
+
+/* roadmap */
+.road{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.72fr) minmax(0,1.2fr) minmax(0,.72fr) minmax(0,1fr) minmax(0,1fr);gap:12px;position:relative;padding-top:26px}
+.road::before{content:"";position:absolute;left:8px;right:8px;top:9px;height:2px;background:var(--border-strong)}
+.ph{position:relative;border:1px solid var(--border);border-radius:16px;background:var(--card);padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.ph::before{content:"";position:absolute;top:-23px;left:14px;width:12px;height:12px;border-radius:99px;background:var(--bg);border:2px solid var(--fg)}
+.ph.now::before{background:var(--fg)}
+.ph .when{font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--label)}
+.ph.now .when{color:var(--fg)}
+.ph h3{font-size:15px;font-weight:600;letter-spacing:-.01em;line-height:1.3}
+.ph .who{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--label);margin-top:2px}
+.ph ul{display:flex;flex-direction:column;gap:6px}
+.ph li{font-size:12.5px;line-height:1.4;padding-left:12px;position:relative}
+.ph li::before{content:"";position:absolute;left:0;top:7px;width:5px;height:5px;border-radius:2px;background:var(--border-strong)}
+.ph.later{background:transparent;border-style:dashed}
+.ph.later li{color:var(--muted-fg)}
+.ph .ship{margin-top:auto;display:inline-flex;align-self:flex-start;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:4px 10px;border-radius:99px;background:var(--primary);color:var(--primary-fg)}
+.gate{position:relative;border:1px dashed var(--border-strong);border-radius:16px;padding:14px 12px;display:flex;flex-direction:column;gap:8px;background:var(--bg);min-width:0}
+.gate::before{content:"";position:absolute;top:-24px;left:14px;width:12px;height:12px;background:var(--warning);transform:rotate(45deg);border-radius:2px;box-shadow:0 0 0 3px var(--bg)}
+.gate .when{font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--warning)}
+.gate p{font-size:12.5px;line-height:1.45;color:var(--muted-fg)}
+@media (max-width:980px){
+  .road{grid-template-columns:minmax(0,1fr);padding-top:0;padding-left:28px}
+  .road::before{left:9px;right:auto;top:8px;bottom:8px;width:2px;height:auto}
+  .ph::before{top:16px;left:-25px}
+  .gate::before{top:16px;left:-24px}
+}
+
+/* measures */
+.measures{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:12px}
+@media (max-width:860px){.measures{grid-template-columns:minmax(0,1fr)}}
+.north{display:flex;flex-direction:column;gap:10px;justify-content:space-between;height:100%}
+.north .big{font-size:clamp(1.4rem,2.6vw,1.9rem);font-weight:590;letter-spacing:-.022em;line-height:1.15}
+.north .sub{font-size:13px;color:var(--muted-fg)}
+.north .why{padding-top:12px;border-top:1px solid var(--border);font-size:13px;color:var(--muted-fg)}
+.mrows{display:flex;flex-direction:column}
+.mrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
+.mrow:last-child{border-bottom:none}
+.mrow span{font-size:13px}
+.mrow b{font-variant-numeric:tabular-nums;font-size:13px;font-weight:600;padding:3px 8px;border-radius:8px;background:var(--muted);border:1px solid var(--border);white-space:nowrap}
+.guard b{background:transparent}
+
+/* decisions */
+.check{display:flex;gap:12px;align-items:flex-start;padding:10px 4px;border-bottom:1px solid var(--border);cursor:pointer;position:relative}
+.check:last-child{border-bottom:none}
+.check input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.box{position:relative;margin-top:2px;width:16px;height:16px;flex-shrink:0;border-radius:16px;border:1px solid var(--border-strong);display:grid;place-items:center;background:var(--card);transition:background-color .15s,border-color .15s}
+.box::after{content:"";position:absolute;inset:-8px -12px}
+.box svg{width:11px;height:11px;stroke:var(--primary-fg);stroke-width:3;opacity:0}
+.check input:checked + .box{background:var(--primary);border-color:var(--primary)}
+.check input:checked + .box svg{opacity:1}
+.check input:focus-visible + .box{box-shadow:var(--focus)}
+.ctext{display:grid;gap:4px}
+.ctext b{font-size:13.5px;font-weight:500;line-height:1.4}
+.ctext span{font-size:12.5px;color:var(--muted-fg)}
+.check input:checked ~ .ctext b{color:var(--muted-fg)}
+.count{font-variant-numeric:tabular-nums}
+
+/* not doing */
+.nd{display:flex;flex-direction:column;gap:10px}
+.nd li{display:grid;grid-template-columns:20px minmax(0,1fr);gap:10px}
+.nd svg{margin-top:2px;color:var(--subtle)}
+.nd b{display:block;font-size:13px;font-weight:600}
+.nd span{font-size:12.5px;color:var(--muted-fg)}
+
+.footer{border-top:1px solid var(--border);padding-block:20px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--label)}
+@media (min-width:1024px){.footer{padding-left:40px;padding-right:40px}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M9 13h6M9 17h4"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></symbol>
+  <symbol id="i-head" viewBox="0 0 24 24"><path d="M15.5 13a3.5 3.5 0 0 0-3.5 3.5V20"/><path d="M19 12a7 7 0 1 0-12.6 4.2L6 20h7"/><path d="M12 9h.01"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75M21 21v-2a4 4 0 0 0-3-3.85"/></symbol>
+  <symbol id="i-brief" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></symbol>
+  <symbol id="i-snow" viewBox="0 0 24 24"><path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9"/><path d="M9.5 4.5 12 7l2.5-2.5M9.5 19.5 12 17l2.5 2.5"/></symbol>
+  <symbol id="i-ceiling" viewBox="0 0 24 24"><path d="M3 5h18"/><path d="M5 19l4-6 4 3 5-8"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M12 19h4.5a3.5 3.5 0 0 0 0-7h-8a3.5 3.5 0 0 1 0-7H12"/></symbol>
+  <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6L4.5 18.5A2 2 0 0 0 6.2 21h11.6a2 2 0 0 0 1.7-2.5L14 9V3"/><path d="M7 15h10"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3z"/><path d="M9 4v13M15 7v13"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M12 14l4-4"/><path d="M3.3 17A9 9 0 1 1 20.7 17"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3 3 8l9 5 9-5z"/><path d="m3 13 9 5 9-5"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></symbol>
+  <symbol id="i-loop" viewBox="0 0 24 24"><path d="M20 11A8 8 0 0 0 5.6 6.4L4 8M4 4v4h4M4 13a8 8 0 0 0 14.4 4.6L20 16M20 20v-4h-4"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
+  <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.7 5.7l12.6 12.6"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M11 6h9M11 12h9M11 18h9"/><path d="M3 6l1.5 1.5L7 5M3 12l1.5 1.5L7 11M3 18l1.5 1.5L7 17"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></symbol>
+  <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+  <symbol id="i-park" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M10 16V8h3a2.5 2.5 0 0 1 0 5h-3"/></symbol>
+</svg>
+
+<div class="shell">
+  <!-- ===== Sidebar ===== -->
+  <aside class="sidebar" aria-label="Sections">
+    <div class="sb-head">
+      <a class="brand" href="#top"><span class="logo">H</span>HeroScouter</a>
+    </div>
+    <nav class="sb-content no-scrollbar">
+      <div class="sb-group">
+        <div class="sb-label">Overview</div>
+        <ul class="sb-menu">
+          <li><a class="nav-item" data-nav href="#top"><svg class="i"><use href="#i-spark"/></svg>The idea</a></li>
+          <li><a class="nav-item" data-nav href="#problem"><svg class="i"><use href="#i-alert"/></svg>The problem</a></li>
+          <li><a class="nav-item" data-nav href="#who"><svg class="i"><use href="#i-users"/></svg>Who it's for</a></li>
+        </ul>
+      </div>
+      <div class="sb-group">
+        <div class="sb-label">How it works</div>
+        <ul class="sb-menu">
+          <li><a class="nav-item" data-nav href="#engine"><svg class="i"><use href="#i-layers"/></svg>The engine</a></li>
+          <li><a class="nav-item" data-nav href="#principle"><svg class="i"><use href="#i-target"/></svg>Tool and people</a></li>
+        </ul>
+      </div>
+      <div class="sb-group">
+        <div class="sb-label">Journeys</div>
+        <ul class="sb-menu">
+          <li><a class="nav-item" data-nav href="#candidate"><svg class="i"><use href="#i-user"/></svg>Candidate</a></li>
+          <li><a class="nav-item" data-nav href="#client"><svg class="i"><use href="#i-brief"/></svg>Hiring manager</a></li>
+          <li><a class="nav-item" data-nav href="#flows"><svg class="i"><use href="#i-route"/></svg>Recruiter flows</a></li>
+        </ul>
+      </div>
+      <div class="sb-group">
+        <div class="sb-label">Plan</div>
+        <ul class="sb-menu">
+          <li><a class="nav-item" data-nav href="#build"><svg class="i"><use href="#i-list"/></svg>What we build first</a></li>
+          <li><a class="nav-item" data-nav href="#tests"><svg class="i"><use href="#i-flask"/></svg>Risks and tests</a></li>
+          <li><a class="nav-item" data-nav href="#roadmap"><svg class="i"><use href="#i-map"/></svg>Roadmap</a></li>
+          <li><a class="nav-item" data-nav href="#measures"><svg class="i"><use href="#i-gauge"/></svg>How we measure</a></li>
+        </ul>
+      </div>
+      <div class="sb-group">
+        <div class="sb-label">Discuss</div>
+        <ul class="sb-menu">
+          <li><a class="nav-item" data-nav href="#decisions"><svg class="i"><use href="#i-check"/></svg>Decisions</a></li>
+          <li><a class="nav-item" data-nav href="#notdoing"><svg class="i"><use href="#i-ban"/></svg>Not doing yet</a></li>
+        </ul>
+      </div>
+    </nav>
+    <div class="sb-foot">
+      <div class="promo">
+        <h3>Today's ask</h3>
+        <p>Confirm 5 decisions we've made and give your call on 8 open questions.</p>
+        <a class="btn btn-chroma" href="#decisions"><span class="chroma-text-out">Go to decisions</span></a>
+      </div>
+      <div class="sb-user"><span class="avatar">VD</span><span>Prepared by Vandit Dubey</span></div>
+    </div>
+  </aside>
+
+  <!-- ===== Main ===== -->
+  <div class="main">
+    <div class="topbar">
+      <div class="tb-row">
+        <div class="tb-left">
+          <a class="brand tb-brand" href="#top"><span class="logo">H</span>HeroScouter</a>
+          <span class="status"><span class="dot"></span>Draft for founder review</span>
+          <span class="crumb">Talent engine · product plan</span>
+        </div>
+        <button class="btn btn-outline" id="theme-toggle" type="button" aria-label="Switch color theme"><svg class="i"><use href="#i-moon"/></svg><span>Theme</span></button>
+      </div>
+      <nav class="mnav no-scrollbar" aria-label="Sections">
+        <a data-nav href="#top">Idea</a>
+        <a data-nav href="#problem">Problem</a>
+        <a data-nav href="#who">Who</a>
+        <a data-nav href="#engine">Engine</a>
+        <a data-nav href="#principle">Tool &amp; people</a>
+        <a data-nav href="#candidate">Candidate</a>
+        <a data-nav href="#client">Hiring manager</a>
+        <a data-nav href="#flows">Recruiter flows</a>
+        <a data-nav href="#build">Build first</a>
+        <a data-nav href="#tests">Risks &amp; tests</a>
+        <a data-nav href="#roadmap">Roadmap</a>
+        <a data-nav href="#measures">Measures</a>
+        <a data-nav href="#decisions">Decisions</a>
+        <a data-nav href="#notdoing">Not doing</a>
+      </nav>
+    </div>
+
+    <!-- ===== Hero ===== -->
+    <header class="hero sec" id="top">
+      <div class="hero-inner">
+        <div>
+          <span class="eyebrow">[ Founder review · Talent engine ]</span>
+          <h1>Never miss a fit.</h1>
+          <p class="hero-lede">An internal engine that turns the calls and resumes we already have into a live candidate pool. Every candidate stays matched, warm and ready to pitch, so each recruiter places more people without us adding headcount.</p>
+          <ul class="hero-points">
+            <li><svg class="i"><use href="#i-lock"/></svg><span>For our team only. Candidates and clients never log in.</span></li>
+            <li><svg class="i"><use href="#i-phone"/></svg><span>Built on the Fathom calls we already record.</span></li>
+            <li><svg class="i"><use href="#i-flask"/></svg><span>Tested with two no-code experiments before we build the hard part.</span></li>
+          </ul>
+          <div class="hero-cta">
+            <a class="btn btn-chroma btn-lg" href="#decisions"><span class="chroma-text-out">What we need from you</span></a>
+            <a class="btn btn-dark btn-lg" href="#engine">See how it works <svg class="i"><use href="#i-arrow"/></svg></a>
+          </div>
+        </div>
+
+        <div class="mock" role="img" aria-label="Example of the Find matches screen: a backend role with three suggested candidates and a reason for each">
+          <div class="mock-head"><svg class="i"><use href="#i-search"/></svg>Find matches<span class="ex">Example</span></div>
+          <div class="mock-well">
+            <div class="mock-role">
+              <div>
+                <div class="k">Role · Open</div>
+                <div class="t">Senior Backend Engineer</div>
+                <div class="s">Series B fintech · US remote</div>
+              </div>
+              <span class="mock-btn"><svg class="i" style="width:13px;height:13px"><use href="#i-search"/></svg>Top 5</span>
+            </div>
+            <div class="mock-chips">
+              <span class="chip-d">Go · Kubernetes</span><span class="chip-d">6+ yrs</span><span class="chip-d">US work authorization</span><span class="chip-d">Within budget</span>
+            </div>
+            <ul class="mock-list">
+              <li>
+                <span class="av-d">AR</span>
+                <div><div class="mc-name">Candidate A.R. <span class="fit strong">Strong fit</span></div><div class="mc-why">7 yrs Go. Led a Kubernetes migration at a payments startup. Meets every must-have.</div></div>
+                <div class="mc-act"><span class="ib ok"><svg class="i"><use href="#i-check"/></svg></span><span class="ib"><svg class="i"><use href="#i-x"/></svg></span></div>
+              </li>
+              <li>
+                <span class="av-d">MS</span>
+                <div><div class="mc-name">Candidate M.S. <span class="fit gap">1 gap</span></div><div class="mc-why">6 yrs Go and Rust on payments infrastructure. Expected pay is 8% above budget.</div></div>
+                <div class="mc-act"><span class="ib ok"><svg class="i"><use href="#i-check"/></svg></span><span class="ib"><svg class="i"><use href="#i-x"/></svg></span></div>
+              </li>
+              <li>
+                <span class="av-d">JK</span>
+                <div><div class="mc-name">Candidate J.K. <span class="fit">Good fit</span></div><div class="mc-why">8 yrs backend, 2 in Go. Spoke to us 4 months ago and is open to moves again.</div></div>
+                <div class="mc-act"><span class="ib ok"><svg class="i"><use href="#i-check"/></svg></span><span class="ib"><svg class="i"><use href="#i-x"/></svg></span></div>
+              </li>
+            </ul>
+            <div class="mock-foot"><span>+2 more suggestions</span><span>3 excluded by must-haves</span></div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <!-- ===== Problem ===== -->
+      <section class="sec" id="problem">
+        <div class="sec-head">
+          <span class="eyebrow">[ The problem ]</span>
+          <h2>Today, our candidate pool lives in one person's head.</h2>
+          <p class="lede">When a role lands, finding a fit depends on Purvesh remembering who we've spoken to. What we learn about each candidate is spread across places we can't search or match.</p>
+        </div>
+        <div class="problem-grid">
+          <div class="bezel">
+            <div class="bz-head"><svg class="i"><use href="#i-db"/></svg>Where candidate knowledge lives today</div>
+            <div class="bz-well">
+              <div class="sources">
+                <div class="src"><svg class="i"><use href="#i-head"/></svg><b>Purvesh's memory</b><span>Can't be searched or shared</span></div>
+                <div class="src"><svg class="i"><use href="#i-phone"/></svg><b>Fathom calls</b><span>Recorded, rarely reused</span></div>
+                <div class="src"><svg class="i"><use href="#i-file"/></svg><b>Resumes</b><span>Every one in a different format</span></div>
+                <div class="src"><svg class="i"><use href="#i-mail"/></svg><b>Email and LinkedIn</b><span>Scattered across threads</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="problem-arrow" aria-hidden="true"><svg class="i" style="width:20px;height:20px"><use href="#i-arrow"/></svg></div>
+          <div class="bezel">
+            <div class="bz-head"><svg class="i"><use href="#i-alert"/></svg>What it costs us</div>
+            <div class="bz-well">
+              <ul class="costs">
+                <li><span class="cost-ic"><svg class="i"><use href="#i-clock"/></svg></span><div><b>Slow shortlists</b><span>We search from scratch for roles where a fit already exists.</span></div></li>
+                <li><span class="cost-ic"><svg class="i"><use href="#i-search"/></svg></span><div><b>Forgotten fits</b><span>Good candidates sit unnoticed in our own pool.</span></div></li>
+                <li><span class="cost-ic"><svg class="i"><use href="#i-snow"/></svg></span><div><b>Candidates go cold</b><span>Someone we didn't place in month 1 is hard to reach in month 4.</span></div></li>
+                <li><span class="cost-ic"><svg class="i"><use href="#i-ceiling"/></svg></span><div><b>A ceiling on growth</b><span>The business can only hold what one person remembers.</span></div></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <figure class="quote">
+          <blockquote>"Whenever a new role comes in, I don't know [which of] the existing pool of candidates … are a good fit for that role."</blockquote>
+          <figcaption>Purvesh · product discussion</figcaption>
+        </figure>
+        <div class="callout"><svg class="i"><use href="#i-target"/></svg><p><strong>The root cause is how we capture what we learn.</strong> Matching only works once every candidate is recorded the same way. So the engine starts by building profiles from the calls and resumes we already have, with no typing.</p></div>
+      </section>
+
+      <!-- ===== Who ===== -->
+      <section class="sec" id="who">
+        <div class="sec-head">
+          <span class="eyebrow">[ Who it's for ]</span>
+          <h2>Built for our team. Felt by candidates and clients.</h2>
+          <p class="lede">Only recruiters use the engine. Candidates and clients get what it produces, sent by a person, through channels that feel personal.</p>
+        </div>
+        <div class="grid3">
+          <div class="bezel">
+            <div class="bz-head"><svg class="i"><use href="#i-users"/></svg>HeroScouter recruiters<span class="badge-use on">Uses the engine</span></div>
+            <div class="bz-well">
+              <p class="who-role">Purvesh today, and the next recruiters we hire. The engine carries the context a new hire doesn't have.</p>
+              <div class="gets-label">Gets</div>
+              <ul class="ticks">
+                <li><svg class="i"><use href="#i-check"/></svg>The best candidates for a role, with a reason for each</li>
+                <li><svg class="i"><use href="#i-check"/></svg>Tailored resumes drafted, ready to review</li>
+                <li><svg class="i"><use href="#i-check"/></svg>Reminders and a weekly list of who's going cold</li>
+              </ul>
+            </div>
+          </div>
+          <div class="bezel">
+            <div class="bz-head"><svg class="i"><use href="#i-user"/></svg>Candidates<span class="badge-use">Never logs in</span></div>
+            <div class="bz-well">
+              <p class="who-role">Tech professionals in our pool, actively or passively looking.</p>
+              <div class="gets-label">Gets</div>
+              <ul class="ticks">
+                <li><svg class="i"><use href="#i-check"/></svg>Roles that fit, proposed by a person</li>
+                <li><svg class="i"><use href="#i-check"/></svg>A resume tailored to each role they're put forward for</li>
+                <li><svg class="i"><use href="#i-check"/></svg>A call back after every outcome, even a no</li>
+              </ul>
+            </div>
+          </div>
+          <div class="bezel">
+            <div class="bz-head"><svg class="i"><use href="#i-brief"/></svg>Hiring managers<span class="badge-use">Never logs in</span></div>
+            <div class="bz-well">
+              <p class="who-role">At clients we work with, and prospects we're pitching.</p>
+              <div class="gets-label">Gets</div>
+              <ul class="ticks">
+                <li><svg class="i"><use href="#i-check"/></svg>3–5 vetted candidates, each with a reason they fit</li>
+                <li><svg class="i"><use href="#i-check"/></svg>Masked profiles until terms are signed</li>
+                <li><svg class="i"><use href="#i-check"/></svg>Full, tailored resumes once they're a client</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <p class="note">Candidates can still browse our public open-roles page. It stays as it is, with no login.</p>
+      </section>
+
+      <div class="part"><span class="eyebrow">How it works</span></div>
+
+      <!-- ===== Engine ===== -->
+      <section class="sec" id="engine">
+        <div class="sec-head">
+          <span class="eyebrow">[ The engine ]</span>
+          <h2>From a call to a placement, in five steps.</h2>
+          <p class="lede">Everything starts from things that already happen: intake calls, resumes and client briefings. The engine turns them into records, finds the fits, drafts the outputs and keeps track of what happens next.</p>
+        </div>
+        <div class="hscroll" style="overflow:visible">
+          <div class="engine">
+            <div class="eng-col">
+              <div class="eng-k"><b>1</b> Inputs</div>
+              <div class="node-row">
+                <div class="node src-node"><b>Intake call</b><span>Recorded on Fathom</span></div>
+                <div class="node src-node"><b>Resume</b><span>PDF or Word</span></div>
+                <div class="node src-node"><b>JD or briefing call</b><span>From the client, on Fathom</span></div>
+              </div>
+            </div>
+            <div class="eng-col">
+              <div class="eng-k"><b>2</b> Capture</div>
+              <div class="node-row">
+                <div class="node"><b>Candidate profile</b><span>Stack, years, pay, location and work authorization, active or passive, notice period</span><div class="tags"><span class="tag auto">Auto</span><span class="tag people">Confirm</span></div></div>
+                <div class="node"><b>Role record</b><span>Must-haves, budget, interview stages, what good looks like</span><div class="tags"><span class="tag auto">Auto</span><span class="tag people">Confirm</span></div></div>
+              </div>
+            </div>
+            <div class="eng-col">
+              <div class="eng-k"><b>3</b> Match</div>
+              <div class="node-row">
+                <div class="node"><b>Role → top 5 candidates</b><span>A reason for each. Must-have misses filtered out.</span><div class="tags"><span class="tag tool">Tool</span></div></div>
+                <div class="node"><b>Candidate → open roles</b><span>Right after the intake call</span><div class="tags"><span class="tag tool">Tool</span></div></div>
+                <div class="node dim"><b>Candidate → roles in the market</b><span>Companies hiring for this profile become prospects</span><div class="tags"><span class="tag next">Next</span></div></div>
+              </div>
+            </div>
+            <div class="eng-col">
+              <div class="eng-k"><b>4</b> Act</div>
+              <div class="node-row">
+                <div class="node"><b>Tailored resume</b><span>Only facts from the resume or call</span><div class="tags"><span class="tag tool">Tool</span></div></div>
+                <div class="node"><b>Consent, then submit</b><span>Candidate agrees to each client first</span><div class="tags"><span class="tag people">People</span></div></div>
+                <div class="node"><b>Shortlist sent</b><span>Always by a person</span><div class="tags"><span class="tag people">People</span></div></div>
+              </div>
+            </div>
+            <div class="eng-col">
+              <div class="eng-k"><b>5</b> Track</div>
+              <div class="node-row">
+                <div class="node"><b>Stages and outcomes</b><span>With the reason for every no</span><div class="tags"><span class="tag people">People</span></div></div>
+                <div class="node"><b>Close-the-loop reminder</b><span>If no one calls within 48 hours</span><div class="tags"><span class="tag auto">Auto</span></div></div>
+                <div class="node"><b>Going-cold list</b><span>Every week, with each person's best open role</span><div class="tags"><span class="tag auto">Auto</span></div></div>
+              </div>
+            </div>
+            <div class="loop"><svg class="i"><use href="#i-loop"/></svg>Outcomes and dismissed matches feed back into the next match, so it gets sharper over time.</div>
+          </div>
+        </div>
+        <div class="under"><svg class="i"><use href="#i-db"/></svg><span>Underneath everything, every action is logged. That gives us analytics and an audit trail from day one.</span></div>
+      </section>
+
+      <!-- ===== Principle ===== -->
+      <section class="sec" id="principle">
+        <div class="sec-head">
+          <span class="eyebrow">[ Tool and people ]</span>
+          <p class="principle">The tool remembers and drafts. <em>People do the talking.</em></p>
+          <p class="lede">You asked what belongs in the tool, what should be automated, and what stays manual. This is the split.</p>
+        </div>
+        <div class="grid3">
+          <div class="bezel">
+            <div class="bz-head"><span class="tag tool">Tool</span>Holds the data, drafts the work</div>
+            <div class="bz-well">
+              <ul class="plist">
+                <li>Candidate profiles and role records</li>
+                <li>Matches both ways, with a reason for each</li>
+                <li>Tailored resumes and masked profiles</li>
+                <li>Submissions, stages and outcomes</li>
+                <li>The public open-roles page, later fed from role records</li>
+              </ul>
+            </div>
+          </div>
+          <div class="bezel">
+            <div class="bz-head"><span class="tag auto">Automation</span>Runs on triggers and schedules</div>
+            <div class="bz-well">
+              <ul class="plist">
+                <li>Call transcript turns into a draft profile or role</li>
+                <li>New role or candidate runs a match</li>
+                <li>No contact within 48 hours of an outcome sends a reminder</li>
+                <li>A weekly list of candidates going cold</li>
+                <li>Interview booked sends a prep reminder (Next)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="bezel">
+            <div class="bz-head"><span class="tag people">People</span>Own every conversation</div>
+            <div class="bz-well">
+              <ul class="plist">
+                <li>Intake and briefing calls</li>
+                <li>Every message to candidates and clients, sent from drafts</li>
+                <li>Terms and commission</li>
+                <li>The final call on every shortlist</li>
+                <li>Close-the-loop calls after each outcome</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="part"><span class="eyebrow">Journeys</span></div>
+
+      <!-- ===== Candidate journey ===== -->
+      <section class="sec" id="candidate">
+        <div class="sec-head">
+          <span class="eyebrow">[ Candidate journey ]</span>
+          <h2>Casey, from first call to staying warm.</h2>
+          <p class="lede">Casey is a tech professional in our pool. We win or lose candidates at two moments: the silence after a rejection, and the months between roles.</p>
+        </div>
+        <div class="legend"><span><i></i>With the engine</span><span><i class="d"></i>Today</span><span class="mot">Moment of truth</span><span>The curve is illustrative, not measured.</span></div>
+        <div class="bezel">
+          <div class="bz-head"><svg class="i"><use href="#i-user"/></svg>How Casey experiences HeroScouter<span class="aside">Scroll sideways on small screens</span></div>
+          <div class="bz-well" style="padding:0;overflow:hidden">
+            <div class="hscroll">
+              <div class="journey">
+                <div class="jl">Stage</div>
+                <div class="jc jh"><span class="n">01</span><b>Discover</b></div>
+                <div class="jc jh"><span class="n">02</span><b>Intake</b></div>
+                <div class="jc jh"><span class="n">03</span><b>Matched</b></div>
+                <div class="jc jh"><span class="n">04</span><b>Interview</b></div>
+                <div class="jc jh mot-col"><span class="n">05</span><b>Outcome</b><span class="mot">Moment of truth</span></div>
+                <div class="jc jh mot-col"><span class="n">06</span><b>Stay warm</b><span class="mot">Moment of truth</span></div>
+
+                <div class="jl">Casey</div>
+                <div class="jc"><p>Gets our LinkedIn message or a referral, or finds us on the jobs page.</p></div>
+                <div class="jc"><p>Shares a resume and has an intro call.</p></div>
+                <div class="jc"><p>Hears about 2–3 roles that fit and agrees to be put forward.</p></div>
+                <div class="jc"><p>Gets prep notes, then does the first round.</p></div>
+                <div class="jc mot-col"><p>Gets an offer or a no.</p></div>
+                <div class="jc mot-col"><p>Hears from us when a new role fits. Refers friends.</p></div>
+
+                <div class="jl"><div class="curve-axis"><span>Feels looked after</span><span>Feels ignored</span></div></div>
+                <div class="curve-cell">
+                  <div class="curve-plot" aria-label="Illustrative feeling curve. Today, Casey's experience drops sharply at Outcome and Stay warm. With the engine it recovers at both.">
+                    <svg viewBox="0 0 600 100" preserveAspectRatio="none" aria-hidden="true">
+                      <polyline class="ln-today" vector-effect="non-scaling-stroke" points="50,52 150,44 250,64 350,62 450,90 550,94"/>
+                      <polyline class="ln-now" vector-effect="non-scaling-stroke" points="50,52 150,36 250,18 350,30 450,56 550,22"/>
+                    </svg>
+                    <span class="cdot t" style="left:8.333%;top:52%"></span><span class="cdot t" style="left:25%;top:44%"></span><span class="cdot t" style="left:41.667%;top:64%"></span><span class="cdot t" style="left:58.333%;top:62%"></span><span class="cdot t" style="left:75%;top:90%"></span><span class="cdot t" style="left:91.667%;top:94%"></span>
+                    <span class="cdot" style="left:8.333%;top:52%"></span><span class="cdot" style="left:25%;top:36%"></span><span class="cdot" style="left:41.667%;top:18%"></span><span class="cdot" style="left:58.333%;top:30%"></span><span class="cdot" style="left:75%;top:56%"></span><span class="cdot" style="left:91.667%;top:22%"></span>
+                  </div>
+                </div>
+
+                <div class="jl">How it should feel</div>
+                <div class="jc"><p class="q">"Another agency that'll ghost me?"</p></div>
+                <div class="jc"><p class="q">"They get what I'm looking for."</p></div>
+                <div class="jc"><p class="q">"These roles actually fit me."</p></div>
+                <div class="jc"><p class="q">"I know what to expect."</p></div>
+                <div class="jc mot-col"><p class="q">"They called me back, even with a no."</p></div>
+                <div class="jc mot-col"><p class="q">"They remembered me."</p></div>
+
+                <div class="jl">What we do</div>
+                <div class="jc"><p>Personal outreach. The jobs page stays public.</p></div>
+                <div class="jc"><p>Call on Fathom. Profile drafted from the call and resume.</p></div>
+                <div class="jc"><p>Match to our roles. Tailored resume. Consent recorded.</p></div>
+                <div class="jc"><p>Prep call from a checklist. A prep brief comes Next.</p></div>
+                <div class="jc mot-col"><p>Call within 48 hours. Log the reason.</p></div>
+                <div class="jc mot-col"><p>Weekly going-cold list. Personal check-in.</p></div>
+
+                <div class="jl" style="border-bottom:none">Where it lives</div>
+                <div class="jc" style="border-bottom:none"><div class="tags"><span class="tag people">People</span><span class="tag tool">Tool</span></div></div>
+                <div class="jc" style="border-bottom:none"><div class="tags"><span class="tag auto">Auto</span><span class="tag people">People</span></div></div>
+                <div class="jc" style="border-bottom:none"><div class="tags"><span class="tag tool">Tool</span><span class="tag people">People</span></div></div>
+                <div class="jc" style="border-bottom:none"><div class="tags"><span class="tag people">People</span></div></div>
+                <div class="jc mot-col" style="border-bottom:none"><div class="tags"><span class="tag people">People</span><span class="tag auto">Auto</span></div></div>
+                <div class="jc mot-col" style="border-bottom:none"><div class="tags"><span class="tag auto">Auto</span><span class="tag people">People</span></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Hiring manager journey ===== -->
+      <section class="sec" id="client">
+        <div class="sec-head">
+          <span class="eyebrow">[ Hiring manager journey ]</span>
+          <h2>Harper, from cold pitch to repeat client.</h2>
+          <p class="lede">Harper starts as a prospect who sees masked profiles. Once terms are signed, Harper gets full, tailored resumes. The first email and the first shortlist decide whether Harper stays.</p>
+        </div>
+        <div class="bezel">
+          <div class="bz-head"><svg class="i"><use href="#i-brief"/></svg>Two paths, one relationship</div>
+          <div class="bz-well" style="display:flex;flex-direction:column;gap:16px">
+            <div class="lane">
+              <div class="lane-k"><span class="eyebrow">Path A</span><b>Prospect</b><span>Sees masked profiles</span></div>
+              <div class="lane-steps three">
+                <div class="step-card mot-card">
+                  <div class="sc-top"><span class="n">A1</span><span class="mot">Moment of truth</span></div>
+                  <b>Gets pitched</b>
+                  <p>A short email: vetted people, ready now, with masked profiles.</p>
+                  <p class="we"><strong>We:</strong> pick candidates to pitch and draft the email. Has to beat agency spam.</p>
+                  <div class="tags"><span class="tag tool">Tool</span><span class="tag people">People</span></div>
+                </div>
+                <div class="step-card">
+                  <div class="sc-top"><span class="n">A2</span></div>
+                  <b>Shows interest</b>
+                  <p>Replies and agrees terms and commission.</p>
+                  <p class="we"><strong>We:</strong> negotiate terms. Client status changes to onboarded.</p>
+                  <div class="tags"><span class="tag people">People</span></div>
+                </div>
+                <div class="step-card">
+                  <div class="sc-top"><span class="n">A3</span></div>
+                  <b>Briefing call</b>
+                  <p>Explains what good looks like, and past hires that worked or didn't.</p>
+                  <p class="we"><strong>We:</strong> record it on Fathom. A role record is drafted from the call.</p>
+                  <div class="tags"><span class="tag auto">Auto</span><span class="tag people">People</span></div>
+                </div>
+                <div class="step-card ghost">
+                  <p class="we">Later, the engine finds prospects for us: companies already hiring for a candidate's profile.</p>
+                  <div class="tags"><span class="tag next">Next</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="lane-join"><span><svg class="i" style="transform:rotate(90deg)"><use href="#i-arrow"/></svg>Signs terms and becomes a client</span></div>
+            <div class="lane">
+              <div class="lane-k"><span class="eyebrow">Path B</span><b>Client</b><span>Sees full, tailored resumes</span></div>
+              <div class="lane-steps">
+                <div class="step-card">
+                  <div class="sc-top"><span class="n">B1</span></div>
+                  <b>Sends a role</b>
+                  <p>Shares a JD.</p>
+                  <p class="we"><strong>We:</strong> confirm the role. The engine suggests the top candidates.</p>
+                  <div class="tags"><span class="tag auto">Auto</span><span class="tag tool">Tool</span></div>
+                </div>
+                <div class="step-card mot-card">
+                  <div class="sc-top"><span class="n">B2</span><span class="mot">Moment of truth</span></div>
+                  <b>Gets a shortlist</b>
+                  <p>3–5 tailored resumes, with a reason each one fits.</p>
+                  <p class="we"><strong>We:</strong> review and send. Quality here decides if they come back.</p>
+                  <div class="tags"><span class="tag tool">Tool</span><span class="tag people">People</span></div>
+                </div>
+                <div class="step-card">
+                  <div class="sc-top"><span class="n">B3</span></div>
+                  <b>Interviews and hires</b>
+                  <p>Emails the candidate with us in CC and shares a Calendly link.</p>
+                  <p class="we"><strong>We:</strong> track every stage and the outcome.</p>
+                  <div class="tags"><span class="tag people">People</span><span class="tag tool">Tool</span></div>
+                </div>
+                <div class="step-card">
+                  <div class="sc-top"><span class="n">B4</span></div>
+                  <b>Comes back</b>
+                  <p>Sends the next role and refers a peer.</p>
+                  <p class="we"><strong>We:</strong> ask for the next role. Client history is on record.</p>
+                  <div class="tags"><span class="tag people">People</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Recruiter flows ===== -->
+      <section class="sec" id="flows">
+        <div class="sec-head">
+          <span class="eyebrow">[ Recruiter flows ]</span>
+          <h2>Three moments in a recruiter's day.</h2>
+          <p class="lede">What actually happens on our side, step by step, and who does each step.</p>
+        </div>
+        <div class="tabbar no-scrollbar" role="tablist" aria-label="Recruiter flows" data-tabs>
+          <button class="tab" type="button" role="tab" id="tab-role" aria-selected="true" aria-controls="panel-role" tabindex="0"><svg class="i"><use href="#i-brief"/></svg>A role lands</button>
+          <button class="tab" type="button" role="tab" id="tab-cand" aria-selected="false" aria-controls="panel-cand" tabindex="-1"><svg class="i"><use href="#i-user"/></svg>A candidate lands</button>
+          <button class="tab" type="button" role="tab" id="tab-out" aria-selected="false" aria-controls="panel-out" tabindex="-1"><svg class="i"><use href="#i-bell"/></svg>After an outcome</button>
+        </div>
+
+        <div id="panel-role" role="tabpanel" aria-labelledby="tab-role">
+          <div class="compare">
+            <div class="bezel">
+              <div class="bz-head">Today<span class="aside">From memory</span></div>
+              <div class="bz-well" style="background:var(--secondary)">
+                <ol class="steps">
+                  <li class="st dim"><div><b>A JD arrives by email</b></div></li>
+                  <li class="st dim"><div><b>Purvesh thinks back over who we've spoken to</b></div></li>
+                  <li class="st dim"><div><b>Searches inbox, notes and LinkedIn</b></div></li>
+                  <li class="st dim"><div><b>Rewrites each resume by hand</b></div></li>
+                </ol>
+                <div class="end bad"><svg class="i"><use href="#i-alert"/></svg>The shortlist is only as good as memory</div>
+              </div>
+            </div>
+            <div class="bezel">
+              <div class="bz-head">With the engine<span class="aside">Same day</span></div>
+              <div class="bz-well">
+                <ol class="steps">
+                  <li class="st"><div><b>Paste the JD or attach the briefing call</b><span>A draft role record appears.</span></div><div class="tags"><span class="tag auto">Auto</span></div></li>
+                  <li class="st"><div><b>Confirm the role</b></div><div class="tags"><span class="tag people">People</span></div></li>
+                  <li class="st"><div><b>Find matches</b><span>Top 5, a reason each. Must-have misses filtered out.</span></div><div class="tags"><span class="tag tool">Tool</span></div></li>
+                  <li class="st"><div><b>Accept 3, dismiss 2 with a reason</b></div><div class="tags"><span class="tag people">People</span></div></li>
+                  <li class="st"><div><b>Record each candidate's consent</b></div><div class="tags"><span class="tag people">People</span></div></li>
+                  <li class="st"><div><b>Tailored resumes are drafted</b><span>Only facts from the resume or call.</span></div><div class="tags"><span class="tag tool">Tool</span></div></li>
+                  <li class="st"><div><b>Review and send the shortlist</b></div><div class="tags"><span class="tag people">People</span></div></li>
+                  <li class="st"><div><b>Logged as submitted</b></div><div class="tags"><span class="tag tool">Tool</span></div></li>
+                </ol>
+                <div class="end good"><svg class="i"><use href="#i-check"/></svg>Shortlist out the same day</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="panel-cand" role="tabpanel" aria-labelledby="tab-cand" hidden>
+          <div class="bezel">
+            <div class="bz-head">A new candidate, from call to proposed roles</div>
+            <div class="bz-well">
+              <ol class="steps">
+                <li class="st"><div><b>Intake call on Fathom</b></div><div class="tags"><span class="tag people">People</span></div></li>
+                <li class="st"><div><b>Transcript and resume become a draft profile</b><span>Anything not said on the call is marked "Not captured", never guessed.</span></div><div class="tags"><span class="tag auto">Auto</span></div></li>
+                <li class="st"><div><b>Confirm the profile</b><span>Only confirmed profiles are used for matching.</span></div><div class="tags"><span class="tag people">People</span></div></li>
+                <li class="st"><div><b>Find roles</b><span>Open roles that fit, with a reason each.</span></div><div class="tags"><span class="tag tool">Tool</span></div></li>
+                <li class="st"><div><b>Propose roles personally</b></div><div class="tags"><span class="tag people">People</span></div></li>
+                <li class="st dim"><div><b>Search the market for roles that fit</b><span>Companies hiring for this profile become prospects.</span></div><div class="tags"><span class="tag tool">Tool</span><span class="tag next">Next</span></div></li>
+              </ol>
+              <div class="end good"><svg class="i"><use href="#i-check"/></svg>Roles proposed right after the intake call</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="panel-out" role="tabpanel" aria-labelledby="tab-out" hidden>
+          <div class="bezel">
+            <div class="bz-head">After an outcome, nobody is left in silence</div>
+            <div class="bz-well">
+              <ol class="steps">
+                <li class="st"><div><b>Log the stage or outcome, with a reason</b></div><div class="tags"><span class="tag people">People</span></div></li>
+                <li class="st"><div><b>No contact within 48 hours? A reminder goes out</b></div><div class="tags"><span class="tag auto">Auto</span></div></li>
+                <li class="st"><div><b>Close the loop with a call</b></div><div class="tags"><span class="tag people">People</span></div></li>
+                <li class="st"><div><b>The reason improves future matches and prep</b></div><div class="tags"><span class="tag tool">Tool</span></div></li>
+                <li class="st"><div><b>Quiet for 30 days? The candidate shows on the weekly going-cold list</b><span>With their best-matching open role, so there's a reason to reach out.</span></div><div class="tags"><span class="tag auto">Auto</span></div></li>
+                <li class="st"><div><b>Personal check-in</b></div><div class="tags"><span class="tag people">People</span></div></li>
+              </ol>
+              <div class="end good"><svg class="i"><use href="#i-check"/></svg>Warm when the next right role arrives</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="part"><span class="eyebrow">Plan</span></div>
+
+      <!-- ===== Build first ===== -->
+      <section class="sec" id="build">
+        <div class="sec-head">
+          <span class="eyebrow">[ What we build first ]</span>
+          <h2>The first release does one job: never miss a fit.</h2>
+          <p class="lede">Each column is a part of the recruiter's work. Each row is a release. The first row works end to end: a role lands, the engine suggests candidates, we send tailored resumes and log what happens.</p>
+        </div>
+        <div class="hscroll">
+          <div class="smap">
+            <div class="hd rl"><small>Release</small>&nbsp;</div>
+            <div class="hd"><small>1</small>Capture what we know</div>
+            <div class="hd"><small>2</small>Find the fit</div>
+            <div class="hd"><small>3</small>Get in front of clients</div>
+            <div class="hd"><small>4</small>Help candidates win</div>
+            <div class="hd"><small>5</small>Keep the pool warm</div>
+
+            <div class="rl mvp"><span class="tag people">First</span><b>Never miss a fit</b><span>Purvesh's P0</span></div>
+            <div class="mvp"><ul class="items"><li>Profile from intake call and resume</li><li>Role from JD or briefing call</li><li class="could">Duplicate check</li></ul></div>
+            <div class="mvp"><ul class="items"><li>Role → top 5, each with a reason</li><li>Must-have filters</li><li>Candidate → open roles</li><li>Accept or dismiss, with a reason</li></ul></div>
+            <div class="mvp"><ul class="items"><li>Tailored resume per role</li><li>Consent before every submission</li><li class="could">Masked profile</li></ul></div>
+            <div class="mvp"><ul class="items"><li>Interview stages, outcome and reason</li></ul></div>
+            <div class="mvp"><ul class="items"><li>Last contacted on every profile</li><li>Weekly going-cold list</li><li>48-hour close-the-loop reminder</li></ul></div>
+
+            <div class="rl mvp" style="border-left:none">&nbsp;</div>
+            <div class="mvp span-all"><svg class="i"><use href="#i-db"/></svg>Underneath: every action logged, for analytics and an audit trail.</div>
+
+            <div class="rl nx"><span class="tag">Next</span><b>Every candidate opens doors</b><span>Purvesh's P1</span></div>
+            <div class="nx"><ul class="items"><li>Candidate owners</li><li>Client records and terms</li></ul></div>
+            <div class="nx"><ul class="items"><li>Search the market for roles that fit a candidate</li></ul></div>
+            <div class="nx"><ul class="items"><li>Prospect list and pitch drafts</li><li>Jobs page fed from role records</li></ul></div>
+            <div class="nx"><ul class="items"><li>Prep brief for each interviewer</li><li>Interview reminders</li><li>Debriefs</li></ul></div>
+            <div class="nx"><ul class="items"><li>"A new role matches you" drafts</li></ul></div>
+
+            <div class="rl lt" style="border-bottom:none"><span class="tag next">Later</span><b>Network effects</b><span>Once placements and data build up</span></div>
+            <div class="lt" style="border-bottom:none">&nbsp;</div>
+            <div class="lt" style="border-bottom:none"><ul class="items"><li>Ranking that learns from outcomes</li></ul></div>
+            <div class="lt" style="border-bottom:none"><ul class="items"><li>Protection against clients going direct</li></ul></div>
+            <div class="lt" style="border-bottom:none"><ul class="items"><li>Interviewer playbooks from past debriefs</li></ul></div>
+            <div class="lt" style="border-bottom:none"><ul class="items"><li>Referrals</li><li>Candidate community</li><li>Placements dashboard</li></ul></div>
+          </div>
+        </div>
+        <p class="note">Dashed items are nice to have in the first release. They move to Next if time is tight.</p>
+      </section>
+
+      <!-- ===== Risks and tests ===== -->
+      <section class="sec" id="tests">
+        <div class="sec-head">
+          <span class="eyebrow">[ Risks and tests ]</span>
+          <h2>What could go wrong, and how we find out early.</h2>
+          <p class="lede">Three things could make this a wasted build. We test the two biggest with no code, while the developer builds the capture step that we need either way.</p>
+        </div>
+        <div class="risks">
+          <div class="risk">
+            <div class="rk"><svg class="i"><use href="#i-alert"/></svg>Nobody uses it</div>
+            <p>The trap you described: tools that look good and get zero adoption.</p>
+            <div class="how"><svg class="i"><use href="#i-check"/></svg><span>Profiles build themselves from Fathom calls, and the weekly list arrives without logging in. If we're still keeping side sheets at the second checkpoint, we fix that before adding anything.</span></div>
+          </div>
+          <div class="risk">
+            <div class="rk"><svg class="i"><use href="#i-alert"/></svg>AI matches are no better than memory</div>
+            <p>If the engine only suggests people Purvesh would think of anyway, it adds little.</p>
+            <div class="how"><svg class="i"><use href="#i-check"/></svg><span>Test 1: a blind matching test before we build matching.</span></div>
+          </div>
+          <div class="risk">
+            <div class="rk"><svg class="i"><use href="#i-alert"/></svg>Too few open roles</div>
+            <p>If roles are scarce, better matching won't move placements. More clients will.</p>
+            <div class="how"><svg class="i"><use href="#i-check"/></svg><span>Test 2: pitch real candidates to companies already hiring for their profile.</span></div>
+          </div>
+        </div>
+        <div class="grid2">
+          <div class="bezel">
+            <div class="bz-head"><svg class="i"><use href="#i-flask"/></svg>Test 1 · Matching by hand<span class="aside">Purvesh + Vandit</span></div>
+            <div class="bz-well">
+              <div class="poc-sub">
+                <div class="poc-part"><b>Part 1: Do our calls hold enough?</b><span>Run 10 recent intake calls and resumes through a prompt. Check that stack, years, pay, location, work authorization and notice period come out.</span></div>
+                <div class="poc-part"><b>Part 2: A blind test</b><span>For each open role, Purvesh sees 7 names: the AI's top 5 plus 2 random people from the pool, unlabeled. He marks each as approach or skip.</span></div>
+              </div>
+              <div class="verdicts">
+                <div class="verdict pass"><b>Pass</b>AI picks get approved clearly more often than random ones, and at least one is someone he wouldn't have recalled.</div>
+                <div class="verdict fail"><b>Fail</b>Random picks score as well as AI picks. Matching adds no signal yet.</div>
+              </div>
+              <p class="decides"><svg class="i"><use href="#i-target"/></svg><span><strong>Decides</strong> how we build matching, and which fields intake calls must always cover.</span></p>
+            </div>
+          </div>
+          <div class="bezel">
+            <div class="bz-head"><svg class="i"><use href="#i-flask"/></svg>Test 2 · Candidate-led outreach<span class="aside">Purvesh + Vandit</span></div>
+            <div class="bz-well">
+              <div class="poc-sub">
+                <div class="poc-part"><b>Pick 5 strong candidates</b><span>People we'd be proud to put in front of any client.</span></div>
+                <div class="poc-part"><b>Find who's hiring for them</b><span>An X-ray search by hand finds about 10 companies hiring for each profile.</span></div>
+                <div class="poc-part"><b>Pitch, personally</b><span>A short email with a masked profile, and one follow-up.</span></div>
+              </div>
+              <div class="verdicts">
+                <div class="verdict pass"><b>Pass</b>3 or more replies and at least 1 client call from about 50 emails.</div>
+                <div class="verdict fail"><b>Fail</b>0 or 1 replies.</div>
+              </div>
+              <p class="decides"><svg class="i"><use href="#i-target"/></svg><span><strong>Decides</strong> whether outreach moves into the first release.</span></p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Roadmap ===== -->
+      <section class="sec" id="roadmap">
+        <div class="sec-head">
+          <span class="eyebrow">[ Roadmap ]</span>
+          <h2>Four phases, two checkpoints.</h2>
+          <p class="lede">There are no dates. Each checkpoint looks at the evidence and decides what happens next.</p>
+        </div>
+        <div class="road">
+          <div class="ph now">
+            <span class="when">Now</span>
+            <h3>Test and capture</h3>
+            <div class="who">Purvesh + Vandit</div>
+            <ul><li>Test 1 and Test 2</li><li>Prep-call checklist in use</li></ul>
+            <div class="who">Developer</div>
+            <ul><li>Profiles and roles from calls and JDs</li><li>Event log</li></ul>
+          </div>
+          <div class="gate">
+            <span class="when">Checkpoint A</span>
+            <p>Test results decide how we build matching, and whether outreach moves up.</p>
+          </div>
+          <div class="ph now">
+            <span class="when">Now</span>
+            <h3>Build the first release</h3>
+            <ul><li>Matching both ways</li><li>Submissions, consent and outcomes</li><li>Going-cold list and reminders</li><li>Tailored resumes</li></ul>
+            <span class="ship"><svg class="i" style="width:13px;height:13px"><use href="#i-check"/></svg>First release live</span>
+          </div>
+          <div class="gate">
+            <span class="when">Checkpoint B</span>
+            <p>We check every signal, record our placement baseline, and choose what's next.</p>
+          </div>
+          <div class="ph">
+            <span class="when">Next</span>
+            <h3>Every candidate opens doors</h3>
+            <ul><li>Candidate-led outreach</li><li>Interview prep brief</li><li>Candidate owners and client records</li><li>Masked profiles</li><li>Notifications</li></ul>
+          </div>
+          <div class="ph later">
+            <span class="when">Later</span>
+            <h3>Network effects</h3>
+            <ul><li>Referrals</li><li>Candidate community</li><li>Interviewer playbooks</li><li>Placements dashboard</li><li>Protection against going direct</li></ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Measures ===== -->
+      <section class="sec" id="measures">
+        <div class="sec-head">
+          <span class="eyebrow">[ How we measure ]</span>
+          <h2>How we'll know it's working.</h2>
+          <p class="lede">One number for the business, a handful of early signals for the first release, and a few things that must not get worse.</p>
+        </div>
+        <div class="measures">
+          <div class="bezel">
+            <div class="bz-head"><svg class="i"><use href="#i-target"/></svg>The number that matters</div>
+            <div class="bz-well">
+              <div class="north">
+                <div>
+                  <div class="eyebrow" style="margin-bottom:8px">North star</div>
+                  <div class="big">Placements per recruiter per month</div>
+                  <p class="sub" style="margin-top:8px">Our baseline is recorded from the event log once the first release is in use. The target is set at Checkpoint B.</p>
+                </div>
+                <p class="why">It's our goal in one number: more placements, without more headcount.</p>
+              </div>
+            </div>
+          </div>
+          <div class="bezel">
+            <div class="bz-head"><svg class="i"><use href="#i-gauge"/></svg>Checked at Checkpoint B</div>
+            <div class="bz-well">
+              <div class="gets-label">Early signals</div>
+              <div class="mrows">
+                <div class="mrow"><span>New roles with a shortlist sent within 1 working day</span><b>80%+</b></div>
+                <div class="mrow"><span>Suggested matches we accept</span><b>50%+</b></div>
+                <div class="mrow"><span>New candidates profiled within 24 hours</span><b>90%+</b></div>
+                <div class="mrow"><span>Outcomes followed by a call within 48 hours</span><b>90%+</b></div>
+                <div class="mrow"><span>Tailored resumes ready to send with light edits</span><b>4 of 5</b></div>
+              </div>
+              <div class="gets-label" style="margin-top:16px">Must not get worse</div>
+              <div class="mrows guard">
+                <div class="mrow"><span>Edits per profile</span><b>Under 5 min</b></div>
+                <div class="mrow"><span>Submissions with recorded consent</span><b>100%</b></div>
+                <div class="mrow"><span>Invented content in resumes</span><b>Never</b></div>
+                <div class="mrow"><span>Interview rate from our shortlists</span><b>Holds</b></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="part"><span class="eyebrow">Discuss</span></div>
+
+      <!-- ===== Decisions ===== -->
+      <section class="sec" id="decisions">
+        <div class="sec-head">
+          <span class="eyebrow">[ Decisions ]</span>
+          <h2>What we need from you today.</h2>
+          <p class="lede">Tick each one off as we agree it. Ticks are saved in this browser only.</p>
+        </div>
+        <div class="grid2">
+          <div class="bezel">
+            <div class="bz-head"><svg class="i"><use href="#i-check"/></svg>Confirm what we've decided<span class="aside count" data-count="confirm">0 of 5</span></div>
+            <div class="bz-well" style="padding-block:6px">
+              <label class="check"><input type="checkbox" id="c1" data-group="confirm"><span class="box"><svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span><span class="ctext"><b>The first version is for our team only.</b><span>Candidates and clients never log in.</span></span></label>
+              <label class="check"><input type="checkbox" id="c2" data-group="confirm"><span class="box"><svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span><span class="ctext"><b>Matching ships first.</b><span>Outreach moves up only if Test 2 passes.</span></span></label>
+              <label class="check"><input type="checkbox" id="c3" data-group="confirm"><span class="box"><svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span><span class="ctext"><b>Interview prep comes in Next.</b><span>A prep-call checklist covers it until then.</span></span></label>
+              <label class="check"><input type="checkbox" id="c4" data-group="confirm"><span class="box"><svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span><span class="ctext"><b>Consent is recorded before every submission.</b><span>No double submissions, no disputes over who introduced whom.</span></span></label>
+              <label class="check"><input type="checkbox" id="c5" data-group="confirm"><span class="box"><svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span><span class="ctext"><b>The tool drafts. A person sends every message.</b><span>No automated emails to candidates or clients.</span></span></label>
+            </div>
+          </div>
+          <div class="bezel">
+            <div class="bz-head"><svg class="i"><use href="#i-list"/></svg>We need your call on<span class="aside count" data-count="open">0 of 8</span></div>
+            <div class="bz-well" style="padding-block:6px">
+              <label class="check"><input type="checkbox" id="o1" data-group="open"><span class="box"><svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span><span class="ctext"><b>Where should reminders and the weekly list arrive?</b><span>Email, Slack or WhatsApp.</span></span></label>
+              <label class="check"><input type="checkbox" id="o2" data-group="open"><span class="box"><svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span><span class="ctext"><b>What format should tailored resumes use?</b><span>Google Doc, Word or PDF.</span></span></label>
+              <label class="check"><input type="checkbox" id="o3" data-group="open"><span class="box"><svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span><span class="ctext"><b>When does a candidate count as going cold?</b><span>We suggest 30 days without contact.</span></span></label>
+              <label class="check"><input type="checkbox" id="o4" data-group="open"><span class="box"><svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span><span class="ctext"><b>What's our average placement fee, and how long does a shortlist take today?</b><span>Rough numbers are fine. They give us a starting point.</span></span></label>
+              <label class="check"><input type="checkbox" id="o5" data-group="open"><span class="box"><svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span><span class="ctext"><b>Where are most candidates based: India (remote) or the US?</b><span>Shapes the work-authorization fields and how we mask profiles.</span></span></label>
+              <label class="check"><input type="checkbox" id="o6" data-group="open"><span class="box"><svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span><span class="ctext"><b>Who owns a candidate once a second recruiter joins?</b><span>One owner per relationship keeps follow-ups clear.</span></span></label>
+              <label class="check"><input type="checkbox" id="o7" data-group="open"><span class="box"><svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span><span class="ctext"><b>Should we spend a day checking existing recruiting tools first?</b><span>A quick build-or-buy check before we build matching.</span></span></label>
+              <label class="check"><input type="checkbox" id="o8" data-group="open"><span class="box"><svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></span><span class="ctext"><b>Can Purvesh give a few short rating sessions for Test 1?</b><span>He marks suggested candidates as approach or skip.</span></span></label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Not doing ===== -->
+      <section class="sec" id="notdoing">
+        <div class="sec-head">
+          <span class="eyebrow">[ Not doing yet ]</span>
+          <h2>What we're leaving out, and why.</h2>
+        </div>
+        <div class="grid2">
+          <div class="bezel">
+            <div class="bz-head"><svg class="i"><use href="#i-ban"/></svg>Not in this product, for now</div>
+            <div class="bz-well">
+              <ul class="nd">
+                <li><svg class="i"><use href="#i-x"/></svg><div><b>Portals for candidates or clients</b><span>They get outputs from a person, not a login.</span></div></li>
+                <li><svg class="i"><use href="#i-x"/></svg><div><b>Automated messages</b><span>They would break the personal touch.</span></div></li>
+                <li><svg class="i"><use href="#i-x"/></svg><div><b>Notifications for every new record</b><span>Low value while we create records by hand. They return once calls create them.</span></div></li>
+                <li><svg class="i"><use href="#i-x"/></svg><div><b>Inbox and WhatsApp sync</b><span>Logging a contact takes one step. Sync is costly and invasive.</span></div></li>
+                <li><svg class="i"><use href="#i-x"/></svg><div><b>Referrals and community</b><span>They need placements first. They're in Later.</span></div></li>
+              </ul>
+            </div>
+          </div>
+          <div class="bezel">
+            <div class="bz-head"><svg class="i"><use href="#i-park"/></svg>Parked as separate tracks</div>
+            <div class="bz-well">
+              <ul class="nd">
+                <li><svg class="i"><use href="#i-arrow"/></svg><div><b>SEO and AEO foundations</b><span>Sitemap, pages and CMS first. Results take months, so it runs on its own track.</span></div></li>
+                <li><svg class="i"><use href="#i-arrow"/></svg><div><b>A daily US-company digest for the team</b><span>A short scheduled read on US companies and the hiring landscape. A prompt, not product.</span></div></li>
+                <li><svg class="i"><use href="#i-arrow"/></svg><div><b>Free recruiter tools</b><span>Small tools like an X-ray search builder that bring people to our site.</span></div></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer"><span>HeroScouter · Talent engine</span><span>Draft for founder review</span></footer>
+  </div>
+</div>
+
+<script>
+(function(){
+  var root=document.documentElement;
+  function get(k){try{return window.localStorage.getItem(k)}catch(e){return null}}
+  function set(k,v){try{window.localStorage.setItem(k,v)}catch(e){}}
+
+  /* theme */
+  var saved=get('hs-theme');
+  if(saved==='light'||saved==='dark'){root.setAttribute('data-theme',saved)}
+  var tbtn=document.getElementById('theme-toggle');
+  function isDark(){var t=root.getAttribute('data-theme');if(t){return t==='dark'}return !!(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)}
+  function label(){tbtn.querySelector('span').textContent=isDark()?'Light':'Dark'}
+  tbtn.addEventListener('click',function(){var next=isDark()?'light':'dark';root.setAttribute('data-theme',next);set('hs-theme',next);label()});
+  label();
+
+  /* tabs */
+  Array.prototype.forEach.call(document.querySelectorAll('[data-tabs]'),function(list){
+    var tabs=Array.prototype.slice.call(list.querySelectorAll('[role="tab"]'));
+    function select(tab){
+      tabs.forEach(function(t){
+        var on=t===tab;
+        t.setAttribute('aria-selected',on?'true':'false');
+        t.tabIndex=on?0:-1;
+        var p=document.getElementById(t.getAttribute('aria-controls'));
+        if(p){p.hidden=!on}
+      });
+    }
+    tabs.forEach(function(tab,i){
+      tab.addEventListener('click',function(){select(tab)});
+      tab.addEventListener('keydown',function(e){
+        var j=null;
+        if(e.key==='ArrowRight'){j=(i+1)%tabs.length}
+        if(e.key==='ArrowLeft'){j=(i-1+tabs.length)%tabs.length}
+        if(j!==null){e.preventDefault();tabs[j].focus();select(tabs[j])}
+      });
+    });
+  });
+
+  /* decision checklist */
+  var boxes=Array.prototype.slice.call(document.querySelectorAll('.check input[type="checkbox"]'));
+  function counts(){
+    ['confirm','open'].forEach(function(g){
+      var all=boxes.filter(function(b){return b.getAttribute('data-group')===g});
+      var done=all.filter(function(b){return b.checked}).length;
+      var el=document.querySelector('[data-count="'+g+'"]');
+      if(el){el.textContent=done+' of '+all.length}
+    });
+  }
+  boxes.forEach(function(b){
+    if(get('hs-'+b.id)==='1'){b.checked=true}
+    b.addEventListener('change',function(){set('hs-'+b.id,b.checked?'1':'0');counts()});
+  });
+  counts();
+
+  /* active section in nav */
+  var links=Array.prototype.slice.call(document.querySelectorAll('[data-nav]'));
+  var mnav=document.querySelector('.mnav');
+  var ids=[];
+  links.forEach(function(a){var id=a.getAttribute('href').slice(1);if(ids.indexOf(id)<0){ids.push(id)}});
+  function activate(id){
+    links.forEach(function(a){
+      var on=a.getAttribute('href')==='#'+id;
+      a.classList.toggle('active',on);
+      if(on&&mnav&&mnav.contains(a)){mnav.scrollTo({left:Math.max(0,a.offsetLeft-16),behavior:'smooth'})}
+    });
+  }
+  if('IntersectionObserver' in window){
+    var io=new IntersectionObserver(function(entries){
+      entries.forEach(function(en){if(en.isIntersecting){activate(en.target.id)}});
+    },{rootMargin:'-35% 0px -60% 0px'});
+    ids.forEach(function(id){var el=document.getElementById(id);if(el){io.observe(el)}});
+  }
+  activate('top');
+})();
+</script>

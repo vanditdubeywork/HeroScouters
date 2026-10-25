@@ -148,7 +148,9 @@ function RoleView({ role }: { role: Role }) {
   const [emailCandidateIds, setEmailCandidateIds] = useState<string[] | null>(null)
   const [emailInitialKind, setEmailInitialKind] = useState<EmailDraftKind | undefined>(undefined)
   const [notInterestedCandId, setNotInterestedCandId] = useState<string | null>(null)
-  const [bulkMaskCandIds, setBulkMaskCandIds] = useState<string[] | null>(null)
+  const [bulkMaskCandIds, setBulkMaskCandIds] = useState<string[] | null>(() =>
+    params.get('mask') === '1' ? shortlisted.map(m => m.candidateId) : null,
+  )
   const [last, setLast] = useState<{ id: string; prev: Match['status'] } | null>(null)
 
   /* Seed session matches for roles without explicit matches in mock.ts */
@@ -1031,14 +1033,14 @@ function RoleView({ role }: { role: Role }) {
           <Select aria-label="Role status" value={role.status} onChange={changeStatus} options={['Open', 'On hold', 'Closed']} />
           <VersionChip label={`JD v${role.jdVersion}`} versions={versions} onCompare={() => setCompareOpen(true)} />
           <Button variant="outline" icon={<Shield />} onClick={() => setBulkMaskCandIds(shortlisted.map(m => m.candidateId))}>
-            Select resumes &amp; bulk mask
+            Generate masked ({shortlisted.length || all.filter(m => m.status !== 'rejected' && m.status !== 'not-interested').length})
           </Button>
           <Button variant="outline" icon={<Pencil />} onClick={() => navigate(`/roles/${id}/edit`)}>Edit role</Button>
           <Menu width={240}
             trigger={({ toggle }) => <Button variant="ghost" size="icon" aria-label="More role actions" onClick={toggle} icon={<MoreHorizontal />} />}
             items={[
               { label: 'View masked role links', icon: <Eye />, onSelect: () => setTab('masked-links') },
-              { label: 'Select resumes & bulk mask…', icon: <Sparkles />, onSelect: () => setBulkMaskCandIds(shortlisted.map(m => m.candidateId)) },
+              { label: `Generate masked for ${role.company}…`, icon: <Sparkles />, onSelect: () => setBulkMaskCandIds(shortlisted.map(m => m.candidateId)) },
               { separator: true, label: '' },
               { label: 'Add requirement', icon: <MessageSquarePlus />, onSelect: () => setAddAskOpen(true) },
               { label: 'Mark candidate not interested…', icon: <UserX />, onSelect: () => setNotInterestedCandId(focusedOrSelectedCandidateId) },
@@ -1386,7 +1388,7 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onOpenEmail
           onClear={sel.clear}
         >
           <Button variant="primary" size="sm" icon={<Shield />} onClick={() => onOpenBulkMask(activeIds)}>
-            Select resumes &amp; bulk mask ({activeIds.length})
+            Generate masked for {role.company} ({activeIds.length})
           </Button>
           <Button
             variant="outline"
@@ -1472,7 +1474,7 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onOpenEmail
             <div className="flex flex-wrap items-center gap-2">
               {/* 1 Primary CTA (P6: One primary action per view) */}
               <Button variant="primary" icon={<Shield />} onClick={() => onOpenBulkMask(activeIds)}>
-                Select resumes &amp; bulk mask
+                Generate masked for {role.company}
               </Button>
 
               {/* 2 Secondary Contextual Actions */}
@@ -1523,17 +1525,34 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onOpenEmail
       )}
 
       {missingMasked.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-secondary/60 px-3.5 py-2 text-xs">
-          <span className="text-foreground">
-            <span className="font-mono font-medium tnum">{missingMasked.length}</span> without a masked resume
-          </span>
-          <Button
-            variant="link"
-            className="text-xs font-medium"
-            onClick={() => navigate(`/resumes/masked?role=${role.id}&candidates=${missingMasked.map(m => m.candidateId).join(',')}`)}
-          >
-            Generate ({missingMasked.length})
-          </Button>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-500/35 bg-amber-500/[0.06] px-3.5 py-2 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5 text-foreground">
+            <span className="font-mono font-semibold text-amber-400 tnum">{missingMasked.length}</span>
+            <span>
+              without a masked resume ({missingMasked.map(m => app.candidate(m.candidateId)?.name).filter(Boolean).join(', ')})
+            </span>
+            <span className="text-muted-foreground">
+              · Ready to map to {role.title} must-haves ({role.mustSkills.slice(0, 2).join(', ') || role.category})
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<Shield />}
+              onClick={() => onOpenBulkMask(missingMasked.map(m => m.candidateId))}
+            >
+              Generate for {role.company} ({missingMasked.length})
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<Wand2 />}
+              onClick={() => navigate(`/resumes/masked?role=${role.id}&candidates=${missingMasked.map(m => m.candidateId).join(',')}`)}
+            >
+              Open in Studio
+            </Button>
+          </div>
         </div>
       )}
 

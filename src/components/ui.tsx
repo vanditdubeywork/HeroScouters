@@ -190,19 +190,118 @@ export function Segmented<T extends string>({ value, onChange, options, size = '
   )
 }
 
-/** Pill tab strip (h-12 sub-nav pattern) */
+/** Pill tab strip (h-12 sub-nav pattern with optional semantic color coding & highlights) */
+export type PillTabTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral'
+const PILL_TONE_STYLES: Record<PillTabTone, {
+  activeBtn: string
+  inactiveBtn: string
+  iconActive: string
+  iconInactive: string
+  countActive: string
+  countInactive: string
+  dot: string
+}> = {
+  success: {
+    activeBtn: 'border-emerald-500/60 bg-emerald-500/15 text-emerald-200 shadow-[0_0_16px_-4px_rgba(16,185,129,0.4)]',
+    inactiveBtn: 'border-emerald-500/20 bg-emerald-500/[0.04] text-gray-1100 hover:border-emerald-500/40 hover:bg-emerald-500/10 hover:text-emerald-200',
+    iconActive: 'text-emerald-400',
+    iconInactive: 'text-emerald-400/85',
+    countActive: 'border-emerald-400/50 bg-emerald-500/25 text-emerald-200',
+    countInactive: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-400',
+    dot: 'bg-emerald-400',
+  },
+  warning: {
+    activeBtn: 'border-amber-500/60 bg-amber-500/15 text-amber-200 shadow-[0_0_16px_-4px_rgba(245,158,11,0.4)]',
+    inactiveBtn: 'border-amber-500/20 bg-amber-500/[0.04] text-gray-1100 hover:border-amber-500/40 hover:bg-amber-500/10 hover:text-amber-200',
+    iconActive: 'text-amber-400',
+    iconInactive: 'text-amber-400/85',
+    countActive: 'border-amber-400/50 bg-amber-500/25 text-amber-200',
+    countInactive: 'border-amber-500/25 bg-amber-500/10 text-amber-400',
+    dot: 'bg-amber-400',
+  },
+  danger: {
+    activeBtn: 'border-rose-500/60 bg-rose-500/15 text-rose-200 shadow-[0_0_16px_-4px_rgba(244,63,94,0.4)]',
+    inactiveBtn: 'border-rose-500/20 bg-rose-500/[0.04] text-gray-1100 hover:border-rose-500/40 hover:bg-rose-500/10 hover:text-rose-200',
+    iconActive: 'text-rose-400',
+    iconInactive: 'text-rose-400/85',
+    countActive: 'border-rose-400/50 bg-rose-500/25 text-rose-200',
+    countInactive: 'border-rose-500/25 bg-rose-500/10 text-rose-400',
+    dot: 'bg-rose-400',
+  },
+  info: {
+    activeBtn: 'border-sky-500/60 bg-sky-500/15 text-sky-200 shadow-[0_0_16px_-4px_rgba(14,165,233,0.4)]',
+    inactiveBtn: 'border-sky-500/20 bg-sky-500/[0.04] text-gray-1100 hover:border-sky-500/40 hover:bg-sky-500/10 hover:text-sky-200',
+    iconActive: 'text-sky-400',
+    iconInactive: 'text-sky-400/85',
+    countActive: 'border-sky-400/50 bg-sky-500/25 text-sky-200',
+    countInactive: 'border-sky-500/25 bg-sky-500/10 text-sky-400',
+    dot: 'bg-sky-400',
+  },
+  neutral: {
+    activeBtn: 'border-border bg-muted text-gray-1200',
+    inactiveBtn: 'border-transparent text-gray-900 hover:text-gray-1100',
+    iconActive: 'text-foreground',
+    iconInactive: 'text-muted-foreground',
+    countActive: 'border-border bg-card text-foreground',
+    countInactive: 'border-transparent text-muted-foreground',
+    dot: 'bg-gray-900',
+  },
+}
+
 export function PillTabs<T extends string>({ value, onChange, tabs, className }: {
-  value: T; onChange: (v: T) => void; tabs: { value: T; label: React.ReactNode; count?: number; icon?: React.ReactNode }[]; className?: string
+  value: T; onChange: (v: T) => void; tabs: { value: T; label: React.ReactNode; count?: number; icon?: React.ReactNode; tone?: PillTabTone }[]; className?: string
 }) {
+  const hasTones = tabs.some(t => t.tone && t.tone !== 'neutral')
   return (
-    <div role="tablist" className={cn('no-scrollbar flex min-w-0 items-center gap-0.5 overflow-auto', className)}>
+    <div
+      role="tablist"
+      className={cn(
+        'no-scrollbar flex min-w-0 items-center overflow-auto',
+        hasTones ? 'gap-1 rounded-2xl border border-border bg-gray-100 p-1' : 'gap-0.5',
+        className,
+      )}
+    >
       {tabs.map(t => {
         const active = t.value === value
+        const tone = t.tone ?? 'neutral'
+        const cfg = PILL_TONE_STYLES[tone]
+        if (hasTones) {
+          return (
+            <button
+              key={t.value}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => onChange(t.value)}
+              className={cn(
+                'relative inline-flex h-7 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-semibold tracking-[-0.011em] whitespace-nowrap transition-all duration-200 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 cursor-pointer',
+                active ? cfg.activeBtn : cfg.inactiveBtn,
+              )}
+            >
+              {t.icon && (
+                <span className={cn('inline-flex shrink-0 items-center [&>svg]:size-3.5', active ? cfg.iconActive : cfg.iconInactive)}>
+                  {t.icon}
+                </span>
+              )}
+              <span>{t.label}</span>
+              {t.count !== undefined && (
+                <span
+                  className={cn(
+                    'inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-md border px-1.5 font-mono text-[10px] font-semibold tnum',
+                    active ? cfg.countActive : cfg.countInactive,
+                  )}
+                >
+                  {t.count}
+                </span>
+              )}
+            </button>
+          )
+        }
         return (
           <button
-            key={t.value} role="tab" aria-selected={active}
+            key={t.value} type="button" role="tab" aria-selected={active}
             onClick={() => onChange(t.value)}
-            className={cn('relative rounded-lg px-3 py-1.5 text-xs font-[510] tracking-[-0.011em] whitespace-nowrap transition-[color] duration-200 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40',
+            className={cn('relative rounded-lg px-3 py-1.5 text-xs font-[510] tracking-[-0.011em] whitespace-nowrap transition-[color] duration-200 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 cursor-pointer',
               active ? 'text-gray-1200' : 'text-gray-900 hover:text-gray-1100')}
           >
             {active && <span className="absolute inset-0 rounded-lg border border-border bg-muted" />}

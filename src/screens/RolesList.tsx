@@ -186,10 +186,29 @@ export function RolesList() {
       render: r => (
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="max-w-[180px] truncate font-semibold text-foreground">{r.title}</span>
+            <span
+              title={`Status: ${r.status}`}
+              className={cn(
+                'size-2 shrink-0 rounded-full',
+                r.status === 'Open' ? 'bg-emerald-400' : r.status === 'On hold' ? 'bg-amber-400' : 'bg-rose-400',
+              )}
+            />
+            <span className="max-w-[175px] truncate font-semibold text-foreground">{r.title}</span>
             <span className="inline-flex h-4.5 items-center rounded-xs border border-border bg-secondary px-1.5 text-[10px] font-medium text-gray-1100">
               {r.category}
             </span>
+            {r.status !== 'Open' && (
+              <span
+                className={cn(
+                  'inline-flex h-4.5 items-center rounded-xs border px-1.5 font-mono text-[9.5px] font-medium',
+                  r.status === 'On hold'
+                    ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                    : 'border-rose-500/40 bg-rose-500/15 text-rose-300',
+                )}
+              >
+                {r.status}
+              </span>
+            )}
           </div>
           <div className="mt-0.5 max-w-[235px] truncate text-xs text-muted-foreground" title={mustHavesSummary(r)}>
             {mustHavesSummary(r)}
@@ -488,13 +507,13 @@ export function RolesList() {
                 value={tab}
                 onChange={setTab}
                 tabs={[
-                  { value: 'Open', label: 'Open', icon: <CircleCheck />, count: tabCount('Open') },
-                  { value: 'On hold', label: 'On hold', icon: <Pause />, count: tabCount('On hold') },
-                  { value: 'Closed', label: 'Closed', icon: <Lock />, count: tabCount('Closed') },
-                  { value: 'All', label: 'All', icon: <Layers />, count: tabCount('All') },
+                  { value: 'Open', label: 'Open', icon: <CircleCheck />, count: tabCount('Open'), tone: 'success' },
+                  { value: 'On hold', label: 'On hold', icon: <Pause />, count: tabCount('On hold'), tone: 'warning' },
+                  { value: 'Closed', label: 'Closed', icon: <Lock />, count: tabCount('Closed'), tone: 'danger' },
+                  { value: 'All', label: 'All', icon: <Layers />, count: tabCount('All'), tone: 'info' },
                 ]}
               />
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {tableRows.length > 0 && (
                   <Button
                     variant="ghost"
@@ -524,7 +543,7 @@ export function RolesList() {
                   onChange={setCategory}
                   options={[{ value: 'all', label: 'All categories' }, ...CATEGORIES.map(c => ({ value: c, label: c }))]}
                 />
-                <div className="w-52">
+                <div className="w-40">
                   <Input aria-label="Search roles" value={q} onChange={e => setQ(e.target.value)} placeholder="Search roles…" />
                 </div>
                 <ColumnsMenu

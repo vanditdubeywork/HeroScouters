@@ -4,10 +4,9 @@ import { Upload, FileText, X, ClipboardPaste, Sparkles, UserPlus, MessageSquareT
 import { SplitPane, useTopBar } from '../shell/AppShell'
 import { BezelCard, Button, EmptyState, ExampleMark, Field, Input, Segmented, Select, Textarea, cn } from '../components/ui'
 import { AIStepper, Banner, CompletenessMeter, useStepper } from '../components/hs'
-import { ProposedChangesDialog } from './Dialogs'
-import { AskCard, ReadOnlyProfile, orderedAsk } from './CandidateProfile'
+import { AskCard, ReadOnlyProfile, UpdateOrAnotherResumeDialog, orderedAsk } from './CandidateProfile'
 import { useApp, useWireframeState } from '../store/AppStore'
-import type { Candidate, ProposedChange } from '../data/types'
+import type { Candidate } from '../data/types'
 
 /* ==========================================================================
    S-06 · New candidate — resume-first split pane (F-03)
@@ -33,6 +32,7 @@ function draftNew(opts: { source: SourceKindOpt; role: string; notes: string }):
     id: 'rohand', name: 'Rohan D.', initials: 'RD', example: true,
     headline: 'Senior Product Manager · payments platform & APIs',
     category: 'Product', subcategory: 'Product Manager', years: 7,
+    domains: ['Payments/Fintech', 'B2B SaaS'],
     city: 'Seattle, WA', metro: 'Seattle', workModes: null, relocate: null, locationsOpen: [], companyPrefs: [],
     workAuth: { status: null }, pay: null, availability: null, searchStatus: null,
     skills: ['Payments', 'API products', 'Roadmapping', 'Pricing', 'B2B SaaS'],
@@ -49,7 +49,7 @@ function draftNew(opts: { source: SourceKindOpt; role: string; notes: string }):
     updated: 'Just now', source: opts.source, cameInForRole: opts.role || undefined, resumeVersion: 1, lastContacted: 'Today',
     email: 'rohan.d@example.com', phone: '+1 206 555 0187', linkedin: 'linkedin.com/in/rohan-d-example',
     ourTake: opts.notes || undefined,
-    fieldSources: { headline: 'RESUME', years: 'RESUME', city: 'RESUME', category: 'RESUME' },
+    fieldSources: { headline: 'RESUME', years: 'RESUME', city: 'RESUME', category: 'RESUME', domains: 'RESUME' },
   }
 }
 
@@ -58,12 +58,6 @@ function draftDup(base: Candidate | undefined): Candidate {
   const p = base ?? draftNew({ source: 'Outreach', role: '', notes: '' })
   return { ...p, id: 'priya-new', resumeVersion: 1, updated: 'Just now', relocate: null, completeness: 58, example: true }
 }
-
-const dupChanges = (p: Candidate | undefined): ProposedChange[] => [
-  { id: 'd1', field: 'Resume', from: `v${p?.resumeVersion ?? 2}`, to: `v${(p?.resumeVersion ?? 2) + 1}`, source: 'RESUME' },
-  { id: 'd2', field: 'Current title', from: 'Senior Product Manager, Payments', to: 'Lead Product Manager, Payments', source: 'RESUME' },
-  { id: 'd3', field: 'Skills', from: '—', to: '+ Treasury, + Ledgers', source: 'RESUME' },
-]
 
 export function NewCandidate() {
   const app = useApp()
@@ -204,7 +198,7 @@ export function NewCandidate() {
     <div className="space-y-6 p-2 sm:p-4">
       {showDup && (
         <Banner variant="warning" actions={<>
-          <Button variant="outline" onClick={() => setDlg(true)}>Add as new resume version</Button>
+          <Button variant="outline" onClick={() => setDlg(true)}>Add as new resume</Button>
           <Button variant="ghost" onClick={() => { setDupDismissed(true); setDup(false) }}>Create anyway</Button>
         </>}>
           Priya S. may already be in the pool (same email).
@@ -247,14 +241,13 @@ export function NewCandidate() {
           </div>
         }
       />
-      <ProposedChangesDialog open={dlg} onClose={() => setDlg(false)} changes={dupChanges(priya)}
-        subtitle="Adds this resume as a new version of Priya S. Nothing is overwritten without your approval."
-        onApply={accepted => {
-          if (priya) app.updateCandidate('priya', { resumeVersion: priya.resumeVersion + 1, updated: 'Just now' })
-          app.log({ what: `Added resume v${(priya?.resumeVersion ?? 2) + 1} · applied ${accepted.length} changes`, record: 'Priya S.', recordHref: '/candidates/priya', kind: 'Candidates' })
-          app.toast(`Applied ${accepted.length} change${accepted.length === 1 ? '' : 's'} to Priya S.`)
-          navigate('/candidates/priya')
-        }} />
+      <UpdateOrAnotherResumeDialog
+        open={dlg}
+        onClose={() => setDlg(false)}
+        candidateId="priya"
+        defaultFileName={file ?? 'Priya_S_resume_2026.pdf'}
+        onDone={() => navigate('/candidates/priya?tab=resumes')}
+      />
     </>
   )
 }

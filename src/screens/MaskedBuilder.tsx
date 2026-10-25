@@ -1,24 +1,30 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle, CircleCheck, Copy, Download, EyeOff, LayoutTemplate, Lock, MessageSquareQuote, RefreshCw, Sparkles, Target,
 } from 'lucide-react'
 import { ScrollPage, SplitPane, useTopBar } from '../shell/AppShell'
 import { BezelCard, Button, Checkbox, EmptyState, ExampleMark, Field, Input, Segmented, Select, Skeleton, Switch, Textarea, cn } from '../components/ui'
 import { Banner, DocFrame, InfoNote } from '../components/hs'
+import { SignedTakeBlock } from '../components/v3'
+import {
+  DiffSection, EditableText, FixInProfile, PageTake, RefineBox, RefineStatus, RevisionsPopover, SourceResumeSelect,
+  amendRevision, emphasise, factHaystack, firstName, initialRevisions, latestVersion, pushRevision, readStale,
+  resumeLabel, runRefine, skillsFor, storedRevisions, useSourceResume, writeStale,
+  type LocalRevision, type OutputSection, type RefineResult, type SectionContent,
+} from '../components/outputs'
 import { useApp, useWireframeState } from '../store/AppStore'
 import { CopyEmailDialog } from './Dialogs'
-import type { Candidate, Role } from '../data/types'
+import type { Candidate, Resume, Role } from '../data/types'
 
 /* ==========================================================================
-   S-09 · Masked resume builder (single and bulk) — Product Design Doc §8, §9
+   S-09 · Masked resume builder (single and bulk) — Product Design Doc §8, §9 + PRD v0.3 §7.3, §7.6, §7.8
    Opens already rendered with defaults (P5). Assumed facts are never printed;
    predicted skills are never printed as skills.
    ========================================================================== */
 
 type TemplateId = 'A' | 'B' | 'C'
 const TEMPLATE_LABEL: Record<TemplateId, string> = { A: 'A · Compact', B: 'B · Achievement-led', C: 'C · Role-fit' }
-const RECRUITER = { first: 'Vandit', email: 'vandit@heroscouter.com' }
 
 /** Identity-check findings (mocked output of the check) */
 interface Flag { id: string; term: string; label: string; replacement: string; company?: string }
@@ -55,14 +61,16 @@ const HAND_BULLETS: Record<string, string[]> = {
 
 const lowerFirst = (s: string) => (s ? s[0].toLowerCase() + s.slice(1) : s)
 
-function draftBullets(c: Candidate, r: Role | undefined, variant: number): string[] {
+function draftBullets(c: Candidate, r: Role | undefined, variant: number, resume?: Resume): string[] {
   const hand = r ? HAND_BULLETS[`${c.id}|${r.id}`] : undefined
-  if (hand && variant % 2 === 0) return hand
+  if (hand && variant % 2 === 0 && (!resume || resume.isPrimary)) return emphasise(hand, resume)
   const yrs = c.years != null ? `${c.years} years` : 'Several years'
-  const sub = c.subcategory.toLowerCase()
-  const top = c.skills.slice(0, 2).join(' and ')
+  const sub = (resume && !resume.isPrimary ? resume.headline.split(' · ')[0] : c.subcategory).toLowerCase()
+  const orderedSkills = skillsFor(c, resume)
+  const top = orderedSkills.slice(0, 2).join(' and ')
   const evidenced = r ? r.mustSkills.filter(s => c.skills.includes(s)) : []
-  const a = c.achievements[variant % 2 === 0 ? 0 : 1] ?? c.achievements[0]
+  const orderedAch = emphasise(c.achievements, resume)
+  const a = orderedAch[variant % 2 === 0 ? 0 : 1] ?? orderedAch[0]
   const out = [
     r
       ? `${yrs} of ${sub} work${evidenced.length ? `, with ${evidenced.join(' and ')} on record` : ''}, a close match for ${r.title}.`
@@ -70,11 +78,15 @@ function draftBullets(c: Candidate, r: Role | undefined, variant: number): strin
     a ? `Proven impact: ${lowerFirst(a)}.` : '',
     c.availability && c.metro ? `Available in ${c.availability.replace(' notice', '')} · ${c.metro}${c.workModes ? `, ${c.workModes[0].toLowerCase()}` : ''}.` : '',
   ].filter(Boolean)
-  return variant % 2 === 0 ? out : [...out].reverse()
+  const base = variant % 2 === 0 ? out : [...out].reverse()
+  return emphasise(base, resume)
 }
 
-function aliasOf(c: Candidate) {
-  return [c.headline.split(' · ')[0], c.years != null ? `${c.years} yrs` : null, ALIAS_DOMAIN[c.id] ?? c.headline.split(' · ')[1]].filter(Boolean).join(' · ')
+function aliasOf(c: Candidate, resume?: Resume) {
+  const h = resume?.headline ?? c.headline
+  const parts = h.split(' · ')
+  const domain = resume && !resume.isPrimary ? parts[1] : (ALIAS_DOMAIN[c.id] ?? parts[1])
+  return [parts[0], c.years != null ? `${c.years} yrs` : null, domain].filter(Boolean).join(' · ')
 }
 function workAuthPill(c: Candidate): string | null {
   const w = c.workAuth
@@ -98,11 +110,38 @@ function bigNumber(a: string): string | null {
   return [...m].reverse().find(x => x.includes('%')) ?? m.find(x => x.includes('$')) ?? m[0]
 }
 
-interface Per { show: Record<string, boolean>; bullets: string[]; draft: number; take: string; res: Record<string, 'describe' | 'keep'> }
+interface Per {
+  show: Record<string, boolean>
+  bullets: string[]
+  impact: string[]
+  skills: string[]
+  expNotes: Record<string, string>
+  draft: number
+  res: Record<string, 'describe' | 'keep'>
+  sourceResumeId: string
+  revs: LocalRevision[]
+  curRev: number
+  downloadedRev: number | null
+  refineResult: RefineResult | null
+  refineInstruction: string
+  refineUsage: number
+}
+
+function defaultImpact(c: Candidate, resume?: Resume): string[] {
+  return emphasise(c.achievements.filter(a => /\d/.test(a)).slice(0, 4), resume)
+}
+function makeSnapshot(bullets: string[], impact: string[], skills: string[]): SectionContent {
+  return { why: [...bullets], impact: [...impact], skills: [...skills] }
+}
 
 /* ---------- Screen ---------- */
 const STATES = [
   { id: 'live', label: 'Live (from link)' },
+  { id: 'refine-diff', label: 'Refine · section diff' },
+  { id: 'refine-blocked', label: 'Refine · fact blocked' },
+  { id: 'revisions', label: 'Revisions popover' },
+  { id: 'source-growth', label: 'Source · Growth resume' },
+  { id: 'take-draft', label: 'Take · unsigned draft' },
   { id: 'clean', label: 'Single · clean' },
   { id: 'identifiers', label: 'Identifiers found' },
   { id: 'bulk', label: 'Bulk tabs' },
@@ -126,7 +165,14 @@ export function MaskedBuilder() {
   let role: string
   switch (scenario) {
     case 'clean': ids = ['marcus']; role = 'brightdesk-gmm'; break
-    case 'identifiers': ids = ['priya']; role = 'northwind-spm'; break
+    case 'identifiers':
+    case 'refine-diff':
+    case 'refine-blocked':
+    case 'revisions':
+    case 'source-growth':
+      ids = ['priya']; role = 'northwind-spm'; break
+    case 'take-draft':
+      ids = ['ana']; role = 'lumen-fse'; break
     case 'bulk': ids = urlIds.length > 1 ? urlIds : ['priya', 'ana', 'marcus']; role = urlIds.length > 1 && urlRole ? urlRole : 'none'; break
     case 'no-role': ids = ['marcus']; role = 'none'; break
     case 'thin': ids = ['ana']; role = 'lumen-fse'; break
@@ -145,6 +191,7 @@ export function MaskedBuilder() {
 
 function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: string; wf: string; setWf: (v: string) => void }) {
   const app = useApp()
+  const navigate = useNavigate()
   const cands = ids.map(id => app.candidate(id)).filter((c): c is Candidate => !!c)
   const bulk = cands.length > 1
   const [target, setTarget] = useState(initialRole)
@@ -159,13 +206,85 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
   const [reviewIdx, setReviewIdx] = useState(0)
   const [focusFlag, setFocusFlag] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [refining, setRefining] = useState(false)
   const [emailOpen, setEmailOpen] = useState(false)
   const idRef = useRef<HTMLDivElement>(null)
 
   const r = target !== 'none' && target !== 'url' ? app.role(target) : undefined
-  const [per, setPer] = useState<Record<string, Per>>(() => Object.fromEntries(cands.map(c => [c.id, {
-    show: {}, bullets: draftBullets(c, r, 0), draft: 0, take: c.ourTake ?? '', res: {},
-  }])))
+
+  const buildInitialPer = (c: Candidate): Per => {
+    const list = app.resumesFor(c.id)
+    const match = r ? app.matches.find(m => m.candidateId === c.id && m.roleId === r.id) : undefined
+    const defaultRes = (wf === 'source-growth' && c.id === 'priya' ? list.find(x => x.id === 'res-priya-growth') : undefined)
+      ?? list.find(x => x.id === match?.scoredOnResumeId)
+      ?? list.find(x => x.isPrimary)
+      ?? list[0]
+    const bullets = draftBullets(c, r, 0, defaultRes)
+    const impact = defaultImpact(c, defaultRes)
+    const skills = skillsFor(c, defaultRes)
+    const snap1 = makeSnapshot(bullets, impact, skills)
+    let revs = initialRevisions(snap1, app.currentUser.displayName)
+    let curRev = 1
+    let refineResult: RefineResult | null = null
+    let refineInstruction = ''
+    let refineUsage = 0
+    let curBullets = bullets
+    let curImpact = impact
+    let curSkills = skills
+
+    if ((wf === 'refine-diff' || wf === 'revisions') && c.id === cands[0].id) {
+      const secs: OutputSection[] = [
+        { key: 'why', label: 'Why we recommend', lines: bullets, kind: 'list' },
+        { key: 'impact', label: 'Impact highlights', lines: impact, kind: 'list' },
+        { key: 'skills', label: 'Skills', lines: skills, kind: 'list' },
+      ]
+      const instr = 'Shorter, lead with payments'
+      const res = runRefine(secs, instr, 'all', factHaystack(c, defaultRes))
+      const byWhy = res.changes.find(ch => ch.key === 'why')?.after ?? bullets
+      const byImpact = res.changes.find(ch => ch.key === 'impact')?.after ?? impact
+      const bySkills = res.changes.find(ch => ch.key === 'skills')?.after ?? skills
+      const snap2 = makeSnapshot(byWhy, byImpact, bySkills)
+      revs = pushRevision(revs, instr, 'Whole resume', app.currentUser.displayName, snap2)
+      curRev = 2
+      curBullets = byWhy
+      curImpact = byImpact
+      curSkills = bySkills
+      refineUsage = 1
+      if (wf === 'refine-diff') {
+        refineResult = res
+        refineInstruction = instr
+      }
+    } else if (wf === 'refine-blocked' && c.id === cands[0].id) {
+      const secs: OutputSection[] = [
+        { key: 'why', label: 'Why we recommend', lines: bullets, kind: 'list' },
+        { key: 'impact', label: 'Impact highlights', lines: impact, kind: 'list' },
+        { key: 'skills', label: 'Skills', lines: skills, kind: 'list' },
+      ]
+      const instr = 'Mention Google and add Kubernetes'
+      refineResult = runRefine(secs, instr, 'all', factHaystack(c, defaultRes))
+      refineInstruction = instr
+      refineUsage = 1
+    }
+
+    return {
+      show: {},
+      bullets: curBullets,
+      impact: curImpact,
+      skills: curSkills,
+      expNotes: { ...(EXP_NOTES[c.id] ?? {}) },
+      draft: 0,
+      res: {},
+      sourceResumeId: defaultRes?.id ?? `res-${c.id}`,
+      revs,
+      curRev,
+      downloadedRev: null,
+      refineResult,
+      refineInstruction,
+      refineUsage,
+    }
+  }
+
+  const [per, setPer] = useState<Record<string, Per>>(() => Object.fromEntries(cands.map(c => [c.id, buildInitialPer(c)])))
   const patch = (id: string, p: Partial<Per>) => setPer(s => ({ ...s, [id]: { ...s[id], ...p } }))
 
   // C is only available with a target role
@@ -187,6 +306,165 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
   const rendering = wf === 'rendering' || busy
   const failed = wf === 'failed'
 
+  const { list: sourceResumes, fromMatch } = useSourceResume(cur.id, r?.id)
+  const activeSourceResume = sourceResumes.find(x => x.id === curPer.sourceResumeId) ?? sourceResumes[0]
+  const [staleReason, setStaleReason] = useState<string | null>(() => readStale(`masked:${cur.id}`))
+  useEffect(() => { setStaleReason(readStale(`masked:${cur.id}`)) }, [cur.id])
+
+  const switchSourceResume = (resumeId: string) => {
+    const nextRes = sourceResumes.find(x => x.id === resumeId)
+    const nextBullets = draftBullets(cur, r, curPer.draft, nextRes)
+    const nextImpact = defaultImpact(cur, nextRes)
+    const nextSkills = skillsFor(cur, nextRes)
+    const snap = makeSnapshot(nextBullets, nextImpact, nextSkills)
+    const nextRevs = pushRevision(curPer.revs, `Switched to ${resumeLabel(nextRes)}`, 'Whole resume', app.currentUser.displayName, snap)
+    patch(cur.id, {
+      sourceResumeId: resumeId,
+      bullets: nextBullets,
+      impact: nextImpact,
+      skills: nextSkills,
+      revs: nextRevs,
+      curRev: nextRevs.length,
+      refineResult: null,
+    })
+    app.toast(`Using ${resumeLabel(nextRes)}`)
+  }
+
+  const sectionsFor = (c: Candidate, p: Per): OutputSection[] => [
+    { key: 'why', label: 'Why we recommend', lines: p.bullets, kind: 'list' },
+    { key: 'impact', label: 'Impact highlights', lines: p.impact, kind: 'list' },
+    { key: 'skills', label: 'Skills', lines: p.skills, kind: 'list' },
+  ]
+
+  const handleRefine = (instruction: string, scope: string) => {
+    setRefining(true)
+    window.setTimeout(() => {
+      setRefining(false)
+      const secs = sectionsFor(cur, curPer)
+      const result = runRefine(secs, instruction, scope, factHaystack(cur, activeSourceResume))
+      const nextBullets = result.changes.find(ch => ch.key === 'why')?.after ?? curPer.bullets
+      const nextImpact = result.changes.find(ch => ch.key === 'impact')?.after ?? curPer.impact
+      const nextSkills = result.changes.find(ch => ch.key === 'skills')?.after ?? curPer.skills
+      let nextRevs = curPer.revs
+      let nextRevNum = curPer.curRev
+      if (result.changes.length > 0) {
+        const scopeLabel = scope === 'all' ? 'Whole resume' : (secs.find(s => s.key === scope)?.label ?? scope)
+        const snap = makeSnapshot(nextBullets, nextImpact, nextSkills)
+        nextRevs = pushRevision(curPer.revs, instruction, scopeLabel, app.currentUser.displayName, snap)
+        nextRevNum = nextRevs.length
+      }
+      patch(cur.id, {
+        bullets: nextBullets,
+        impact: nextImpact,
+        skills: nextSkills,
+        revs: nextRevs,
+        curRev: nextRevNum,
+        refineResult: result,
+        refineInstruction: instruction,
+        refineUsage: curPer.refineUsage + 1,
+      })
+    }, 280)
+  }
+
+  const keepSection = (secKey: string) => {
+    if (!curPer.refineResult) return
+    const remChanges = curPer.refineResult.changes.filter(ch => ch.key !== secKey)
+    const remBlocked = curPer.refineResult.blocked
+    patch(cur.id, {
+      refineResult: remChanges.length || remBlocked.length ? { changes: remChanges, blocked: remBlocked } : null,
+    })
+  }
+
+  const undoSection = (secKey: string) => {
+    const ch = curPer.refineResult?.changes.find(x => x.key === secKey)
+    if (!ch) return
+    const nextBullets = secKey === 'why' ? ch.before : curPer.bullets
+    const nextImpact = secKey === 'impact' ? ch.before : curPer.impact
+    const nextSkills = secKey === 'skills' ? ch.before : curPer.skills
+    const snap = makeSnapshot(nextBullets, nextImpact, nextSkills)
+    const remChanges = curPer.refineResult!.changes.filter(x => x.key !== secKey)
+    const remBlocked = curPer.refineResult!.blocked
+    patch(cur.id, {
+      bullets: nextBullets,
+      impact: nextImpact,
+      skills: nextSkills,
+      revs: amendRevision(curPer.revs, curPer.curRev, snap),
+      refineResult: remChanges.length || remBlocked.length ? { changes: remChanges, blocked: remBlocked } : null,
+    })
+  }
+
+  const dismissBlock = (secKey: string) => {
+    if (!curPer.refineResult) return
+    const remChanges = curPer.refineResult.changes
+    const remBlocked = curPer.refineResult.blocked.filter(b => b.key !== secKey)
+    patch(cur.id, {
+      refineResult: remChanges.length || remBlocked.length ? { changes: remChanges, blocked: remBlocked } : null,
+    })
+  }
+
+  const regenerateSection = (secKey: 'why' | 'impact' | 'skills') => {
+    const nextDraft = curPer.draft + 1
+    const nextBullets = secKey === 'why' ? draftBullets(cur, r, nextDraft, activeSourceResume) : curPer.bullets
+    const nextImpact = secKey === 'impact' ? [...curPer.impact].reverse() : curPer.impact
+    const nextSkills = secKey === 'skills' ? skillsFor(cur, activeSourceResume) : curPer.skills
+    const snap = makeSnapshot(nextBullets, nextImpact, nextSkills)
+    const label = secKey === 'why' ? 'Why we recommend' : secKey === 'impact' ? 'Impact highlights' : 'Skills'
+    const nextRevs = pushRevision(curPer.revs, `Regenerated ${label}`, label, app.currentUser.displayName, snap)
+    patch(cur.id, {
+      draft: nextDraft,
+      bullets: nextBullets,
+      impact: nextImpact,
+      skills: nextSkills,
+      revs: nextRevs,
+      curRev: nextRevs.length,
+    })
+    app.toast(`${label} regenerated`)
+  }
+
+  const regenerateAll = () => {
+    const nextDraft = curPer.draft + 1
+    const nextBullets = draftBullets(cur, r, nextDraft, activeSourceResume)
+    const nextImpact = defaultImpact(cur, activeSourceResume)
+    const nextSkills = skillsFor(cur, activeSourceResume)
+    const snap = makeSnapshot(nextBullets, nextImpact, nextSkills)
+    const nextRevs = pushRevision(curPer.revs, 'Regenerated whole resume', 'Whole resume', app.currentUser.displayName, snap)
+    writeStale(`masked:${cur.id}`, null)
+    setStaleReason(null)
+    patch(cur.id, {
+      draft: nextDraft,
+      bullets: nextBullets,
+      impact: nextImpact,
+      skills: nextSkills,
+      revs: nextRevs,
+      curRev: nextRevs.length,
+      refineResult: null,
+    })
+    setDraftedFor(target)
+    app.toast('Masked resume regenerated')
+  }
+
+  const restoreRevision = (candId: string, n: number) => {
+    const p = per[candId]
+    const targetRev = p.revs.find(x => x.n === n)
+    if (!targetRev) return
+    patch(candId, {
+      bullets: targetRev.snapshot.why ?? p.bullets,
+      impact: targetRev.snapshot.impact ?? p.impact,
+      skills: targetRev.snapshot.skills ?? p.skills,
+      curRev: n,
+      refineResult: null,
+    })
+    app.toast(`Restored v${n}`)
+  }
+
+  const handleFixInProfile = (label: string) => {
+    const reason = `Profile opened to fix “${label.slice(0, 36)}”`
+    writeStale(`masked:${cur.id}`, reason)
+    setStaleReason(reason)
+    app.toast('Marked output stale · opening profile')
+    navigate(`/candidates/${cur.id}`)
+  }
+
   const reviewNext = () => {
     let c = cur
     let flags = curFlags
@@ -204,12 +482,32 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
     window.setTimeout(() => document.getElementById(elId)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 450)
   }
 
+  const maskingPrompt = app.prompts.find(p => p.id === 'masking')
+  const promptVersionLabel = maskingPrompt ? `Masking v${maskingPrompt.activeVersion}` : 'Masking v4'
+
   const download = (list: Candidate[], anyway: boolean) => {
     setBusy(true)
     window.setTimeout(() => {
       setBusy(false)
-      app.addOutputs(list.map(c => ({ candidateId: c.id, type: 'Masked' as const, roleId: r?.id ?? null, template: TEMPLATE_LABEL[template], stale: false })))
+      app.addOutputs(list.map(c => {
+        const p = per[c.id]
+        const resList = app.resumesFor(c.id)
+        const srcRes = resList.find(x => x.id === p.sourceResumeId) ?? resList[0]
+        return {
+          candidateId: c.id,
+          type: 'Masked' as const,
+          roleId: r?.id ?? null,
+          template: TEMPLATE_LABEL[template],
+          stale: false,
+          sourceResumeId: srcRes?.id,
+          sourceVersion: latestVersion(srcRes),
+          promptVersion: promptVersionLabel,
+          revisions: storedRevisions(p.revs, p.curRev),
+        }
+      }))
       list.forEach(c => {
+        const p = per[c.id]
+        patch(c.id, { downloadedRev: p.curRev })
         const n = unresolved(c).length
         app.log({
           what: `Generated masked resume for ${c.name} (template ${template})${anyway && n ? ` · downloaded anyway with ${n} possible identifier${n === 1 ? '' : 's'}` : ''}`,
@@ -231,6 +529,8 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
   const left = (
     <>
       {bulk && <div className="eyebrow text-gray-1000">Sections 3–5 apply to <span className="text-foreground">{cur.name}</span></div>}
+      <SourceResumeSelect list={sourceResumes} value={curPer.sourceResumeId} onChange={switchSourceResume} fromMatch={fromMatch} />
+
       <BezelCard icon={<Target />} title="1 · Target">
         <div className="space-y-4">
           <Field label="Write it for">
@@ -267,7 +567,7 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
 
       <BezelCard icon={<EyeOff />} title="3 · What's hidden">
         <div className="space-y-4">
-          <Checkbox checked={aliasOn} onChange={setAliasOn} label="Name → descriptive alias" description={aliasOf(cur)} />
+          <Checkbox checked={aliasOn} onChange={setAliasOn} label="Name → descriptive alias" description={aliasOf(cur, activeSourceResume)} />
           <div aria-disabled="true" className="pointer-events-none opacity-60">
             <Checkbox checked onChange={() => {}} label={<span className="inline-flex items-center gap-1.5">Contact details <Lock className="size-3" /></span>} description="Email, phone, LinkedIn and photo are always hidden." />
           </div>
@@ -305,9 +605,8 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
 
       <BezelCard icon={<Sparkles />} title="4 · Why we recommend"
         action={<Button variant="ghost" size="sm" icon={<RefreshCw />} onClick={() => {
-          const d = curPer.draft + 1
-          patch(cur.id, { bullets: draftBullets(cur, r, d), draft: d }); setDraftedFor(target)
-          app.toast('Bullets regenerated')
+          regenerateSection('why')
+          setDraftedFor(target)
         }}>Regenerate bullets</Button>}>
         <div className="space-y-2">
           {curPer.bullets.map((b, i) => (
@@ -315,7 +614,11 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
               <span className="mt-2.5 font-mono text-[10px] text-gray-1000 tnum">{i + 1}</span>
               <div className="min-w-0 flex-1">
                 <Textarea aria-label={`Bullet ${i + 1}`} className="min-h-9 py-1.5" value={b}
-                  onChange={e => patch(cur.id, { bullets: curPer.bullets.map((x, j) => (j === i ? e.target.value : x)) })} />
+                  onChange={e => {
+                    const nextBullets = curPer.bullets.map((x, j) => (j === i ? e.target.value : x))
+                    const snap = makeSnapshot(nextBullets, curPer.impact, curPer.skills)
+                    patch(cur.id, { bullets: nextBullets, revs: amendRevision(curPer.revs, curPer.curRev, snap) })
+                  }} />
               </div>
             </div>
           ))}
@@ -325,10 +628,8 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
         <p className="mt-3 text-xs text-muted-foreground">AI-drafted from the profile. Edit freely; only facts on record are used.</p>
       </BezelCard>
 
-      <BezelCard icon={<MessageSquareQuote />} title="5 · Our take" action={<span className="text-xs text-muted-foreground">Optional</span>}>
-        <Textarea maxChars={280} placeholder="One line in your own words, e.g. what stood out on the call." value={curPer.take}
-          onChange={e => patch(cur.id, { take: e.target.value })} aria-label="Our take" />
-        <p className="mt-2 text-xs text-muted-foreground">Printed in quotes and signed “— {RECRUITER.first}”.</p>
+      <BezelCard icon={<MessageSquareQuote />} title="5 · Our take">
+        <SignedTakeBlock candidateId={cur.id} roleId={r?.id ?? null} compact />
       </BezelCard>
     </>
   )
@@ -337,6 +638,8 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
   const thin = cur.achievements.length <= 2
   const omitted = notShown(cur)
   const kept = (FLAGS[cur.id] ?? []).filter(f => curPer.res[f.id] === 'keep')
+  const curTake = app.takeFor(cur.id, r?.id ?? null)
+
   const right = (
     <div className="flex h-full min-h-[640px] flex-col">
       {bulk && (
@@ -362,6 +665,11 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
             The PDF didn't generate. Your settings are kept.
           </Banner>
         )}
+        {staleReason && (
+          <Banner variant="warning" actions={<Button size="sm" icon={<RefreshCw />} onClick={regenerateAll}>Regenerate</Button>}>
+            Stale · {staleReason}. Regenerate to pull the latest profile facts.
+          </Banner>
+        )}
         {curFlags.length === 0 ? (
           <div role="status" className="flex flex-wrap items-center gap-2 text-sm text-[#15803d]">
             <CircleCheck className="size-4 text-success" />No identifiers found
@@ -384,17 +692,75 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
             </ul>
           </div>
         )}
+        <RefineStatus
+          result={curPer.refineResult}
+          instruction={curPer.refineInstruction}
+          onDismiss={() => patch(cur.id, { refineResult: null })}
+        />
         {omitted.length > 0 && <InfoNote>Not shown: {omitted.join(', ')}.</InfoNote>}
         {thin && <InfoNote>Only {cur.achievements.length} achievement{cur.achievements.length === 1 ? '' : 's'} found. The page will be shorter.</InfoNote>}
       </div>
       <div className="min-h-0 flex-1">
-        <DocFrame toolbar={<Switch checked={showHidden} onChange={setShowHidden} label="Show what's hidden" />}>
+        <DocFrame
+          toolbar={
+            <div className="flex flex-1 items-center justify-between gap-2 pr-2">
+              <Switch checked={showHidden} onChange={setShowHidden} label="Show what's hidden" />
+              <RevisionsPopover
+                key={`${cur.id}-${wf === 'revisions' ? 'open' : 'closed'}`}
+                revisions={curPer.revs}
+                current={curPer.curRev}
+                downloaded={curPer.downloadedRev}
+                defaultOpen={wf === 'revisions'}
+                onRestore={n => restoreRevision(cur.id, n)}
+              />
+            </div>
+          }
+        >
           {rendering ? <PageSkeleton /> : (
-            <MaskedPage c={cur} r={r} template={template} per={curPer} aliasOn={aliasOn} showSchools={showSchools}
-              showHidden={showHidden} reviewing={reviewing} focusFlag={focusFlag} postingUrl={target === 'url' ? postingUrl : ''} />
+            <MaskedPage
+              c={cur}
+              r={r}
+              resume={activeSourceResume}
+              template={template}
+              per={curPer}
+              take={curTake}
+              takeAuthor={curTake ? app.member(curTake.authorId) : undefined}
+              currentUser={app.currentUser}
+              aliasOn={aliasOn}
+              showSchools={showSchools}
+              showHidden={showHidden}
+              reviewing={reviewing}
+              focusFlag={focusFlag}
+              postingUrl={target === 'url' ? postingUrl : ''}
+              onEditBullet={(i, v) => {
+                const nextBullets = curPer.bullets.map((x, j) => (j === i ? v : x))
+                const snap = makeSnapshot(nextBullets, curPer.impact, curPer.skills)
+                patch(cur.id, { bullets: nextBullets, revs: amendRevision(curPer.revs, curPer.curRev, snap) })
+              }}
+              onEditImpact={(i, v) => {
+                const nextImpact = curPer.impact.map((x, j) => (j === i ? v : x))
+                const snap = makeSnapshot(curPer.bullets, nextImpact, curPer.skills)
+                patch(cur.id, { impact: nextImpact, revs: amendRevision(curPer.revs, curPer.curRev, snap) })
+              }}
+              onEditExpNote={(coName, v) => {
+                patch(cur.id, { expNotes: { ...curPer.expNotes, [coName]: v } })
+              }}
+              onKeepSection={keepSection}
+              onUndoSection={undoSection}
+              onDismissBlock={dismissBlock}
+              onRegenerateSection={regenerateSection}
+              onFixInProfile={handleFixInProfile}
+            />
           )}
         </DocFrame>
       </div>
+      <RefineBox
+        sections={sectionsFor(cur, curPer).map(s => ({ key: s.key, label: s.label }))}
+        busy={refining}
+        usage={curPer.refineUsage}
+        onRefine={handleRefine}
+        onRegenerateAll={regenerateAll}
+      />
     </div>
   )
 
@@ -403,7 +769,9 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
   const footer = (
     <div className="flex flex-wrap items-center gap-2">
       <Button icon={<Copy />} onClick={() => setEmailOpen(true)}>Copy email text</Button>
-      <span className="eyebrow ml-1 hidden text-gray-1000 sm:inline">{TEMPLATE_LABEL[template]} · {r ? `${r.title} — ${r.company}` : target === 'url' ? 'Public posting' : 'No specific role'}</span>
+      <span className="eyebrow ml-1 hidden text-gray-1000 sm:inline">
+        {TEMPLATE_LABEL[template]} · {resumeLabel(activeSourceResume)} · {promptVersionLabel} · {r ? `${r.title} — ${r.company}` : target === 'url' ? 'Public posting' : 'No specific role'}
+      </span>
       <div className="ml-auto flex items-center gap-2">
         {flagsHere > 0 && reviewing && (
           <Button variant="ghost" icon={<Download />} disabled={rendering} onClick={() => download(bulk ? cands : [cur], true)}>{bulk ? 'Download all anyway' : 'Download anyway'}</Button>
@@ -422,7 +790,7 @@ function Builder({ ids, initialRole, wf, setWf }: { ids: string[]; initialRole: 
   return (
     <>
       <SplitPane leftTitle="Settings" rightTitle={bulk ? `Preview · ${cands.length} candidates` : 'Preview'}
-        leftActions={<ExampleMark />} rightActions={<span className="font-mono text-[11px] text-muted-foreground">{rendering ? 'Rendering…' : failed ? 'Not generated' : 'Ready'}</span>}
+        leftActions={<ExampleMark />} rightActions={<span className="font-mono text-[11px] text-muted-foreground">{rendering ? 'Rendering…' : failed ? 'Not generated' : `Ready · v${curPer.curRev}`}</span>}
         left={left} right={right} footer={footer} />
       <CopyEmailDialog open={emailOpen} onClose={() => setEmailOpen(false)} candidateIds={cands.map(c => c.id)} roleId={r?.id ?? null} initialVariant="prospect" />
     </>
@@ -443,7 +811,7 @@ function PageSkeleton() {
   )
 }
 
-/* ---------- Masked page (§9.1) ---------- */
+/* ---------- Masked page (§9.1 + v0.3 T3, T6, T8) ---------- */
 function Masked({ on, what, children }: { on: boolean; what: string; children: React.ReactNode }) {
   return <span className={on ? 'hidden-span px-0.5' : undefined} title={on ? `Hidden: ${what}` : undefined}>{children}</span>
 }
@@ -451,17 +819,31 @@ function H({ children }: { children: React.ReactNode }) {
   return <h3 className="mb-1.5 font-mono text-[8px] font-medium tracking-[0.14em] text-gray-1000 uppercase">{children}</h3>
 }
 
-function MaskedPage({ c, r, template, per, aliasOn, showSchools, showHidden, reviewing, focusFlag, postingUrl }: {
-  c: Candidate; r: Role | undefined; template: TemplateId; per: Per; aliasOn: boolean; showSchools: boolean
-  showHidden: boolean; reviewing: boolean; focusFlag: string | null; postingUrl: string
+function MaskedPage({
+  c, r, resume, template, per, take, takeAuthor, currentUser, aliasOn, showSchools, showHidden, reviewing, focusFlag, postingUrl,
+  onEditBullet, onEditImpact, onEditExpNote, onKeepSection, onUndoSection, onDismissBlock, onRegenerateSection, onFixInProfile,
+}: {
+  c: Candidate; r: Role | undefined; resume: Resume | undefined; template: TemplateId; per: Per
+  take: ReturnType<ReturnType<typeof useApp>['takeFor']>; takeAuthor: ReturnType<ReturnType<typeof useApp>['member']>
+  currentUser: ReturnType<typeof useApp>['currentUser']
+  aliasOn: boolean; showSchools: boolean; showHidden: boolean; reviewing: boolean; focusFlag: string | null; postingUrl: string
+  onEditBullet: (i: number, v: string) => void
+  onEditImpact: (i: number, v: string) => void
+  onEditExpNote: (coName: string, v: string) => void
+  onKeepSection: (key: string) => void
+  onUndoSection: (key: string) => void
+  onDismissBlock: (key: string) => void
+  onRegenerateSection: (key: 'why' | 'impact' | 'skills') => void
+  onFixInProfile: (label: string) => void
 }) {
   const flags = FLAGS[c.id] ?? []
-  const alias = aliasOf(c)
+  const alias = aliasOf(c, resume)
   const auth = workAuthPill(c)
   const availability = c.fieldSources.availability === 'ASSUMED' ? null : c.availability
   const loc = c.metro ? `${c.metro}${c.workModes ? ` · ${c.workModes.join(' / ').toLowerCase()}` : ''}` : null
-  const impact = c.achievements.filter(a => /\d/.test(a)).slice(0, 4)
+  const impact = per.impact
   const bullets = per.bullets.filter(b => b.trim())
+  const skillsList = per.skills
 
   /** Render text, applying identity-check resolutions */
   const withFlags = (text: string): React.ReactNode => {
@@ -489,6 +871,9 @@ function MaskedPage({ c, r, template, per, aliasOn, showSchools, showHidden, rev
     return parts
   }
 
+  const changeFor = (key: string) => per.refineResult?.changes.find(ch => ch.key === key)
+  const blockFor = (key: string) => per.refineResult?.blocked.find(bl => bl.key === key)
+
   const pills = [availability ? `Available: ${availability}` : null, auth, loc].filter((p): p is string => !!p)
   const header = (
     <header className="rounded-md bg-[#111] px-5 py-4 text-white">
@@ -515,77 +900,174 @@ function MaskedPage({ c, r, template, per, aliasOn, showSchools, showHidden, rev
   )
 
   const why = bullets.length > 0 && (
-    <section>
-      <H>Why we recommend</H>
-      <ul className="space-y-1 text-[9.5px] leading-snug">
-        {bullets.map((b, i) => <li key={i} className="flex gap-1.5"><span className="text-gray-800">—</span><span>{withFlags(b)}</span></li>)}
-      </ul>
-    </section>
+    <DiffSection
+      label="Why we recommend"
+      change={changeFor('why')}
+      block={blockFor('why')}
+      onKeep={() => onKeepSection('why')}
+      onUndo={() => onUndoSection('why')}
+      onDismissBlock={() => onDismissBlock('why')}
+      onRegenerate={() => onRegenerateSection('why')}
+    >
+      <section>
+        <H>Why we recommend</H>
+        <ul className="space-y-1 text-[9.5px] leading-snug">
+          {bullets.map((b, i) => (
+            <li key={i} className="group/fact flex gap-1.5">
+              <span className="text-gray-800">—</span>
+              <span className="flex-1">
+                <EditableText
+                  value={b}
+                  display={withFlags(b)}
+                  label={`recommendation bullet ${i + 1}`}
+                  onChange={v => onEditBullet(i, v)}
+                />
+                <FixInProfile label={b} onClick={() => onFixInProfile(b)} />
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </DiffSection>
   )
-  const take = per.take.trim() && (
-    <section className="border-l-2 border-gray-1100 pl-3">
-      <p className="text-[10px] leading-snug italic">“{per.take.trim().slice(0, 280)}”</p>
-      <p className="mt-0.5 text-[8px] text-gray-1000">— {RECRUITER.first}, HeroScouter</p>
-    </section>
-  )
+
+  const takeBlock = <PageTake take={take} author={takeAuthor} variant="quote" />
+
   const impactList = impact.length > 0 && (
-    <section>
-      <H>Impact highlights</H>
-      <ul className="space-y-1 text-[9.5px] leading-snug">
-        {impact.map((a, i) => <li key={i} className="flex gap-1.5"><span className="text-gray-800">▪</span><span>{withFlags(a)}</span></li>)}
-      </ul>
-    </section>
+    <DiffSection
+      label="Impact highlights"
+      change={changeFor('impact')}
+      block={blockFor('impact')}
+      onKeep={() => onKeepSection('impact')}
+      onUndo={() => onUndoSection('impact')}
+      onDismissBlock={() => onDismissBlock('impact')}
+      onRegenerate={() => onRegenerateSection('impact')}
+    >
+      <section>
+        <H>Impact highlights</H>
+        <ul className="space-y-1 text-[9.5px] leading-snug">
+          {impact.map((a, i) => (
+            <li key={i} className="group/fact flex gap-1.5">
+              <span className="text-gray-800">▪</span>
+              <span className="flex-1">
+                <EditableText
+                  value={a}
+                  display={withFlags(a)}
+                  label={`impact highlight ${i + 1}`}
+                  onChange={v => onEditImpact(i, v)}
+                />
+                <FixInProfile label={a} onClick={() => onFixInProfile(a)} />
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </DiffSection>
   )
+
   const bigNums = impact.length > 0 && (
-    <section className={cn('grid gap-2', impact.length > 1 ? 'grid-cols-2' : 'grid-cols-1')}>
-      {impact.map((a, i) => (
-        <div key={i} className="rounded-md border border-gray-500 p-2.5">
-          <div className="font-mono text-[18px] leading-none font-medium tracking-tight">{bigNumber(a) ?? '—'}</div>
-          <div className="mt-1 text-[8.5px] leading-snug text-gray-1100">{withFlags(a)}</div>
+    <DiffSection
+      label="Impact highlights"
+      change={changeFor('impact')}
+      block={blockFor('impact')}
+      onKeep={() => onKeepSection('impact')}
+      onUndo={() => onUndoSection('impact')}
+      onDismissBlock={() => onDismissBlock('impact')}
+      onRegenerate={() => onRegenerateSection('impact')}
+    >
+      <section className={cn('grid gap-2', impact.length > 1 ? 'grid-cols-2' : 'grid-cols-1')}>
+        {impact.map((a, i) => (
+          <div key={i} className="group/fact rounded-md border border-gray-500 p-2.5">
+            <div className="font-mono text-[18px] leading-none font-medium tracking-tight">{bigNumber(a) ?? '—'}</div>
+            <div className="mt-1 text-[8.5px] leading-snug text-gray-1100">
+              <EditableText
+                value={a}
+                display={withFlags(a)}
+                label={`impact highlight ${i + 1}`}
+                onChange={v => onEditImpact(i, v)}
+              />
+              <FixInProfile label={a} onClick={() => onFixInProfile(a)} />
+            </div>
+          </div>
+        ))}
+      </section>
+    </DiffSection>
+  )
+
+  const skills = (skillsList.length > 0 || c.tools.length > 0) && (
+    <DiffSection
+      label="Skills"
+      change={changeFor('skills')}
+      block={blockFor('skills')}
+      onKeep={() => onKeepSection('skills')}
+      onUndo={() => onUndoSection('skills')}
+      onDismissBlock={() => onDismissBlock('skills')}
+      onRegenerate={() => onRegenerateSection('skills')}
+    >
+      <section className="group/fact">
+        <H>Skills</H>
+        <div className="space-y-1 text-[9px]">
+          {skillsList.length > 0 && (
+            <div className="flex gap-2">
+              <span className="w-9 shrink-0 text-gray-1000">Core</span>
+              <span>
+                {skillsList.join(' · ')}
+                <FixInProfile label="Skills" onClick={() => onFixInProfile('Skills')} />
+              </span>
+            </div>
+          )}
+          {c.tools.length > 0 && <div className="flex gap-2"><span className="w-9 shrink-0 text-gray-1000">Tools</span><span>{c.tools.join(' · ')}</span></div>}
         </div>
-      ))}
-    </section>
+      </section>
+    </DiffSection>
   )
-  const skills = (c.skills.length > 0 || c.tools.length > 0) && (
-    <section>
-      <H>Skills</H>
-      <div className="space-y-1 text-[9px]">
-        {c.skills.length > 0 && <div className="flex gap-2"><span className="w-9 shrink-0 text-gray-1000">Core</span><span>{c.skills.join(' · ')}</span></div>}
-        {c.tools.length > 0 && <div className="flex gap-2"><span className="w-9 shrink-0 text-gray-1000">Tools</span><span>{c.tools.join(' · ')}</span></div>}
-      </div>
-    </section>
-  )
+
   const exp = c.companies.length > 0 && (
     <section>
       <H>Experience</H>
       <ol className="space-y-1.5 border-l border-gray-500 pl-3 text-[9px]">
         {c.companies.map(co => {
           const shown = !!per.show[co.name]
-          const note = EXP_NOTES[c.id]?.[co.name]
+          const note = per.expNotes[co.name] ?? EXP_NOTES[c.id]?.[co.name]
           return (
-            <li key={co.name} className="relative">
+            <li key={co.name} className="group/fact relative">
               <span className="absolute top-1 -left-[15px] size-1.5 rounded-full bg-gray-1100" />
               <div className="flex items-baseline justify-between gap-2">
-                <span className="font-medium">{co.title}</span>
+                <span className="font-medium">
+                  {co.title}
+                  <FixInProfile label={co.name} onClick={() => onFixInProfile(co.name)} />
+                </span>
                 <span className="shrink-0 font-mono text-[8px] text-gray-1000 tnum">{co.start}–{co.end}</span>
               </div>
               <div className="text-gray-1100">{shown ? co.name : <Masked on={showHidden} what={`Employer: ${co.name}`}>{co.descriptor}</Masked>}</div>
-              {note && <div className="text-[8.5px] text-gray-1100">{withFlags(note)}</div>}
+              {note && (
+                <div className="text-[8.5px] text-gray-1100">
+                  <EditableText
+                    value={note}
+                    display={withFlags(note)}
+                    label={`${co.name} experience note`}
+                    onChange={v => onEditExpNote(co.name, v)}
+                  />
+                </div>
+              )}
             </li>
           )
         })}
       </ol>
     </section>
   )
+
   const edu = c.education && (
-    <section>
+    <section className="group/fact">
       <H>Education</H>
       <p className="text-[9px]">
         {c.education.degree}, {c.education.field}
         {showSchools ? ` · ${c.education.school}` : showHidden ? <> · <span className="hidden-span px-0.5" title={`Hidden: ${c.education.school}`}>school hidden</span></> : null}
+        <FixInProfile label={c.education.school} onClick={() => onFixInProfile('Education')} />
       </p>
     </section>
   )
+
   let fit: React.ReactNode = null
   if (r && template === 'C') {
     const rows: { need: string; evidence: string }[] = []
@@ -616,9 +1098,9 @@ function MaskedPage({ c, r, template, per, aliasOn, showSchools, showHidden, rev
   }
 
   const body: React.ReactNode[] =
-    template === 'B' ? [bigNums, why, take, exp, skills, edu]
-      : template === 'C' ? [fit, why, take, impactList, skills, exp, edu]
-        : [why, take, impactList, skills, exp, edu]
+    template === 'B' ? [bigNums, why, takeBlock, exp, skills, edu]
+      : template === 'C' ? [fit, why, takeBlock, impactList, skills, exp, edu]
+        : [why, takeBlock, impactList, skills, exp, edu]
 
   return (
     <article className="flex h-full min-h-full flex-col gap-4 px-7 py-6 text-[#111]" aria-label="Masked resume preview">
@@ -626,7 +1108,7 @@ function MaskedPage({ c, r, template, per, aliasOn, showSchools, showHidden, rev
       {postingUrl && <p className="font-mono text-[7.5px] text-gray-1000">Written for the posting at {postingUrl}</p>}
       {body.filter(Boolean).map((b, i) => <React.Fragment key={i}>{b}</React.Fragment>)}
       <footer className="mt-auto flex items-center justify-between gap-3 border-t border-gray-500 pt-2.5 text-[8.5px]">
-        <span>Interested? Reply to {RECRUITER.first} at <span className="font-medium">{RECRUITER.email}</span></span>
+        <span>Interested? Reply to {firstName(currentUser)} at <span className="font-medium">{currentUser.email}</span></span>
         <span className="text-right text-gray-1000">Profile: {alias}</span>
       </footer>
     </article>

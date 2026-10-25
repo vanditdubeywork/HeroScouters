@@ -3,18 +3,21 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Pencil, MoreHorizontal, Upload, Phone, PenLine, Trash2, Copy, FileText, Download, RefreshCw, HelpCircle, ListPlus,
   Check, X, User, Briefcase, Layers, Sparkles, SlidersHorizontal, ShieldCheck, StickyNote, MessageSquareText, Link2, Lightbulb, AlertTriangle, UserX,
+  Star, GitCompare, Wand2, Files,
 } from 'lucide-react'
 import { ScrollPage, useTopBar } from '../shell/AppShell'
 import {
   Avatar, BezelCard, Button, Checkbox, CompanyTypeTag, EmptyState, ExampleMark, Field, Input, Menu, PillTabs, Segmented, Select, Switch, Tag, Textarea, cn,
 } from '../components/ui'
 import {
-  AIStepper, Banner, CompletenessMeter, Dialog, FilterChip, InfoNote, MatchChipView, MatchRow, NotCaptured, SourceBadge, WorkAuthChip, useStepper,
+  AIStepper, Banner, CompletenessMeter, Dialog, FilterChip, InfoNote, MatchChipView, MatchRow, NotCaptured, ProposedChangesList, SourceBadge, WorkAuthChip, useStepper,
 } from '../components/hs'
+import { GatedButton, SelectionBar, SignedTakeBlock, useListSelection } from '../components/v3'
 import { ConfirmDialog, ProposedChangesDialog, RejectDialog } from './Dialogs'
-import { useApp, useWireframeState } from '../store/AppStore'
+import { useApp, useWireframeState, whoCanText } from '../store/AppStore'
 import { callChangesPriya } from '../data/mock'
-import type { Candidate, ProposedChange, Role, RoleMatchForCandidate, SourceKind, WorkAuth, WorkMode, VisaType } from '../data/types'
+import { CATEGORIES } from '../data/types'
+import type { Candidate, Category, ProposedChange, Resume, ResumeOutput, Role, RoleMatchForCandidate, SourceKind, WorkAuth, WorkMode, VisaType } from '../data/types'
 
 /* ==========================================================================
    S-07 · Candidate profile — Profile · Matching roles · Resumes · History
@@ -31,7 +34,14 @@ const WF_STATES = [
   { id: 'enriched', label: 'After call enrichment' },
   { id: 'noroles', label: 'No matching roles' },
   { id: 'outofdate', label: 'Out-of-date matches' },
+  { id: 'tworesumes', label: 'Two resumes (Priya · Resumes tab)' },
+  { id: 'd07', label: 'D-07 Update or another resume' },
+  { id: 'take-empty', label: 'Take · no call yet (Dev K.)' },
+  { id: 'take-draft', label: 'Take · AI draft, not printed (Ana R.)' },
+  { id: 'take-signed', label: 'Take · signed (Priya S.; View as Vandit for “Signed by you”)' },
 ]
+/** Wireframe states that show a specific example record */
+const WF_RECORD: Record<string, string> = { tworesumes: 'priya', 'take-empty': 'dev', 'take-draft': 'ana', 'take-signed': 'priya' }
 
 /* ---------- Ask list helpers (§5.3: must-have questions first) ---------- */
 const MUST_HAVE_HINTS = ['relocat', 'visa', 'sponsorship', 'transfer', 'remote', 'hybrid', 'onsite', 'located', 'years']
@@ -55,13 +65,13 @@ const MORE_ROLES: Role[] = [
     id: 'tally-pm', title: 'Product Manager, Payments', company: 'Tally', companyType: 'Prospect', companySource: 'Public posting URL',
     category: 'Product', subcategory: 'Product Manager', seniority: 'Senior', minYears: 5, location: 'Austin, TX', workMode: 'Hybrid', relocationAccepted: true,
     sponsorship: 'Unknown', transfer: 'Yes', mustSkills: ['Payments'], niceSkills: ['SQL'], pay: '$170k–$195k', status: 'Open', jdVersion: 1,
-    matchStatus: 'up-to-date', shortlisted: 0, updated: 'Just now', passCount: 31,
+    matchStatus: 'up-to-date', shortlisted: 0, updated: 'Just now', passCount: 31, scoredCount: 10, aiScoresUsed: 10,
   },
   {
     id: 'meridian-spm', title: 'Senior PM, Billing', company: 'Meridian Health', companyType: 'Client', companySource: 'Client JD',
     category: 'Product', subcategory: 'Product Manager', seniority: 'Senior', minYears: 6, location: 'New York, NY', workMode: 'Hybrid', relocationAccepted: true,
     sponsorship: 'No', transfer: 'Yes', mustSkills: ['Billing', 'SQL'], niceSkills: ['B2B SaaS'], pay: '$175k–$190k', status: 'Open', jdVersion: 1,
-    matchStatus: 'up-to-date', shortlisted: 1, updated: 'Just now', passCount: 22,
+    matchStatus: 'up-to-date', shortlisted: 1, updated: 'Just now', passCount: 22, scoredCount: 10, aiScoresUsed: 10,
   },
 ]
 const MORE_ROWS: RoleMatchForCandidate[] = [
@@ -120,7 +130,28 @@ export function FunctionView({ c }: { c: Candidate }) {
     <dl className="divide-y divide-border">
       <ProfileRow label="Category" source={src(c, 'category')}>{c.category}</ProfileRow>
       <ProfileRow label="Sub-category" source={src(c, 'category')}>{c.subcategory}</ProfileRow>
+      <ProfileRow label="Domain" source={src(c, 'domains')} missing={!c.domains?.length}>
+        <span className="flex flex-wrap gap-1.5">{c.domains?.map(d => <Tag key={d} tone="outline">{d}</Tag>)}</span>
+      </ProfileRow>
     </dl>
+  )
+}
+
+/** v0.3 · T4 — Domain is a stored column, editable (values from Settings → Skill list) */
+function FunctionEdit({ c, domains, onCancel, onSave }: { c: Candidate; domains: string[]; onCancel: () => void; onSave: (p: Partial<Candidate>) => void }) {
+  const [sel, setSel] = useState<string[]>(c.domains ?? [])
+  const toggle = (d: string) => setSel(x => x.includes(d) ? x.filter(y => y !== d) : [...x, d])
+  return (
+    <div className="space-y-4">
+      <dl className="divide-y divide-border">
+        <ProfileRow label="Category" source={src(c, 'category')}>{c.category}</ProfileRow>
+        <ProfileRow label="Sub-category" source={src(c, 'category')}>{c.subcategory}</ProfileRow>
+      </dl>
+      <Field label="Domain" hint="Pick any that apply. The list lives in Settings → Skill list.">
+        <div className="flex flex-wrap gap-1.5">{domains.map(d => <FilterChip key={d} active={sel.includes(d)} onClick={() => toggle(d)}>{d}</FilterChip>)}</div>
+      </Field>
+      <EditFooter onCancel={onCancel} onSave={() => onSave({ domains: sel.length ? sel : null, fieldSources: { ...c.fieldSources, domains: 'EDITED' } })} />
+    </div>
   )
 }
 
@@ -245,7 +276,7 @@ export function ReadOnlyProfile({ c }: { c: Candidate }) {
   return (
     <div className="space-y-6">
       <BezelCard icon={<User />} title="Basics"><BasicsView c={c} /></BezelCard>
-      <BezelCard icon={<Layers />} title="Function"><FunctionView c={c} /></BezelCard>
+      <BezelCard icon={<Layers />} title="Function and domain"><FunctionView c={c} /></BezelCard>
       <BezelCard icon={<Briefcase />} title="Experience"><ExperienceView c={c} /></BezelCard>
       <BezelCard icon={<Sparkles />} title="Skills"><SkillsView c={c} /></BezelCard>
       <BezelCard icon={<SlidersHorizontal />} title="Preferences"><PreferencesView c={c} /></BezelCard>
@@ -345,6 +376,8 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
   const [wf] = useWireframeState('S-07', 'Candidate', WF_STATES, 'live')
   const fullPatch = useMemo(() => enrichmentPatch(stored, callChangesPriya), [stored])
   const c = overlay(stored, wf, fullPatch)
+  const resumes: Resume[] = app.resumesFor(c.id)
+  const primaryResume = resumes.find(r => r.isPrimary) ?? resumes[0]
 
   // Live interaction state
   const [liveEnriched, setLiveEnriched] = useState(false)
@@ -353,21 +386,39 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
   const [keyChanged, setKeyChanged] = useState(false)
   const [editing, setEditing] = useState<Record<string, boolean>>({})
   const [askFlash, setAskFlash] = useState(false)
-  const [dlg, setDlg] = useState<null | 'addCall' | 'callChanges' | 'resumeChanges' | 'delete' | 'message'>(null)
+  const [dlg, setDlg] = useState<null | 'addCall' | 'callChanges' | 'd07' | 'compareResume' | 'delete' | 'message'>(null)
+  const [compareTarget, setCompareTarget] = useState<{ resume: Resume; versionN: number } | null>(null)
   const [notFit, setNotFit] = useState<string | null>(null)
-  const [selected, setSelected] = useState<string[]>([])
   const [finding, setFinding] = useState(false)
   const [calls, setCalls] = useState<string[]>([])
+
+  /* ---------- Matching roles rows ---------- */
+  const baseRows = wf === 'noroles' ? [] : (app.rolesForCandidate[c.id] ?? [])
+  const extraRows = ranked && wf !== 'noroles' ? MORE_ROWS.map(r => ({ ...r, status: extraStatus[r.roleId] ?? r.status })) : []
+  const rows = [...baseRows, ...extraRows].sort((a, b) => b.score - a.score)
+  const selectableRoleIds = useMemo(() => rows.filter(r => r.status !== 'not-a-fit').map(r => r.roleId), [rows])
+  const sel = useListSelection(selectableRoleIds)
 
   // Reset local review flags when the reviewer jumps between states
   const prevWf = useRef(wf)
   useEffect(() => {
     if (prevWf.current === wf) return
     prevWf.current = wf
-    setSelected([]); setEditing({})
+    sel.clear(); setEditing({})
+    const targetRecord = WF_RECORD[wf]
+    if (targetRecord && targetRecord !== stored.id) {
+      navigate(`/candidates/${targetRecord}${wf === 'tworesumes' ? '?tab=resumes' : ''}`, { replace: true })
+      return
+    }
     if (wf === 'noroles' || wf === 'outofdate') setTab('roles')
     if (wf === 'enriched') { setRanked(false); setTab('profile') }
     if (wf === 'low' || wf === 'high') setTab('profile')
+    if (wf === 'tworesumes') setTab('resumes')
+    if (wf === 'd07') { setTab('resumes'); setDlg('d07') }
+    if (wf === 'take-empty' || wf === 'take-draft' || wf === 'take-signed') {
+      setTab('profile')
+      window.setTimeout(() => document.getElementById('notes-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wf])
 
@@ -375,7 +426,7 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
   const showMayFit = enriched && !ranked
   const outOfDate = wf === 'outofdate' || keyChanged
   const askQuestions = orderedAsk([...c.askList, ...(app.askAdds[c.id] ?? [])])
-  const outputsFor = app.outputs.filter(o => o.candidateId === c.id)
+  const outputsFor: ResumeOutput[] = app.outputs.filter(o => o.candidateId === c.id)
 
   const pill = (
     <span className="inline-flex h-6 items-center gap-2 rounded-md border border-border px-2">
@@ -426,14 +477,13 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
     setFinding(true)
   }
 
-  const resumeChanges: ProposedChange[] = [
-    { id: 'r1', field: 'Resume', from: `v${c.resumeVersion}`, to: `v${c.resumeVersion + 1}`, source: 'RESUME' },
+  const compareChanges: ProposedChange[] = [
+    { id: 'r1', field: 'Resume', from: `v${Math.max(1, (compareTarget?.versionN ?? 2) - 1)}`, to: `v${compareTarget?.versionN ?? 2}`, source: 'RESUME' },
     { id: 'r2', field: 'Current title', from: c.companies[0]?.title ?? 'Not captured', to: `${c.companies[0]?.title ?? c.headline.split(' · ')[0]} (promoted to Lead)`, source: 'RESUME' },
     { id: 'r3', field: 'Skills', from: '—', to: '+ Treasury', source: 'RESUME' },
   ]
-  const applyResume = (accepted: ProposedChange[]) => {
-    app.updateCandidate(stored.id, { resumeVersion: stored.resumeVersion + 1, updated: 'Just now', skills: accepted.some(a => a.id === 'r3') ? [...stored.skills, 'Treasury'] : stored.skills })
-    app.log({ what: `Uploaded resume v${stored.resumeVersion + 1} · applied ${accepted.length} changes`, record: stored.name, recordHref: `/candidates/${stored.id}`, kind: 'Candidates' })
+  const applyCompare = (accepted: ProposedChange[]) => {
+    app.updateCandidate(stored.id, { updated: 'Just now', skills: accepted.some(a => a.id === 'r3') ? Array.from(new Set([...stored.skills, 'Treasury'])) : stored.skills })
     app.toast(`Applied ${accepted.length} change${accepted.length === 1 ? '' : 's'}`)
   }
 
@@ -446,13 +496,19 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
     setEditing(e => ({ ...e, [section]: false }))
   }
   const editBtn = (section: string) => (
-    editing[section] ? null : <Button variant="ghost" size="icon-sm" aria-label={`Edit ${section.toLowerCase()}`} title="Edit" icon={<Pencil />} onClick={() => setEditing(e => ({ ...e, [section]: true }))} />
+    editing[section] ? null : (
+      <GatedButton
+        perm="editFacts"
+        variant="ghost"
+        size="icon-sm"
+        aria-label={`Edit ${section.toLowerCase()}`}
+        title="Edit"
+        icon={<Pencil />}
+        onClick={() => setEditing(e => ({ ...e, [section]: true }))}
+      />
+    )
   )
 
-  /* ---------- Matching roles rows ---------- */
-  const baseRows = wf === 'noroles' ? [] : (app.rolesForCandidate[c.id] ?? [])
-  const extraRows = ranked && wf !== 'noroles' ? MORE_ROWS.map(r => ({ ...r, status: extraStatus[r.roleId] ?? r.status })) : []
-  const rows = [...baseRows, ...extraRows].sort((a, b) => b.score - a.score)
   const roleOf = (rid: string) => app.role(rid) ?? MORE_ROLES.find(r => r.id === rid)
   const setRoleStatus = (rid: string, status: RoleMatchForCandidate['status']) => {
     if (MORE_ROLES.some(r => r.id === rid)) setExtraStatus(s => ({ ...s, [rid]: status }))
@@ -478,6 +534,16 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-lg title-type">{c.name}</h1>
               {c.example && <ExampleMark />}
+              {resumes.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setTab('resumes')}
+                  className="inline-flex h-6 items-center gap-1 rounded-md border border-border bg-secondary px-2 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                >
+                  <Files className="size-3 text-muted-foreground" />
+                  <span className="tnum">{resumes.length} resumes</span>
+                </button>
+              )}
             </div>
             <p className="text-sm text-muted-foreground">{c.headline}</p>
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -490,14 +556,14 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
         <div className="flex shrink-0 items-center gap-2">
           <Button variant="chroma" icon={<Sparkles />} onClick={findRoles}>Find roles</Button>
           <Button variant="outline" icon={<FileText />} onClick={() => navigate(`/resumes/masked?candidates=${c.id}${c.cameInForRole ? `&role=${c.cameInForRole}` : ''}`)}>Masked resume</Button>
-          <Menu width={220}
+          <Menu width={240}
             trigger={({ toggle }) => <Button variant="outline" size="icon" aria-label="More actions" icon={<MoreHorizontal />} onClick={toggle} />}
             items={[
-              { label: 'Upload new resume', icon: <Upload />, onSelect: () => setDlg('resumeChanges') },
+              { label: 'Upload resume', icon: <Upload />, disabled: !app.can('editFacts'), hint: !app.can('editFacts') ? whoCanText('editFacts') : undefined, onSelect: () => setDlg('d07') },
               { label: 'Add call', icon: <Phone />, onSelect: () => setDlg('addCall') },
-              { label: 'Edit all', icon: <PenLine />, onSelect: () => { setTab('profile'); setEditing({ Preferences: true, 'Work authorization': true, Notes: true }) } },
+              { label: 'Edit all', icon: <PenLine />, disabled: !app.can('editFacts'), hint: !app.can('editFacts') ? whoCanText('editFacts') : undefined, onSelect: () => { setTab('profile'); setEditing({ Basics: true, Function: true, Preferences: true, 'Work authorization': true }) } },
               { separator: true, label: '' },
-              { label: 'Delete candidate', icon: <Trash2 />, destructive: true, onSelect: () => setDlg('delete') },
+              { label: 'Delete candidate', icon: <Trash2 />, destructive: true, disabled: !app.can('delete'), hint: !app.can('delete') ? whoCanText('delete') : undefined, onSelect: () => setDlg('delete') },
             ]}
           />
         </div>
@@ -507,7 +573,7 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
         <PillTabs value={tab} onChange={setTab} tabs={[
           { value: 'profile', label: 'Profile' },
           { value: 'roles', label: 'Matching roles', count: rows.filter(r => r.status !== 'not-a-fit').length },
-          { value: 'resumes', label: 'Resumes', count: outputsFor.length + c.resumeVersion },
+          { value: 'resumes', label: 'Resumes', count: resumes.length + outputsFor.length },
           { value: 'history', label: 'History' },
         ]} />
       </div>
@@ -538,12 +604,20 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
                   </>
                 )}
               </BezelCard>
-              <BezelCard icon={<Layers />} title="Function"><FunctionView c={c} /></BezelCard>
+              <BezelCard icon={<Layers />} title="Function and domain" action={editBtn('Function')}>
+                {editing.Function
+                  ? <FunctionEdit c={c} domains={app.domains} onCancel={() => setEditing(e => ({ ...e, Function: false }))} onSave={p => saveSection('Function', p, false)} />
+                  : <FunctionView c={c} />}
+              </BezelCard>
               <BezelCard icon={<Briefcase />} title="Experience"><ExperienceView c={c} /></BezelCard>
-              <BezelCard icon={<Sparkles />} title="Skills">
+              <BezelCard
+                icon={<Sparkles />}
+                title="Skills"
+                description={resumes.length > 1 ? `Union of explicit skills across ${resumes.length} resumes` : undefined}
+              >
                 <SkillsView c={c}
-                  onConfirm={name => { app.updateCandidate(stored.id, { skills: [...stored.skills, name], predicted: stored.predicted.filter(p => p.name !== name) }); app.toast(`Confirmed ${name}`) }}
-                  onDismiss={name => { app.updateCandidate(stored.id, { predicted: stored.predicted.filter(p => p.name !== name) }); app.toast(`Dismissed ${name}`, { undo: () => app.updateCandidate(stored.id, { predicted: stored.predicted }) }) }}
+                  onConfirm={app.can('editFacts') ? name => { app.updateCandidate(stored.id, { skills: [...stored.skills, name], predicted: stored.predicted.filter(p => p.name !== name) }); app.toast(`Confirmed ${name}`) } : undefined}
+                  onDismiss={app.can('editFacts') ? name => { app.updateCandidate(stored.id, { predicted: stored.predicted.filter(p => p.name !== name) }); app.toast(`Dismissed ${name}`, { undo: () => app.updateCandidate(stored.id, { predicted: stored.predicted }) }) } : undefined}
                 />
               </BezelCard>
               <BezelCard id="prefs-card" icon={<SlidersHorizontal />} title="Preferences" action={editBtn('Preferences')}>
@@ -556,16 +630,18 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
                   ? <WorkAuthEdit c={c} onCancel={() => setEditing(e => ({ ...e, 'Work authorization': false }))} onSave={(p, key) => saveSection('Work authorization', p, key)} />
                   : <WorkAuthView c={c} onAsk={addAsk} />}
               </BezelCard>
-              <BezelCard icon={<StickyNote />} title="Notes" action={editBtn('Notes')}>
-                {editing.Notes
-                  ? <NotesEdit c={c} onCancel={() => setEditing(e => ({ ...e, Notes: false }))} onSave={p => saveSection('Notes', p, false)} />
-                  : (
-                    <dl className="divide-y divide-border">
-                      <ProfileRow label="Our take" source="EDITED" missing={!c.ourTake}><span className="italic">“{c.ourTake}”</span></ProfileRow>
+              <BezelCard id="notes-card" icon={<StickyNote />} title="Notes">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="eyebrow text-[10px] text-gray-1000">Our take</div>
+                    <SignedTakeBlock candidateId={c.id} />
+                  </div>
+                  <div className="border-t border-border pt-3">
+                    <dl>
                       <ProfileRow label="Recruiter notes" missing>{null}</ProfileRow>
                     </dl>
-                  )}
-                {!editing.Notes && <div className="mt-3"><InfoNote>“Our take” appears on masked resumes, signed by the recruiter.</InfoNote></div>}
+                  </div>
+                </div>
               </BezelCard>
             </div>
 
@@ -584,19 +660,30 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
               )}
               <BezelCard icon={<FileText />} title="Sources" action={<Button variant="ghost" size="sm" icon={<Phone />} onClick={() => setDlg('addCall')}>Add call</Button>}>
                 <ul className="space-y-2.5 text-sm">
-                  {Array.from({ length: c.resumeVersion }).map((_, i) => {
-                    const v = c.resumeVersion - i
+                  {resumes.map(r => {
+                    const latest = r.versions[r.versions.length - 1]
                     return (
-                      <li key={v} className="flex items-center gap-2">
+                      <li key={r.id} className="flex items-center gap-2">
                         <FileText className="size-3.5 text-muted-foreground" />
-                        <span className="flex-1">Resume v{v}{i === 0 && <span className="eyebrow ml-2 text-[9px] text-gray-1000">current</span>}</span>
-                        <span className="text-xs text-muted-foreground">{i === 0 ? c.updated : 'Sep 12'}</span>
+                        <span className="flex-1 truncate">
+                          {resumes.length > 1 ? `${r.label} resume` : 'Resume'} v{latest?.n ?? 1}
+                          {r.isPrimary && resumes.length > 1 && <span className="eyebrow ml-2 text-[9px] text-gray-1000">primary</span>}
+                          {resumes.length === 1 && <span className="eyebrow ml-2 text-[9px] text-gray-1000">current</span>}
+                        </span>
+                        <span className="text-xs text-muted-foreground">{latest?.uploadedAt ?? c.updated}</span>
                       </li>
                     )
                   })}
                   {calls.map(x => <li key={x} className="flex items-center gap-2"><Phone className="size-3.5 text-muted-foreground" /><span className="flex-1">{x.split(' · Just now')[0]}</span><span className="text-xs text-muted-foreground">Just now</span></li>)}
-                  {(c.id === 'priya' || enriched) && calls.length === 0 && (
-                    <li className="flex items-center gap-2"><Phone className="size-3.5 text-muted-foreground" /><span className="flex-1">Intro call · Granola</span><span className="text-xs text-muted-foreground">{enriched ? 'Just now' : '3 days ago'}</span></li>
+                  {(c.calls ?? []).map(call => (
+                    <li key={call.id} className="flex items-center gap-2">
+                      <Phone className="size-3.5 text-muted-foreground" />
+                      <span className="flex-1 truncate">{call.label} · {call.by}</span>
+                      <span className="text-xs text-muted-foreground">{call.when}</span>
+                    </li>
+                  ))}
+                  {enriched && !(c.calls?.length) && calls.length === 0 && (
+                    <li className="flex items-center gap-2"><Phone className="size-3.5 text-muted-foreground" /><span className="flex-1">Intro call · Granola</span><span className="text-xs text-muted-foreground">Just now</span></li>
                   )}
                 </ul>
                 <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">Last edited by Vandit D. · {c.updated}</p>
@@ -622,50 +709,53 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
             </div>
           ) : (
             <>
-              {selected.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-1100 bg-card px-3 py-2">
-                  <span className="font-mono text-xs tnum">{selected.length} selected</span>
-                  <Button variant="primary" className="ml-auto" onClick={() => {
-                    selected.forEach(rid => addToShortlist(rid, true))
-                    app.toast(`Added ${c.name} to ${selected.length} shortlist${selected.length === 1 ? '' : 's'}`)
-                    setSelected([])
-                  }}>Add to shortlists</Button>
-                  <Button variant="outline" icon={<Copy />} onClick={() => setDlg('message')}>Copy message for candidate</Button>
-                  <Button variant="ghost" onClick={() => setSelected([])}>Clear</Button>
-                </div>
+              {sel.selected.length > 0 ? (
+                <SelectionBar
+                  count={sel.selected.length}
+                  shown={selectableRoleIds.length}
+                  onSelectAllShown={() => sel.selectAll(selectableRoleIds)}
+                  onClear={sel.clear}
+                >
+                  <GatedButton perm="shortlist" variant="primary" size="sm" onClick={() => {
+                    const count = sel.selected.length
+                    sel.selected.forEach(rid => addToShortlist(rid, true))
+                    app.toast(`Added ${c.name} to ${count} shortlist${count === 1 ? '' : 's'}`)
+                    sel.clear()
+                  }}>Add to shortlists</GatedButton>
+                  <Button variant="outline" size="sm" icon={<Copy />} onClick={() => setDlg('message')}>Copy message for candidate</Button>
+                </SelectionBar>
               ) : (
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <span className="font-mono tnum">{rows.length}</span> open roles where {c.name} passes the must-haves · client and prospect roles · select 2–3 to pitch
                 </div>
               )}
-              <ul className="space-y-2">
+              <ul className={cn('space-y-2', sel.selected.length > 0 && 'any-selected')}>
                 {rows.map((r, i) => {
                   const role = roleOf(r.roleId)
                   if (!role) return null
-                  const sel = selected.includes(r.roleId)
+                  const isSel = sel.isSelected(r.roleId)
                   return (
-                    <li key={r.roleId} className="flex items-start gap-3">
-                      <div className="pt-5">
-                        {r.status !== 'not-a-fit'
-                          ? <Checkbox aria-label={`Select ${role.title}`} checked={sel} onChange={v => setSelected(s => v ? [...s, r.roleId] : s.filter(x => x !== r.roleId))} />
-                          : <span className="block size-4" />}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <MatchRow
-                          rank={i + 1} title={`${role.title} · ${role.company}`}
-                          subtitle={`${role.companyType === 'Prospect' && PROSPECT_DESCRIPTOR[role.id] ? `${PROSPECT_DESCRIPTOR[role.id].replace(/^an? /, '').replace(/^./, s => s.toUpperCase())} · ` : ''}${role.location} · ${role.workMode.toLowerCase()} · ${role.pay}`}
-                          tag={<CompanyTypeTag type={role.companyType} />}
-                          role={role}
-                          band={r.band} score={r.score} reason={r.reason} chips={r.chips}
-                          status={r.status} dimmed={outOfDate}
-                          shortlistLabel="Add to shortlist" rejectLabel="Not a fit"
-                          onShortlist={() => addToShortlist(r.roleId)}
-                          onReject={() => setNotFit(r.roleId)}
-                          onUndo={() => setRoleStatus(r.roleId, 'new')}
-                          onAddToAsk={ch => addAsk(`Confirm: ${ch.label.toLowerCase()}?`)}
-                          onClick={app.role(r.roleId) ? () => navigate(`/roles/${r.roleId}`) : undefined}
-                        />
-                      </div>
+                    <li key={r.roleId}>
+                      <MatchRow
+                        rank={i + 1} title={`${role.title} · ${role.company}`}
+                        subtitle={`${role.companyType === 'Prospect' && PROSPECT_DESCRIPTOR[role.id] ? `${PROSPECT_DESCRIPTOR[role.id].replace(/^an? /, '').replace(/^./, s => s.toUpperCase())} · ` : ''}${role.location} · ${role.workMode.toLowerCase()} · ${role.pay}`}
+                        tag={<CompanyTypeTag type={role.companyType} />}
+                        role={role}
+                        band={r.band} score={r.score} reason={r.reason} chips={r.chips}
+                        status={r.status} dimmed={outOfDate}
+                        selected={isSel}
+                        onToggleSelect={r.status !== 'not-a-fit' ? shift => sel.toggle(r.roleId, shift) : undefined}
+                        actionsDisabled={{
+                          shortlist: app.can('shortlist') ? undefined : whoCanText('shortlist'),
+                          reject: app.can('reject') ? undefined : whoCanText('reject'),
+                        }}
+                        shortlistLabel="Add to shortlist" rejectLabel="Not a fit"
+                        onShortlist={() => addToShortlist(r.roleId)}
+                        onReject={() => setNotFit(r.roleId)}
+                        onUndo={() => setRoleStatus(r.roleId, 'new')}
+                        onAddToAsk={ch => addAsk(`Confirm: ${ch.label.toLowerCase()}?`)}
+                        onClick={app.role(r.roleId) ? () => navigate(`/roles/${r.roleId}`) : undefined}
+                      />
                     </li>
                   )
                 })}
@@ -675,54 +765,142 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
         </div>
       )}
 
-      {/* ---------- Resumes tab ---------- */}
+      {/* ---------- Resumes tab (T3 & T6) ---------- */}
       {tab === 'resumes' && (
         <div className="space-y-6">
-          <BezelCard icon={<FileText />} title="Original resumes" action={<Button variant="ghost" size="sm" icon={<Upload />} onClick={() => setDlg('resumeChanges')}>Upload new resume</Button>}>
-            <ul className="divide-y divide-border">
-              {Array.from({ length: c.resumeVersion }).map((_, i) => {
-                const v = c.resumeVersion - i
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="space-y-0.5">
+                <h2 className="eyebrow text-[10px] text-gray-1000">Source resumes · {resumes.length}</h2>
+                <p className="text-xs text-muted-foreground">
+                  {resumes.length > 1
+                    ? 'One profile, multiple resumes for different functions. Primary is used by default.'
+                    : 'Every version stays on record so generated outputs trace back to their source.'}
+                </p>
+              </div>
+              <GatedButton perm="editFacts" variant="outline" size="sm" icon={<Upload />} onClick={() => setDlg('d07')}>
+                Upload resume
+              </GatedButton>
+            </div>
+            <div className={cn('grid gap-4', resumes.length > 1 && 'lg:grid-cols-2')}>
+              {resumes.map(r => {
+                const latest = r.versions[r.versions.length - 1]
                 return (
-                  <li key={v} className="flex flex-wrap items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-                    <span className="font-mono text-xs">v{v}</span>
-                    <span className="flex-1 text-sm">{c.name.replace(/\W+/g, '_')}resume_v{v}.pdf</span>
-                    <span className="text-xs text-muted-foreground">{i === 0 ? `Riya (intern) · ${c.updated}` : 'Riya (intern) · Sep 12'}</span>
-                    <Button variant="ghost" size="sm" icon={<Download />} onClick={() => app.toast('Resume downloaded')}>Download</Button>
-                  </li>
+                  <BezelCard
+                    key={r.id}
+                    icon={<FileText />}
+                    title={
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span>{r.label} resume</span>
+                        <Tag tone="outline">{r.targetCategory}</Tag>
+                        <span className="font-mono text-xs text-muted-foreground tnum">v{latest?.n ?? 1}</span>
+                        {r.isPrimary && (
+                          <Tag tone="dark"><Star className="size-3" />Primary</Tag>
+                        )}
+                      </span>
+                    }
+                    action={
+                      !r.isPrimary ? (
+                        <GatedButton
+                          perm="editFacts"
+                          variant="ghost"
+                          size="sm"
+                          icon={<Star />}
+                          onClick={() => { app.setPrimaryResume(c.id, r.id); app.toast(`Made ${r.label} resume primary`) }}
+                        >
+                          Make primary
+                        </GatedButton>
+                      ) : undefined
+                    }
+                  >
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium text-foreground">{r.headline}</p>
+                        {r.emphasis.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="eyebrow mr-1 text-[10px] text-gray-1000">Emphasis</span>
+                            {r.emphasis.map(s => <Tag key={s}>{s}</Tag>)}
+                          </div>
+                        )}
+                      </div>
+                      <div className="space-y-1.5 border-t border-border pt-3">
+                        <div className="eyebrow text-[10px] text-gray-1000">Versions ({r.versions.length})</div>
+                        <ul className="divide-y divide-border">
+                          {r.versions.slice().reverse().map((v, idx) => (
+                            <li key={v.n} className="flex flex-wrap items-center gap-2.5 py-2 first:pt-1 last:pb-0">
+                              <span className="font-mono text-xs font-medium tnum">v{v.n}</span>
+                              {idx === 0 && <span className="eyebrow text-[9px] text-gray-1000">current</span>}
+                              <span className="min-w-0 flex-1 truncate text-sm">{v.file}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {v.uploadedBy} · {v.uploadedAt}
+                                {v.changesApplied > 0 && <> · <span className="tnum">{v.changesApplied}</span> changes</>}
+                              </span>
+                              <div className="flex items-center gap-1">
+                                {r.versions.length > 1 && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    icon={<GitCompare />}
+                                    onClick={() => { setCompareTarget({ resume: r, versionN: v.n }); setDlg('compareResume') }}
+                                  >
+                                    Compare
+                                  </Button>
+                                )}
+                                <Button variant="ghost" size="sm" icon={<Download />} onClick={() => app.toast(`Downloaded ${v.file}`)}>Download</Button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </BezelCard>
                 )
               })}
-            </ul>
-          </BezelCard>
+            </div>
+          </section>
+
           <section className="space-y-2">
-            <h2 className="eyebrow text-[10px] text-gray-1000">Generated</h2>
+            <h2 className="eyebrow text-[10px] text-gray-1000">Generated outputs</h2>
             {outputsFor.length === 0 ? (
               <div className="rounded-xl border border-border bg-card">
-                <EmptyState icon={<FileText />} title="No resumes generated yet" body="Masked and tailored resumes for this candidate will show here."
+                <EmptyState icon={<FileText />} title="No resumes generated yet" body="Masked, editable and as-is resumes for this candidate will show here."
                   action={<Button variant="outline" onClick={() => navigate(`/resumes/masked?candidates=${c.id}`)}>Masked resume</Button>} />
               </div>
             ) : (
               <div className="overflow-hidden rounded-xl border border-border bg-card">
-                <div className="hidden h-9 grid-cols-[100px_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_max-content] items-center gap-4 border-b border-border bg-secondary/70 px-4 md:grid">
-                  {['Type', 'Role', 'Template', 'Created', ''].map(h => <div key={h} className="eyebrow text-[10px] text-gray-1000">{h}</div>)}
+                <div className="hidden h-9 grid-cols-[90px_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_110px_80px_minmax(0,1fr)_max-content] items-center gap-3 border-b border-border bg-secondary/70 px-4 lg:grid">
+                  {['Type', 'Role', 'Source', 'Template', 'Prompt', 'Revisions', 'Created', ''].map(h => <div key={h} className="eyebrow text-[10px] text-gray-1000">{h}</div>)}
                 </div>
                 {outputsFor.map(o => {
                   const r = o.roleId ? app.role(o.roleId) : undefined
                   const stale = o.stale || (enriched && o.type !== 'As-is')
+                  const srcResume = resumes.find(x => x.id === o.sourceResumeId) ?? primaryResume
+                  const srcVersion = o.sourceVersion ?? srcResume?.versions[srcResume.versions.length - 1]?.n ?? c.resumeVersion
+                  const sourceText = `${srcResume?.label ?? c.category} resume v${srcVersion}`
+                  const promptVer = o.promptVersion ?? 'Masking v4'
+                  const revCount = o.revisions?.length ?? 1
+                  const staleReason = o.staleReason ?? 'Profile changed since'
+                  const builderHref = o.type === 'Editable'
+                    ? `/resumes/editable?candidates=${c.id}${o.roleId ? `&role=${o.roleId}` : ''}`
+                    : `/resumes/masked?candidates=${c.id}${o.roleId ? `&role=${o.roleId}` : ''}`
                   return (
-                    <div key={o.id} className="grid grid-cols-1 items-center gap-2 border-b border-border px-4 py-3 text-sm last:border-0 md:grid-cols-[100px_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_max-content] md:gap-4">
+                    <div key={o.id} className="grid grid-cols-1 items-center gap-2 border-b border-border px-4 py-3 text-sm last:border-0 lg:grid-cols-[90px_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_110px_80px_minmax(0,1fr)_max-content] lg:gap-3">
                       <div><Tag tone={o.type === 'Masked' ? 'outline' : 'neutral'}>{o.type}</Tag></div>
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <span className="truncate">{r ? `${r.title} — ${r.company}` : 'No role'}</span>
                         {stale
-                          ? <span className="inline-flex h-5 items-center gap-1 rounded-md border border-dashed border-warning px-1.5 text-[11px] text-[#b45309]"><AlertTriangle className="size-3" />Stale · Profile changed since</span>
+                          ? <span className="inline-flex h-5 items-center gap-1 rounded-md border border-dashed border-warning px-1.5 text-[11px] text-[#b45309]"><AlertTriangle className="size-3" />Stale · {staleReason}</span>
                           : <span className="inline-flex h-5 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-gray-1100"><Check className="size-3" />Ready</span>}
                       </div>
-                      <div className="text-muted-foreground">{o.template}</div>
-                      <div className="text-muted-foreground">{o.createdBy} · {o.created}</div>
-                      <div className="flex gap-1">
+                      <div className="truncate text-xs text-foreground">{sourceText}</div>
+                      <div className="truncate text-muted-foreground">{o.template}</div>
+                      <div className="font-mono text-xs text-muted-foreground">{promptVer}</div>
+                      <div className="font-mono text-xs text-muted-foreground tnum">{revCount} rev{revCount === 1 ? '' : 's'}</div>
+                      <div className="truncate text-xs text-muted-foreground">{o.createdBy} · {o.created}</div>
+                      <div className="flex flex-wrap gap-1">
                         <Button variant="ghost" size="sm" icon={<Download />} onClick={() => app.toast(`${o.type} resume downloaded`)}>Download</Button>
-                        <Button variant={stale ? 'outline' : 'ghost'} size="sm" icon={<RefreshCw />}
-                          onClick={() => navigate(o.type === 'Tailored' ? `/resumes/tailored?candidate=${c.id}&role=${o.roleId ?? ''}` : `/resumes/masked?candidates=${c.id}${o.roleId ? `&role=${o.roleId}` : ''}`)}>Regenerate</Button>
+                        <Button variant="ghost" size="sm" icon={<Wand2 />} onClick={() => navigate(builderHref)}>Refine</Button>
+                        <Button variant={stale ? 'outline' : 'ghost'} size="sm" icon={<RefreshCw />} onClick={() => navigate(builderHref)}>Regenerate</Button>
                       </div>
                     </div>
                   )
@@ -740,8 +918,9 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
       <AddCallDialog open={dlg === 'addCall'} onClose={() => setDlg(null)} onRead={() => setDlg('callChanges')} name={c.name} />
       <ProposedChangesDialog open={dlg === 'callChanges'} onClose={() => setDlg(null)} changes={callChangesPriya} onApply={applyCall}
         subtitle="From the call (Fathom). Accepted changes are logged. Confirmed values are never overwritten without your approval." />
-      <ProposedChangesDialog open={dlg === 'resumeChanges'} onClose={() => setDlg(null)} changes={resumeChanges} onApply={applyResume}
-        subtitle={`New resume read as v${c.resumeVersion + 1}. Earlier versions stay in Sources.`} />
+      <UpdateOrAnotherResumeDialog open={dlg === 'd07'} onClose={() => setDlg(null)} candidateId={c.id} />
+      <ProposedChangesDialog open={dlg === 'compareResume'} onClose={() => setDlg(null)} changes={compareChanges} onApply={applyCompare}
+        subtitle={`Comparing ${compareTarget?.resume.label ?? 'Product'} resume v${compareTarget?.versionN ?? 2} with earlier version. Confirmed values are never overwritten without your approval.`} />
       <ConfirmDialog open={dlg === 'delete'} onClose={() => setDlg(null)} destructive
         title={`Delete ${c.name} and ${deleteCount} generated resume${deleteCount === 1 ? '' : 's'}?`} body="This can't be undone."
         confirmLabel="Delete candidate" cancelLabel="Keep candidate"
@@ -756,11 +935,11 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
           if (!notFit) return
           const rid = notFit
           setRoleStatus(rid, 'not-a-fit')
-          setSelected(s => s.filter(x => x !== rid))
+          sel.setSelected(s => s.filter(x => x !== rid))
           app.log({ what: `Marked not a fit · ${reason}`, record: `${notFitRole?.title} — ${notFitRole?.company}`, recordHref: `/roles/${rid}`, kind: 'Decisions' })
           app.toast(`Marked not a fit for ${notFitRole?.title}`, { undo: () => setRoleStatus(rid, 'new') })
         }} />
-      <CandidateMessageDialog open={dlg === 'message'} onClose={() => setDlg(null)} c={c} roles={selected.map(roleOf).filter((r): r is Role => !!r)} />
+      <CandidateMessageDialog open={dlg === 'message'} onClose={() => setDlg(null)} c={c} roles={sel.selected.map(roleOf).filter((r): r is Role => !!r)} />
     </ScrollPage>
   )
 }
@@ -871,15 +1050,210 @@ function WorkAuthEdit({ c, onCancel, onSave }: { c: Candidate; onCancel: () => v
   )
 }
 
-function NotesEdit({ c, onCancel, onSave }: { c: Candidate; onCancel: () => void; onSave: (p: Partial<Candidate>) => void }) {
-  const [take, setTake] = useState(c.ourTake ?? '')
+/* ==========================================================================
+   D-07 · Update or another resume (PRD v0.3 §7.3, exported for S-06 & S-07)
+   ========================================================================== */
+export function UpdateOrAnotherResumeDialog({
+  open,
+  onClose,
+  candidateId,
+  defaultFileName,
+  onDone,
+}: {
+  open: boolean
+  onClose: () => void
+  candidateId: string
+  defaultFileName?: string
+  onDone?: (mode: 'update' | 'another', resumeId: string) => void
+}) {
+  const app = useApp()
+  const c = app.candidate(candidateId)
+  const resumes = app.resumesFor(candidateId)
+  const primaryResume = resumes.find(r => r.isPrimary) ?? resumes[0]
+  const latestV = primaryResume?.versions[primaryResume.versions.length - 1]?.n ?? c?.resumeVersion ?? 1
+
+  const [mode, setMode] = useState<'update' | 'another'>('update')
+  const [targetResumeId, setTargetResumeId] = useState<string>(primaryResume?.id ?? '')
+  const [fileName, setFileName] = useState<string>(defaultFileName ?? `${(c?.name ?? 'Candidate').replace(/[^A-Za-z]/g, '_')}_Resume_2026.pdf`)
+  const [label, setLabel] = useState<string>('Growth')
+  const [targetCat, setTargetCat] = useState<Category>('Marketing')
+  const [headline, setHeadline] = useState<string>('Growth & monetization lead · pricing, checkout, self-serve')
+  const [decisions, setDecisions] = useState<Record<string, 'accept' | 'reject'>>({ u1: 'reject', a2: 'reject' })
+
+  useEffect(() => {
+    if (!open) return
+    setMode('update')
+    setTargetResumeId(primaryResume?.id ?? '')
+    setFileName(defaultFileName ?? `${(c?.name ?? 'Candidate').replace(/[^A-Za-z]/g, '_')}_Resume_2026.pdf`)
+    const hasGrowth = resumes.some(r => r.label.toLowerCase() === 'growth')
+    setLabel(hasGrowth ? 'Platform' : 'Growth')
+    setTargetCat(hasGrowth ? 'Product' : 'Marketing')
+    setHeadline(hasGrowth ? 'Platform & API PM · developer experience, billing' : 'Growth & monetization lead · pricing, checkout, self-serve')
+    setDecisions({ u1: 'reject', a2: 'reject' })
+  }, [open, candidateId, defaultFileName, primaryResume?.id, c?.name, resumes.length])
+
+  const selectedResume = resumes.find(r => r.id === targetResumeId) ?? primaryResume
+  const selectedLatestV = selectedResume?.versions[selectedResume.versions.length - 1]?.n ?? latestV
+
+  const updateChanges: ProposedChange[] = [
+    { id: 'u1', field: 'Total years', from: `${c?.years ?? 7} yrs`, to: '6 yrs (Resume says 6 yrs, profile says 7)', source: 'RESUME' },
+    { id: 'u2', field: 'Current title', from: c?.companies[0]?.title ?? 'Senior Product Manager, Payments', to: 'Lead Product Manager, Payments', source: 'RESUME' },
+    { id: 'u3', field: 'Skills', from: '—', to: '+ Treasury, + Ledgers', source: 'RESUME' },
+  ]
+  const anotherChanges: ProposedChange[] = [
+    { id: 'a1', field: 'Skills (union)', from: '—', to: '+ Self-serve checkout, + Experimentation', source: 'RESUME' },
+    { id: 'a2', field: 'Total years', from: `${c?.years ?? 7} yrs`, to: '6 yrs (Resume says 6 yrs, profile says 7)', source: 'RESUME' },
+  ]
+
+  const activeChanges = mode === 'update' ? updateChanges : anotherChanges
+  const accepted = activeChanges.filter(ch => (decisions[ch.id] ?? 'accept') === 'accept')
+
+  const handleConfirm = () => {
+    if (mode === 'update' && selectedResume) {
+      app.addResumeVersion(selectedResume.id, fileName, accepted.length)
+      if (c) {
+        const nextSkills = accepted.some(a => a.id === 'u3')
+          ? Array.from(new Set([...c.skills, 'Treasury', 'Ledgers']))
+          : c.skills
+        const nextYears = accepted.some(a => a.id === 'u1') ? 6 : c.years
+        app.updateCandidate(c.id, {
+          resumeVersion: c.resumeVersion + 1,
+          updated: 'Just now',
+          skills: nextSkills,
+          years: nextYears,
+        })
+      }
+      app.log({
+        what: `Updated ${selectedResume.label} resume to v${selectedLatestV + 1} · applied ${accepted.length} changes`,
+        record: c?.name ?? candidateId,
+        recordHref: `/candidates/${candidateId}`,
+        kind: 'Candidates',
+      })
+      app.toast(`Saved ${selectedResume.label} resume v${selectedLatestV + 1}`)
+      onDone?.('update', selectedResume.id)
+      onClose()
+      return
+    }
+
+    const cleanLabel = label.trim() || 'Growth'
+    const newId = app.addResume({
+      candidateId,
+      label: cleanLabel,
+      targetCategory: targetCat,
+      isPrimary: false,
+      headline: headline.trim() || `${cleanLabel} lead · ${(c?.skills ?? []).slice(0, 2).join(', ') || 'product'}`,
+      emphasis: ['Pricing', 'Self-serve checkout', 'Experimentation'],
+      versions: [{ n: 1, file: fileName, uploadedBy: app.currentUser.displayName, uploadedAt: 'Just now', changesApplied: accepted.length }],
+    })
+    if (c) {
+      const nextSkills = accepted.some(a => a.id === 'a1')
+        ? Array.from(new Set([...c.skills, 'Self-serve checkout', 'Experimentation']))
+        : c.skills
+      const nextYears = accepted.some(a => a.id === 'a2') ? 6 : c.years
+      app.updateCandidate(c.id, { skills: nextSkills, years: nextYears, updated: 'Just now' })
+    }
+    app.toast(`Added ${cleanLabel} resume`)
+    onDone?.('another', newId)
+    onClose()
+  }
+
   return (
-    <div className="space-y-4">
-      <Field label="Our take" hint="One or two sentences for masked resumes.">
-        <Textarea value={take} onChange={e => setTake(e.target.value)} maxChars={280} />
-      </Field>
-      <EditFooter onCancel={onCancel} onSave={() => onSave({ ourTake: take })} />
-    </div>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      width={640}
+      title={`Is this an update of ${primaryResume?.label ?? 'Product'} resume (v${latestV}), or another resume?`}
+      description="One person, one profile. Choose whether this file replaces an existing resume version or adds a parallel resume for another kind of role."
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" data-autofocus onClick={handleConfirm}>
+            {mode === 'update'
+              ? `Save as v${selectedLatestV + 1} · Apply ${accepted.length} change${accepted.length === 1 ? '' : 's'}`
+              : `Add ${label.trim() || 'Growth'} resume`}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <Segmented
+          aria-label="Resume type"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: 'update', label: 'Update (newer version)' },
+            { value: 'another', label: 'Another resume (different role)' },
+          ]}
+        />
+
+        {mode === 'update' ? (
+          <div className="space-y-4">
+            {resumes.length > 1 && (
+              <Field label="Which resume is this updating?">
+                <Select
+                  aria-label="Which resume"
+                  className="w-full"
+                  value={selectedResume?.id ?? ''}
+                  onChange={setTargetResumeId}
+                  options={resumes.map(r => ({
+                    value: r.id,
+                    label: `${r.label} resume (v${r.versions[r.versions.length - 1]?.n ?? 1})${r.isPrimary ? ' · Primary' : ''}`,
+                  }))}
+                />
+              </Field>
+            )}
+            <div className="flex items-start gap-2 rounded-lg border border-dashed border-warning bg-warning/[0.06] px-3 py-2 text-xs text-[#b45309]">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                Conflict flagged: <strong>Resume says 6 yrs, profile says 7</strong>. Confirmed profile facts are kept unless you accept the change below.
+              </span>
+            </div>
+            <div className="space-y-2">
+              <div className="eyebrow text-[10px] text-gray-1000">Proposed changes to profile facts</div>
+              <ProposedChangesList
+                changes={updateChanges}
+                decisions={decisions}
+                onDecide={(id, d) => setDecisions(x => ({ ...x, [id]: d }))}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Label" hint="Short name shown on the resume card">
+                <Input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. Growth" />
+              </Field>
+              <Field label="Target function" hint="Used to pick the right resume for a role">
+                <Select
+                  aria-label="Target function"
+                  className="w-full"
+                  value={targetCat}
+                  onChange={v => setTargetCat(v as Category)}
+                  options={CATEGORIES}
+                />
+              </Field>
+            </div>
+            <Field label="Resume headline">
+              <Input value={headline} onChange={e => setHeadline(e.target.value)} placeholder="e.g. Growth & monetization lead · pricing, checkout" />
+            </Field>
+            <div className="flex items-start gap-2 rounded-lg border border-dashed border-warning bg-warning/[0.06] px-3 py-2 text-xs text-[#b45309]">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                Conflict flagged: <strong>Resume says 6 yrs, profile says 7</strong>. Explicit skills union across resumes.
+              </span>
+            </div>
+            <div className="space-y-2">
+              <div className="eyebrow text-[10px] text-gray-1000">Proposed changes to profile facts</div>
+              <ProposedChangesList
+                changes={anotherChanges}
+                decisions={decisions}
+                onDecide={(id, d) => setDecisions(x => ({ ...x, [id]: d }))}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </Dialog>
   )
 }
 

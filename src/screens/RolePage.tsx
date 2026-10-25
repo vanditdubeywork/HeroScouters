@@ -2,27 +2,30 @@ import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Download, FileText, Filter, GripVertical,
-  ListChecks, Mail, MoreHorizontal, Pencil, RefreshCw, Search, Sparkles, X,
+  ListChecks, Mail, MessageSquarePlus, MoreHorizontal, Pencil, Plus, RefreshCw, RotateCcw, Search, Sparkles, Wand2, X,
 } from 'lucide-react'
 import { ScrollPage, useTopBar } from '../shell/AppShell'
 import {
-  Avatar, BezelCard, Button, CompanyTypeTag, EmptyState, ExampleMark, Fact, Menu, PillTabs, Segmented, Select, Skeleton, Switch, Tag, cn,
+  Avatar, BezelCard, Button, Checkbox, CompanyTypeTag, EmptyState, ExampleMark, Fact, Menu, PillTabs, Select, Skeleton, Tag, cn,
 } from '../components/ui'
 import {
   Banner, Dialog, FunnelLine, InfoNote, MatchChipView, MatchRow, NotCaptured, RerunSummary, SourceBadge, VersionChip, candidateLocation,
 } from '../components/hs'
+import {
+  FilterBar, type FilterField, type FilterState, GatedButton, ScoreControl, SelectionBar, ShortcutHint, ShortcutSheet, applyFilters, useListSelection,
+} from '../components/v3'
 import { CandidatePreview } from './CandidatePreview'
-import { CopyEmailDialog, IncludeAnywayDialog, RejectDialog, RerunDialog } from './Dialogs'
-import { useApp, useWireframeState } from '../store/AppStore'
+import { AddClientAskDialog, ConfirmAssumedDialog, CopyEmailDialog, IncludeAnywayDialog, RejectDialog, RerunDialog } from './Dialogs'
+import { useApp, useWireframeState, whoCanText } from '../store/AppStore'
 import { POOL_SIZE, eliminatedByRole, jdChangesNorthwind } from '../data/mock'
-import type { Band, Eliminated, Match, MatchChip, OutputType, Role, RoleStatus } from '../data/types'
+import { CLIENT_ASK_TYPES, type Eliminated, type Match, type MatchChip, type OutputType, type Role, type RoleStatus } from '../data/types'
 
 /* ==========================================================================
-   S-04 · Role page — the core screen.
-   Matches (default) · Shortlist · Details · History
+   S-04 · Role page — the core screen (PRD v0.3).
+   Matches (default) · Shortlist (n) · Details (includes Client asks + Recent activity)
    ========================================================================== */
 
-type Tab = 'matches' | 'shortlist' | 'details' | 'history'
+type Tab = 'matches' | 'shortlist' | 'details'
 type View = 'never' | 'running' | 'ranked' | 'none' | 'few' | 'error'
 type DeltaFilter = 'new' | 'moved' | 'requalified' | 'dropped'
 
@@ -42,9 +45,19 @@ function seedFor(role: Role, all: Match[], roles: Role[]): Match[] {
     ?? roles.find(r => r.id !== role.id && r.category === role.category && has(r.id))
     ?? roles.find(r => r.id === 'northwind-spm')
   if (!tpl) return []
+  const isScored = role.scoredCount > 0 && role.matchStatus !== 'not-run'
   return all
     .filter(m => m.roleId === tpl.id && !m.id.startsWith('inc-'))
-    .map(m => ({ ...m, id: `v:${role.id}:${m.id}`, roleId: role.id, status: 'new' as const, rejectReason: undefined, delta: undefined }))
+    .map((m, i) => ({
+      ...m,
+      id: `v:${role.id}:${m.id}`,
+      roleId: role.id,
+      scored: isScored ? m.scored : false,
+      similarity: m.similarity ?? i + 1,
+      status: 'new' as const,
+      rejectReason: undefined,
+      delta: undefined,
+    }))
 }
 
 const ASK_QUESTIONS: Record<string, string> = {
@@ -59,9 +72,10 @@ const askFor = (chip: MatchChip) => ASK_QUESTIONS[chip.label] ?? `Can you confir
 
 const WF_STATES = [
   { id: 'live', label: 'Live (from store)' },
+  { id: 'not-scored', label: 'Not scored yet (stage-1 passers)' },
   { id: 'never', label: 'Never run' },
   { id: 'running', label: 'Running' },
-  { id: 'top5', label: 'Top 5 (up to date)' },
+  { id: 'top5', label: 'Scored (up to date)' },
   { id: 'out-of-date', label: 'Out of date (banner + dim)' },
   { id: 'after-rerun', label: 'After rerun (N9)' },
   { id: 'none', label: 'No one passes' },
@@ -97,7 +111,8 @@ function RoleView({ role }: { role: Role }) {
   const app = useApp()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  const tab = (['matches', 'shortlist', 'details', 'history'].includes(params.get('tab') ?? '') ? params.get('tab') : 'matches') as Tab
+  const rawTab = params.get('tab') ?? ''
+  const tab: Tab = rawTab === 'shortlist' ? 'shortlist' : rawTab === 'details' || rawTab === 'history' ? 'details' : 'matches'
   const setTab = (t: Tab) => { const p = new URLSearchParams(params); p.set('tab', t); setParams(p, { replace: true }) }
   const [wf, setWf] = useWireframeState('S-04', 'Role page', WF_STATES)
 
@@ -105,36 +120,39 @@ function RoleView({ role }: { role: Role }) {
   const own = useMemo(() => app.matches.filter(m => m.roleId === id), [app.matches, id])
   const virtual = vm[id] ?? []
   const all = useMemo(() => [...own, ...virtual], [own, virtual])
-  const ranked = useMemo(() => [...all].sort((a, b) => a.rank - b.rank), [all])
   const shortlisted = all.filter(m => m.status === 'shortlisted')
   const label = `${role.title} — ${role.company}`
 
   /* Local UI state */
   const [running, setRunning] = useState(false)
+  const [scoringCount, setScoringCount] = useState<number | null>(null)
   const [progress, setProgress] = useState(0)
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [deltaFilter, setDeltaFilter] = useState<DeltaFilter | null>(null)
   const [elimOpen, setElimOpen] = useState(false)
-  const [viewMode, setViewMode] = useState<'top' | 'all'>('top')
-  const [band, setBand] = useState<'all' | Band>('all')
-  const [hideDecided, setHideDecided] = useState(false)
-  const [shown, setShown] = useState(5)
+  const [filters, setFilters] = useState<FilterState>({})
+  const [unscoredOpen, setUnscoredOpen] = useState(true)
+  const [skippedOpen, setSkippedOpen] = useState(false)
   const [focusIdx, setFocusIdx] = useState(-1)
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [previewFrom, setPreviewFrom] = useState<'matches' | 'shortlist'>('matches')
   const [rejectTarget, setRejectTarget] = useState<Match | null>(null)
+  const [batchRejectOpen, setBatchRejectOpen] = useState(false)
+  const [confirmAssumedOpen, setConfirmAssumedOpen] = useState(false)
+  const [addAskOpen, setAddAskOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [includeTarget, setIncludeTarget] = useState<Eliminated | null>(null)
   const [rerunOpen, setRerunOpen] = useState<null | 'normal' | 'force'>(null)
   const [compareOpen, setCompareOpen] = useState(false)
-  const [emailOpen, setEmailOpen] = useState(false)
+  const [emailCandidateIds, setEmailCandidateIds] = useState<string[] | null>(null)
   const [last, setLast] = useState<{ id: string; prev: Match['status'] } | null>(null)
 
-  /* Seed session matches for roles created in the prototype */
+  /* Seed session matches for roles without explicit matches in mock.ts */
   useEffect(() => {
-    if (role.matchStatus !== 'not-run' && own.length === 0 && !vMatches[id]) {
+    if (own.length === 0 && !vMatches[id]) {
       vSet(v => ({ ...v, [id]: seedFor(role, app.matches, app.roles) }))
     }
-  }, [role.matchStatus, own.length, id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [own.length, id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Keep the list's shortlist count in sync for session roles */
   useEffect(() => {
@@ -159,32 +177,35 @@ function RoleView({ role }: { role: Role }) {
     if (wf === 'shortlist-prospect' && id !== 'lumen-fse') navigate('/roles/lumen-fse?tab=shortlist')
     if (wf === 'shortlist-client' && id !== 'northwind-spm') navigate('/roles/northwind-spm?tab=shortlist')
     if ((wf === 'shortlist-prospect' || wf === 'shortlist-client') && tab !== 'shortlist') setTab('shortlist')
-    if (['never', 'running', 'top5', 'out-of-date', 'none', 'few', 'error'].includes(wf) && tab !== 'matches') setTab('matches')
+    if (['not-scored', 'never', 'running', 'top5', 'out-of-date', 'none', 'few', 'error'].includes(wf) && tab !== 'matches') setTab('matches')
   }, [wf]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* Running simulation */
+  /* Running / scoring progress simulation */
   useEffect(() => {
-    if (!running) return
-    setProgress(8)
-    const iv = window.setInterval(() => setProgress(p => Math.min(96, p + 11)), 220)
+    if (!running && scoringCount === null) return
+    setProgress(12)
+    const iv = window.setInterval(() => setProgress(p => Math.min(96, p + 14)), 180)
     const t = window.setTimeout(() => {
       setRunning(false)
-      app.toast(`Ranking finished · top ${Math.min(5, Math.max(ranked.length, 5))} ready`)
-    }, 2300)
+      setScoringCount(null)
+    }, 1600)
     return () => { window.clearInterval(iv); window.clearTimeout(t) }
-  }, [running]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [running, scoringCount])
 
-  /* ---------- Derived view ---------- */
-  const view: View = running || wf === 'running' ? 'running'
-    : wf === 'never' ? 'never'
-      : wf === 'none' ? 'none'
-        : wf === 'error' ? 'error'
-          : wf === 'few' ? 'few'
-            : ['top5', 'out-of-date', 'after-rerun', 'eliminated'].includes(wf) ? 'ranked'
-              : role.matchStatus === 'not-run' ? 'never' : 'ranked'
-  const isLiveish = !['top5', 'out-of-date', 'after-rerun', 'never', 'none', 'few', 'error', 'running'].includes(wf)
+  /* ---------- Derived view & scoring state ---------- */
+  const forceNotScored = wf === 'not-scored' || wf === 'never'
+  const isRowScored = (m: Match) => !forceNotScored && m.scored
+
+  const view: View = wf === 'running' ? 'running'
+    : wf === 'none' ? 'none'
+      : wf === 'error' ? 'error'
+        : wf === 'few' ? 'few'
+          : 'ranked'
+
+  const isLiveish = !['top5', 'out-of-date', 'after-rerun', 'not-scored', 'never', 'none', 'few', 'error', 'running'].includes(wf)
   const stale = wf === 'out-of-date' || (isLiveish && role.matchStatus === 'out-of-date')
   const showSummary = view === 'ranked' && !stale && (wf === 'after-rerun' || (isLiveish && summaryOpen))
+
   const elim = eliminatedByRole[id] ?? {
     pool: POOL_SIZE, pass: role.passCount,
     rules: [
@@ -200,17 +221,145 @@ function RoleView({ role }: { role: Role }) {
     ? { new: 2, moved: 3, requalified: 1, dropped: 2 }
     : { new: all.filter(m => m.delta === 'new').length, moved: all.filter(m => m.delta === 'moved').length, requalified: all.filter(m => m.status === 'requalified').length, dropped: 0 }
 
-  let list = ranked
-  if (band !== 'all') list = list.filter(m => m.band === band)
-  if (hideDecided) list = list.filter(m => m.status !== 'shortlisted' && m.status !== 'rejected')
-  if (showSummary && deltaFilter) {
-    list = deltaFilter === 'dropped' ? list.filter(m => m.rank > 5 && m.status !== 'rejected')
-      : deltaFilter === 'requalified' ? list.filter(m => m.status === 'requalified')
-        : list.filter(m => m.delta === deltaFilter)
-  }
-  if (view === 'few') list = list.slice(0, 3)
-  const visible = viewMode === 'all' || (showSummary && deltaFilter) || view === 'few' ? list : list.slice(0, shown)
-  const focusable = visible.filter(m => m.status !== 'rejected')
+  /* ---------- FilterBar fields (N17) ---------- */
+  const filterFields = useMemo<FilterField<Match>[]>(() => [
+    {
+      key: 'band',
+      label: 'Fit band',
+      kind: 'values',
+      options: ['Strong', 'Good', 'Stretch'],
+      pinned: true,
+      get: m => (!forceNotScored && m.scored) ? m.band : null,
+    },
+    {
+      key: 'status',
+      label: 'Decision status',
+      kind: 'values',
+      options: ['New', 'Shortlisted', 'Rejected', 'Re-qualified'],
+      pinned: true,
+      get: m => ({ new: 'New', shortlisted: 'Shortlisted', rejected: 'Rejected', requalified: 'Re-qualified' }[m.status]),
+    },
+    {
+      key: 'scored',
+      label: 'Scored or not',
+      kind: 'values',
+      options: ['Scored', 'Not scored'],
+      get: m => (!forceNotScored && m.scored) ? 'Scored' : 'Not scored',
+    },
+    {
+      key: 'assumed',
+      label: 'Has assumed must-haves',
+      kind: 'values',
+      options: ['Yes', 'No'],
+      get: m => {
+        const c = app.candidate(m.candidateId)
+        const hasAssumed = m.chips.some(ch => ch.kind === 'assumed') || !c?.workAuth.status || !c?.metro || c?.years === null
+        return hasAssumed ? 'Yes' : 'No'
+      },
+    },
+    {
+      key: 'workAuth',
+      label: 'Work authorization',
+      kind: 'values',
+      get: m => {
+        const w = app.candidate(m.candidateId)?.workAuth
+        if (!w?.status) return null
+        return w.visaType ? [w.status, w.visaType] : [w.status]
+      },
+    },
+    {
+      key: 'sponsorship',
+      label: 'Needs sponsorship',
+      kind: 'values',
+      options: ['Yes', 'No'],
+      get: m => {
+        const w = app.candidate(m.candidateId)?.workAuth
+        if (w?.needsSponsorship == null) return null
+        return w.needsSponsorship ? 'Yes' : 'No'
+      },
+    },
+    {
+      key: 'years',
+      label: 'Years of experience',
+      kind: 'number',
+      unit: 'yrs',
+      num: m => app.candidate(m.candidateId)?.years ?? null,
+    },
+    {
+      key: 'location',
+      label: 'Location',
+      kind: 'values',
+      get: m => app.candidate(m.candidateId)?.metro ?? null,
+    },
+    {
+      key: 'workMode',
+      label: 'Work mode',
+      kind: 'values',
+      options: ['Remote', 'Hybrid', 'Onsite'],
+      get: m => app.candidate(m.candidateId)?.workModes ?? null,
+    },
+    {
+      key: 'domain',
+      label: 'Domain',
+      kind: 'multi',
+      get: m => app.candidate(m.candidateId)?.domains ?? null,
+    },
+    {
+      key: 'skills',
+      label: 'Skills',
+      kind: 'multi',
+      get: m => {
+        const c = app.candidate(m.candidateId)
+        return c?.skills.length ? c.skills : null
+      },
+    },
+    {
+      key: 'resumeLabel',
+      label: 'Resume label',
+      kind: 'values',
+      get: m => app.resumesFor(m.candidateId).map(r => r.label),
+    },
+  ], [app, forceNotScored])
+
+  const filteredMatches = useMemo(() => {
+    let base = applyFilters(all, filterFields, filters)
+    if (showSummary && deltaFilter) {
+      base = deltaFilter === 'dropped' ? base.filter(m => m.rank > 5 && m.status !== 'rejected')
+        : deltaFilter === 'requalified' ? base.filter(m => m.status === 'requalified')
+          : base.filter(m => m.delta === deltaFilter)
+    }
+    if (view === 'few') base = base.slice(0, 3)
+    return base
+  }, [all, filterFields, filters, showSummary, deltaFilter, view])
+
+  const allScoredCount = all.filter(m => isRowScored(m)).length
+  const notScoredYetMode = allScoredCount === 0
+
+  const scoredRows = useMemo(
+    () => filteredMatches.filter(m => isRowScored(m)).sort((a, b) => a.rank - b.rank),
+    [filteredMatches, forceNotScored], // eslint-disable-line react-hooks/exhaustive-deps
+  )
+  const unscoredRows = useMemo(
+    () => filteredMatches.filter(m => !isRowScored(m) && !m.skipped).sort((a, b) => a.similarity - b.similarity),
+    [filteredMatches, forceNotScored], // eslint-disable-line react-hooks/exhaustive-deps
+  )
+  const skippedRows = useMemo(
+    () => filteredMatches.filter(m => !isRowScored(m) && !!m.skipped).sort((a, b) => a.similarity - b.similarity),
+    [filteredMatches, forceNotScored], // eslint-disable-line react-hooks/exhaustive-deps
+  )
+  const totalUnscoredPool = all.filter(m => !isRowScored(m) && !m.skipped && m.status !== 'rejected').length
+
+  /* Visible rows for keyboard navigation & selection */
+  const visibleRows = useMemo(() => {
+    if (notScoredYetMode) {
+      return [...unscoredRows, ...(skippedOpen ? skippedRows : [])]
+    }
+    return [...scoredRows, ...(unscoredOpen ? unscoredRows : []), ...(skippedOpen ? skippedRows : [])]
+  }, [notScoredYetMode, scoredRows, unscoredRows, skippedRows, unscoredOpen, skippedOpen])
+
+  const focusable = useMemo(() => visibleRows.filter(m => m.status !== 'rejected'), [visibleRows])
+  const selectableIds = useMemo(() => focusable.map(m => m.id), [focusable])
+  const sel = useListSelection(selectableIds)
   const focusedId = focusIdx >= 0 ? focusable[Math.min(focusIdx, focusable.length - 1)]?.id : undefined
 
   /* ---------- Decisions (store for example roles, session for new roles) ---------- */
@@ -265,10 +414,38 @@ function RoleView({ role }: { role: Role }) {
     app.log({ what: `Added to ask list: “${askFor(chip)}”`, record: nameOf(m), recordHref: `/candidates/${m.candidateId}`, kind: 'Candidates' })
   }
 
-  const startRun = (kind: 'find' | 'rerun' | 'retry') => {
+  const triggerScore = (n: number) => {
+    if (wf !== 'live') setWf('live')
+    setScoringCount(n)
+    const count = app.scoreMatches(id, n)
+    if (count === 0 && virtual.length > 0) {
+      vSet(v => {
+        const listV = v[id] ?? []
+        let left = n
+        return {
+          ...v,
+          [id]: listV.map(m => {
+            if (!m.scored && !m.skipped && m.status !== 'rejected' && left > 0) {
+              left--
+              return { ...m, scored: true }
+            }
+            return m
+          }),
+        }
+      })
+      app.updateRole(id, { scoredCount: role.scoredCount + n, aiScoresUsed: role.aiScoresUsed + n, matchStatus: 'up-to-date' })
+    }
+  }
+
+  const startRun = (kind: 'find' | 'rerun' | 'retry', opts?: { alsoScoreNew?: boolean }) => {
     if (kind === 'find') app.findMatches(id)
-    if (kind === 'rerun') { app.rerun(id); setSummaryOpen(true); setDeltaFilter(null) }
-    setFocusIdx(-1); setShown(5); setElimOpen(false)
+    if (kind === 'rerun') {
+      app.rerun(id)
+      if (opts?.alsoScoreNew) app.scoreMatches(id, app.defaultScoreCount)
+      setSummaryOpen(true)
+      setDeltaFilter(null)
+    }
+    setFocusIdx(-1); setElimOpen(false)
     if (wf !== 'live') setWf('live')
     setRunning(true)
   }
@@ -280,7 +457,49 @@ function RoleView({ role }: { role: Role }) {
     app.toast(`Status changed to ${status}`)
   }
 
-  /* ---------- Keyboard: J/K · Space · S · X · U · E ---------- */
+  /* ---------- Bulk selection derived data ---------- */
+  const selectedMatches = useMemo(() => all.filter(m => sel.selected.includes(m.id)), [all, sel.selected])
+  const alreadyShortlistedCount = selectedMatches.filter(m => m.status === 'shortlisted').length
+  const eligibleForShortlist = selectedMatches.filter(m => m.status !== 'shortlisted' && m.status !== 'rejected')
+  const eligibleForReject = selectedMatches.filter(m => m.status !== 'rejected')
+  const selectedUnscoredIds = selectedMatches.filter(m => !isRowScored(m) && !m.skipped).map(m => m.id)
+
+  const assumedSummary = useMemo(() => {
+    const fieldCounts: Record<string, number> = {}
+    const assumedRows: Match[] = []
+    eligibleForShortlist.forEach(m => {
+      const c = app.candidate(m.candidateId)
+      const rowFields = new Set<string>()
+      m.chips.filter(ch => ch.kind === 'assumed').forEach(ch => rowFields.add(ch.label))
+      if (!c?.workAuth.status) rowFields.add('Work authorization')
+      if (rowFields.size > 0) {
+        assumedRows.push(m)
+        rowFields.forEach(f => { fieldCounts[f] = (fieldCounts[f] ?? 0) + 1 })
+      }
+    })
+    return { assumedRows, fieldCounts }
+  }, [eligibleForShortlist, app])
+
+  const inferredRejectReason = useMemo(() => {
+    if (filters.workAuth || filters.sponsorship) return 'Work authorization'
+    if (filters.location || filters.workMode) return 'Location'
+    if (filters.years) return 'Seniority'
+    if (filters.skills || filters.domain) return 'Skills'
+    return undefined
+  }, [filters])
+
+  const handleBulkShortlist = () => {
+    if (!eligibleForShortlist.length) return
+    const needsConfirm = assumedSummary.assumedRows.length > 0 || stale || role.matchStatus === 'out-of-date'
+    if (needsConfirm) {
+      setConfirmAssumedOpen(true)
+    } else {
+      app.shortlistMany(sel.selected, { onOpenShortlist: () => setTab('shortlist') })
+      sel.clear()
+    }
+  }
+
+  /* ---------- Gmail-aligned Keyboard: J/K · Space · X · S · E · U · Esc · ? ---------- */
   useEffect(() => {
     if (tab !== 'matches' || (view !== 'ranked' && view !== 'few' && view !== 'none' && view !== 'error')) return
     const onKey = (e: KeyboardEvent) => {
@@ -288,15 +507,32 @@ function RoleView({ role }: { role: Role }) {
       const t = e.target as HTMLElement
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName) || t.isContentEditable) return
       if (document.querySelector('[role="dialog"]')) return
+      if (e.key === '?') { e.preventDefault(); setShortcutsOpen(true); return }
+      if (e.key === 'Escape') {
+        if (sel.selected.length > 0) { e.preventDefault(); sel.clear() }
+        return
+      }
       const k = e.key.toLowerCase()
       const cur = focusIdx >= 0 ? focusable[Math.min(focusIdx, focusable.length - 1)] : undefined
       if (k === 'j' || e.key === 'ArrowDown') { e.preventDefault(); setFocusIdx(i => Math.min(focusable.length - 1, i + 1)) }
       else if (k === 'k' || e.key === 'ArrowUp') { e.preventDefault(); setFocusIdx(i => Math.max(0, i - 1)) }
       else if (e.key === ' ' && cur && t.tagName !== 'BUTTON') { e.preventDefault(); setPreviewFrom('matches'); setPreviewId(cur.candidateId) }
-      else if (k === 's' && cur) { e.preventDefault(); doShortlist(cur) }
-      else if (k === 'x' && cur) { e.preventDefault(); setRejectTarget(cur) }
+      else if (k === 'x' && cur) { e.preventDefault(); sel.toggle(cur.id, e.shiftKey) }
+      else if (k === 's') {
+        e.preventDefault()
+        if (sel.selected.length > 0) handleBulkShortlist()
+        else if (cur) doShortlist(cur)
+      }
+      else if (k === 'e') {
+        e.preventDefault()
+        if (!app.can('reject')) return
+        if (sel.selected.length > 0) {
+          if (eligibleForReject.length > 0) setBatchRejectOpen(true)
+        } else if (cur) {
+          setRejectTarget(cur)
+        }
+      }
       else if (k === 'u') { e.preventDefault(); undoLast() }
-      else if (k === 'e') { e.preventDefault(); setElimOpen(o => !o) }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -316,12 +552,64 @@ function RoleView({ role }: { role: Role }) {
   const previewList = previewFrom === 'shortlist' ? shortlisted.map(m => m.candidateId) : focusable.map(m => m.candidateId)
   const previewMatch = previewId ? all.find(m => m.candidateId === previewId) : undefined
 
-  /* ---------- Matches tab ---------- */
-  const renderRow = (m: Match) => {
+  /* ---------- Render MatchRow ---------- */
+  const renderRow = (m: Match, opts?: { forceUnscored?: boolean; skipped?: boolean }) => {
     const c = app.candidate(m.candidateId)
     if (!c) return null
     const loc = candidateLocation(c)
     const fIdx = focusable.findIndex(x => x.id === m.id)
+    const notScored = opts?.forceUnscored ?? !isRowScored(m)
+    const isSkipped = opts?.skipped ?? !!m.skipped
+    const canSelect = m.status !== 'rejected'
+
+    const resumes = app.resumesFor(m.candidateId)
+    const currentResume = resumes.find(r => r.id === m.scoredOnResumeId) ?? resumes.find(r => r.isPrimary) ?? resumes[0]
+    const otherResume = resumes.find(r => r.id !== currentResume?.id) ?? resumes[1]
+
+    const hasResumeSwitch = !notScored && resumes.length > 1 && currentResume && otherResume
+    const hasAskChips = !notScored && (m.askEvidence?.length ?? 0) > 0
+
+    const metaNode = (hasResumeSwitch || hasAskChips) ? (
+      <div className="space-y-2 pt-1">
+        {hasAskChips && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {m.askEvidence!.map(ev => (
+              <span
+                key={ev.askId}
+                title={ev.found ? 'Client ask: evidence found on record' : 'Client ask: not found on record'}
+                className={cn(
+                  'inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-xs whitespace-nowrap',
+                  ev.found
+                    ? 'border-border bg-background text-foreground'
+                    : 'border-dashed border-warning bg-warning/[0.06] text-[#b45309]',
+                )}
+              >
+                {ev.found ? `✓ ${ev.label}` : `? ${ev.label} · not found`}
+              </span>
+            ))}
+          </div>
+        )}
+        {hasResumeSwitch && (
+          <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            <span>Scored on <span className="font-medium text-foreground">{currentResume.label}</span> resume ·</span>
+            <button
+              type="button"
+              onClick={() => app.rescoreOnResume(m.id, otherResume.id)}
+              className="font-medium text-foreground underline-offset-4 hover:underline"
+            >
+              Use {otherResume.label} resume
+            </button>
+          </div>
+        )}
+      </div>
+    ) : undefined
+
+    const footerNode = isSkipped ? (
+      <Button variant="ghost" size="sm" icon={<RotateCcw />} onClick={() => app.skipForScoring([m.id], false)}>
+        Restore
+      </Button>
+    ) : undefined
+
     return (
       <MatchRow key={m.id}
         rank={m.rank} initials={c.initials} title={c.name} subtitle={`${c.headline}${loc ? ` · ${loc}` : ''}`}
@@ -329,6 +617,16 @@ function RoleView({ role }: { role: Role }) {
         band={m.band} score={m.score} reason={m.reason} chips={m.chips}
         status={m.status} rejectReason={m.rejectReason} delta={m.delta === 'requalified' ? undefined : m.delta}
         dimmed={stale} focused={m.id === focusedId}
+        selected={canSelect ? sel.isSelected(m.id) : false}
+        onToggleSelect={canSelect ? shift => sel.toggle(m.id, shift) : undefined}
+        notScored={notScored}
+        skipped={isSkipped}
+        meta={metaNode}
+        footer={footerNode}
+        actionsDisabled={{
+          shortlist: app.can('shortlist') ? undefined : whoCanText('shortlist'),
+          reject: app.can('reject') ? undefined : whoCanText('reject'),
+        }}
         onPreview={() => { setFocusIdx(fIdx); setPreviewFrom('matches'); setPreviewId(c.id) }}
         onShortlist={() => doShortlist(m)}
         onReject={() => setRejectTarget(m)}
@@ -337,22 +635,6 @@ function RoleView({ role }: { role: Role }) {
       />
     )
   }
-
-  const toolbar = (
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <Segmented aria-label="View" value={viewMode} onChange={setViewMode} options={[{ value: 'top', label: 'Top 5' }, { value: 'all', label: 'All ranked' }]} />
-        <Select aria-label="Band" value={band} onChange={v => setBand(v as 'all' | Band)} options={[{ value: 'all', label: 'All bands' }, 'Strong', 'Good', 'Stretch']} />
-        <Switch checked={hideDecided} onChange={setHideDecided} label="Hide decided" />
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="hidden text-[11px] text-muted-foreground xl:inline">J/K move · Space preview · S shortlist · X reject · U undo · E eliminated</span>
-        <Menu width={200}
-          trigger={({ toggle }) => <Button variant="ghost" size="icon" aria-label="More matching actions" onClick={toggle} icon={<MoreHorizontal />} />}
-          items={[{ label: 'Force rerun', icon: <RefreshCw />, onSelect: () => setRerunOpen('force') }]} />
-      </div>
-    </div>
-  )
 
   const eliminatedView = elimOpen && (
     <EliminatedView
@@ -365,27 +647,13 @@ function RoleView({ role }: { role: Role }) {
   )
 
   const matchesTab = (() => {
-    if (view === 'never') {
-      return (
-        <div className="rounded-2xl border border-border bg-card">
-          <EmptyState icon={<Sparkles />} title="No matches yet"
-            body="Matching hasn't run for this role yet. Find the best candidates in your pool."
-            action={
-              <div className="flex flex-col items-center gap-2">
-                <Button variant="chroma" icon={<Sparkles />} onClick={() => startRun('find')}>Find matches</Button>
-                <span className="text-xs text-muted-foreground">~<span className="font-mono tnum">{role.passCount}</span> of <span className="font-mono tnum">{POOL_SIZE}</span> candidates pass the must-haves</span>
-              </div>
-            } />
-        </div>
-      )
-    }
     if (view === 'running') {
       return (
         <div className="space-y-4">
           <Banner variant="info" progress={wf === 'running' ? 45 : progress}>
-            Ranking <span className="font-mono tnum">{role.passCount}</span> candidates… <span className="text-muted-foreground">You can keep working. We'll let you know when it's ready.</span>
+            Scoring <span className="font-mono tnum">{scoringCount ?? role.passCount}</span> candidates… <span className="text-muted-foreground">You can keep working. We'll let you know when it's ready.</span>
           </Banner>
-          <FunnelLine pool={elim.pool} pass={role.passCount} top={5} />
+          <FunnelLine pool={elim.pool} pass={role.passCount} top={allScoredCount} onSeeEliminated={() => setElimOpen(o => !o)} eliminatedOpen={elimOpen} />
           <div className="space-y-2" aria-hidden>{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-[112px] rounded-xl" />)}</div>
         </div>
       )
@@ -403,8 +671,14 @@ function RoleView({ role }: { role: Role }) {
         </div>
       )
     }
+
     return (
-      <div className="space-y-4">
+      <div className={cn('space-y-4', sel.selected.length > 0 && 'any-selected')}>
+        {scoringCount !== null && (
+          <Banner variant="info" progress={progress}>
+            Scoring <span className="font-mono tnum">{scoringCount}</span> candidates… <span className="text-muted-foreground">You can keep working. We'll let you know when it's ready.</span>
+          </Banner>
+        )}
         {view === 'error' && (
           <Banner variant="error" actions={<Button onClick={() => startRun('retry')}>Try again</Button>}>
             Matching didn't finish. Nothing was changed.
@@ -412,34 +686,156 @@ function RoleView({ role }: { role: Role }) {
         )}
         {stale && view === 'ranked' && (
           <Banner variant="warning" actions={<Button variant="primary" icon={<RefreshCw />} onClick={() => setRerunOpen('normal')}>Rerun matching</Button>}>
-            <span className="font-medium">Out of date.</span> {role.outOfDateReason ?? DEFAULT_REASON} <span className="font-mono tnum">{role.passCount}</span> candidates will be re-ranked.
+            <span className="font-medium">Out of date.</span> {role.outOfDateReason ?? DEFAULT_REASON} <span className="font-mono tnum">{scoredRows.length}</span> scored candidates will be re-ranked.
           </Banner>
         )}
         {showSummary && (
           <RerunSummary counts={summaryCounts} active={deltaFilter} onSelect={k => setDeltaFilter(k as DeltaFilter | null)}
             onDismiss={() => { setSummaryOpen(false); setDeltaFilter(null); if (wf === 'after-rerun') setWf('live') }} />
         )}
-        <FunnelLine pool={elim.pool} pass={passCount} top={Math.min(5, list.length)} onSeeEliminated={() => setElimOpen(o => !o)} eliminatedOpen={elimOpen} />
+
+        <FunnelLine
+          pool={elim.pool}
+          pass={passCount}
+          top={allScoredCount}
+          onSeeEliminated={() => setElimOpen(o => !o)}
+          eliminatedOpen={elimOpen}
+        />
+
         {view === 'few' && <InfoNote>Only 3 candidates pass the must-haves. All of them are shown.</InfoNote>}
-        {toolbar}
+
+        {sel.selected.length > 0 ? (
+          <SelectionBar
+            count={sel.selected.length}
+            shown={selectableIds.length}
+            matching={filteredMatches.filter(m => m.status !== 'rejected').length}
+            onSelectAllShown={() => sel.selectAll(selectableIds)}
+            onClear={sel.clear}
+            note={alreadyShortlistedCount > 0 ? `${alreadyShortlistedCount} already shortlisted` : undefined}
+          >
+            {selectedUnscoredIds.length > 0 && (
+              <Button variant="outline" size="sm" onClick={() => { app.skipForScoring(selectedUnscoredIds, true); sel.clear() }}>
+                Skip for scoring
+              </Button>
+            )}
+            <Button variant="primary" size="sm" icon={<Check />} kbd="S" disabled={!eligibleForShortlist.length} onClick={handleBulkShortlist}>
+              Shortlist
+            </Button>
+            <GatedButton perm="reject" variant="outline" size="sm" icon={<X />} kbd="E" disabled={!eligibleForReject.length} onClick={() => setBatchRejectOpen(true)}>
+              Reject
+            </GatedButton>
+          </SelectionBar>
+        ) : (
+          <FilterBar
+            fields={filterFields}
+            rows={all}
+            state={filters}
+            onChange={setFilters}
+            count={filteredMatches.length}
+            countLabel="match"
+            right={<ShortcutHint onOpen={() => setShortcutsOpen(true)} />}
+          />
+        )}
+
         {showSummary && deltaFilter && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             Showing <span className="font-medium text-foreground">{{ new: 'New in top 5', moved: 'Moved', requalified: 'Re-qualified', dropped: 'Dropped out' }[deltaFilter]}</span>
             <Button variant="link" className="text-xs" onClick={() => setDeltaFilter(null)}>Show all</Button>
           </div>
         )}
+
         {eliminatedView}
-        <div className="space-y-2" aria-label="Ranked matches">
-          {visible.length ? visible.map(renderRow) : (
-            <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-              No matches with these filters. <Button variant="link" className="text-sm" onClick={() => { setBand('all'); setHideDecided(false); setDeltaFilter(null) }}>Clear filters</Button>
+
+        {/* Not scored yet state: stage-1 passers + primary ScoreControl in header bar */}
+        {notScoredYetMode ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3">
+              <div className="space-y-0.5">
+                <div className="text-sm font-medium text-foreground">
+                  <span className="font-mono tnum">{unscoredRows.length}</span> stage-1 passer{unscoredRows.length === 1 ? '' : 's'} · not scored with AI yet
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Sorted by similarity to the role. Prune with filters or skip rows before spending AI scores.
+                </p>
+              </div>
+              <ScoreControl unscored={totalUnscoredPool || unscoredRows.length} onScore={n => triggerScore(n)} />
             </div>
-          )}
-        </div>
-        {viewMode === 'top' && !(showSummary && deltaFilter) && view !== 'few' && list.length > shown && (
-          <div className="flex justify-center"><Button variant="ghost" icon={<ChevronDown />} onClick={() => setShown(s => s + 5)}>Show next 5</Button></div>
+
+            <div className="space-y-2" aria-label="Stage-1 passers">
+              {unscoredRows.length > 0 ? (
+                unscoredRows.map(m => renderRow(m, { forceUnscored: true }))
+              ) : (
+                <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+                  No matches with these filters. <Button variant="link" className="text-sm" onClick={() => { setFilters({}); setDeltaFilter(null) }}>Clear filters</Button>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* Scored state: ranked scored rows on top + collapsible Not scored (N) + collapsible Skipped (N) */
+          <div className="space-y-4">
+            <div className="space-y-2" aria-label="Ranked matches">
+              {scoredRows.length > 0 ? (
+                scoredRows.map(m => renderRow(m))
+              ) : (
+                <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+                  No scored matches with these filters. <Button variant="link" className="text-sm" onClick={() => { setFilters({}); setDeltaFilter(null) }}>Clear filters</Button>
+                </div>
+              )}
+            </div>
+
+            {unscoredRows.length > 0 && (
+              <section className="rounded-2xl border border-border bg-gray-100 p-1">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                  <button
+                    type="button"
+                    aria-expanded={unscoredOpen}
+                    onClick={() => setUnscoredOpen(o => !o)}
+                    className="inline-flex items-center gap-2 text-left text-sm font-semibold text-foreground"
+                  >
+                    {unscoredOpen ? <ChevronDown className="size-4 text-muted-foreground" /> : <ChevronRight className="size-4 text-muted-foreground" />}
+                    <span>Not scored ({unscoredRows.length})</span>
+                    <span className="text-xs font-normal text-muted-foreground">· passed must-haves, sorted by similarity · earlier scores kept</span>
+                  </button>
+                  <ScoreControl unscored={unscoredRows.length} more onScore={n => triggerScore(n)} />
+                </div>
+                {unscoredOpen && (
+                  <div className="space-y-2 rounded-xl border border-border bg-card p-2">
+                    {unscoredRows.map(m => renderRow(m, { forceUnscored: true }))}
+                  </div>
+                )}
+              </section>
+            )}
+          </div>
         )}
-        <span className="sr-only" aria-live="polite">{!running && view === 'ranked' ? `Ranking finished: ${Math.min(5, list.length)} candidates` : ''}</span>
+
+        {/* Collapsible Skipped (N) section when any rows are skipped */}
+        {skippedRows.length > 0 && (
+          <section className="rounded-2xl border border-border bg-gray-100 p-1">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+              <button
+                type="button"
+                aria-expanded={skippedOpen}
+                onClick={() => setSkippedOpen(o => !o)}
+                className="inline-flex items-center gap-2 text-left text-sm font-semibold text-foreground"
+              >
+                {skippedOpen ? <ChevronDown className="size-4 text-muted-foreground" /> : <ChevronRight className="size-4 text-muted-foreground" />}
+                <span>Skipped ({skippedRows.length})</span>
+                <span className="text-xs font-normal text-muted-foreground">· excluded from AI scoring</span>
+              </button>
+              <Button variant="ghost" size="sm" icon={<RotateCcw />} onClick={() => app.skipForScoring(skippedRows.map(m => m.id), false)}>
+                Restore
+              </Button>
+            </div>
+            {skippedOpen && (
+              <div className="space-y-2 rounded-xl border border-border bg-card p-2">
+                {skippedRows.map(m => renderRow(m, { forceUnscored: true, skipped: true }))}
+              </div>
+            )}
+          </section>
+        )}
+
+        <span className="sr-only" aria-live="polite">{!running && view === 'ranked' ? `Ranking finished: ${scoredRows.length} scored candidates` : ''}</span>
       </div>
     )
   })()
@@ -458,6 +854,12 @@ function RoleView({ role }: { role: Role }) {
           <Select aria-label="Role status" value={role.status} onChange={changeStatus} options={['Open', 'On hold', 'Closed']} />
           <VersionChip label={`JD v${role.jdVersion}`} versions={versions} onCompare={() => setCompareOpen(true)} />
           <Button variant="outline" icon={<Pencil />} onClick={() => navigate(`/roles/${id}/edit`)}>Edit role</Button>
+          <Menu width={210}
+            trigger={({ toggle }) => <Button variant="ghost" size="icon" aria-label="More role actions" onClick={toggle} icon={<MoreHorizontal />} />}
+            items={[
+              { label: 'Add client ask', icon: <MessageSquarePlus />, onSelect: () => setAddAskOpen(true) },
+              { label: 'Force rerun', icon: <RefreshCw />, onSelect: () => setRerunOpen('force') },
+            ]} />
         </div>
       </header>
 
@@ -467,7 +869,6 @@ function RoleView({ role }: { role: Role }) {
             { value: 'matches', label: 'Matches' },
             { value: 'shortlist', label: 'Shortlist', count: shortlisted.length },
             { value: 'details', label: 'Details' },
-            { value: 'history', label: 'History' },
           ]} />
       </div>
 
@@ -477,11 +878,10 @@ function RoleView({ role }: { role: Role }) {
           onReorder={reorder}
           onRemove={m => doUndo(m)}
           onPreview={cid => { setPreviewFrom('shortlist'); setPreviewId(cid) }}
-          onCopyEmail={() => setEmailOpen(true)}
+          onCopyEmail={cids => setEmailCandidateIds(cids)}
           onGoMatches={() => setTab('matches')} />
       )}
-      {tab === 'details' && <DetailsTab role={role} versions={versions} onCompare={() => setCompareOpen(true)} />}
-      {tab === 'history' && <HistoryTab roleId={id} />}
+      {tab === 'details' && <DetailsTab role={role} onAddAsk={() => setAddAskOpen(true)} />}
 
       {/* Overlays */}
       <CandidatePreview open={!!previewId} onClose={() => setPreviewId(null)} candidateId={previewId} list={previewList}
@@ -489,15 +889,71 @@ function RoleView({ role }: { role: Role }) {
         match={previewMatch}
         onShortlist={previewMatch ? () => doShortlist(previewMatch) : undefined}
         onReject={previewMatch ? () => setRejectTarget(previewMatch) : undefined} />
+
       <RejectDialog open={!!rejectTarget} onClose={() => setRejectTarget(null)}
         candidateName={rejectTarget ? nameOf(rejectTarget) : ''} roleTitle={role.title}
         onConfirm={reason => { if (rejectTarget) doReject(rejectTarget, reason) }} />
-      <RerunDialog open={!!rerunOpen} onClose={() => setRerunOpen(null)} roleLabel={label} count={role.passCount}
-        force={rerunOpen === 'force' && !stale} onConfirm={() => startRun('rerun')} />
+
+      <RejectDialog open={batchRejectOpen} onClose={() => setBatchRejectOpen(false)}
+        candidateName={eligibleForReject.length === 1 ? nameOf(eligibleForReject[0]) : ''}
+        roleTitle={role.title}
+        count={eligibleForReject.length}
+        defaultReason={inferredRejectReason}
+        onConfirm={reason => { app.rejectMany(sel.selected, reason); sel.clear() }} />
+
+      <ConfirmAssumedDialog
+        open={confirmAssumedOpen}
+        onClose={() => setConfirmAssumedOpen(false)}
+        total={eligibleForShortlist.length}
+        assumed={assumedSummary.assumedRows.length}
+        fieldCounts={assumedSummary.fieldCounts}
+        outOfDate={stale || role.matchStatus === 'out-of-date'}
+        onShortlistVerified={() => {
+          const verifiedIds = eligibleForShortlist
+            .filter(m => !assumedSummary.assumedRows.some(a => a.id === m.id))
+            .map(m => m.id)
+          app.shortlistMany(verifiedIds, { onOpenShortlist: () => setTab('shortlist') })
+          sel.clear()
+        }}
+        onShortlistAll={() => {
+          app.shortlistMany(sel.selected, { onOpenShortlist: () => setTab('shortlist') })
+          sel.clear()
+        }}
+        onAddQuestions={() => {
+          assumedSummary.assumedRows.forEach(m => {
+            const chs = m.chips.filter(ch => ch.kind === 'assumed')
+            if (chs.length) chs.forEach(ch => ask(m, ch))
+            else ask(m, { kind: 'assumed', label: 'Work authorization' })
+          })
+        }}
+      />
+
+      <RerunDialog
+        open={!!rerunOpen}
+        onClose={() => setRerunOpen(null)}
+        roleLabel={label}
+        count={scoredRows.length || role.scoredCount || role.passCount}
+        newPassers={unscoredRows.length}
+        newScoreCount={app.defaultScoreCount}
+        force={rerunOpen === 'force' && !stale}
+        onConfirm={opts => startRun('rerun', opts)}
+      />
+
+      <AddClientAskDialog open={addAskOpen} onClose={() => setAddAskOpen(false)} roleId={id} />
+
+      <ShortcutSheet open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+
       <IncludeAnywayDialog open={!!includeTarget} onClose={() => setIncludeTarget(null)}
         candidateName={includeTarget ? app.candidate(includeTarget.candidateId)?.name ?? '' : ''} failing={includeTarget?.failing ?? []}
-        onConfirm={note => { if (includeTarget) { app.includeAnyway(id, includeTarget.candidateId, note); setViewMode('all') } }} />
-      <CopyEmailDialog open={emailOpen} onClose={() => setEmailOpen(false)} candidateIds={shortlisted.map(m => m.candidateId)} roleId={id} />
+        onConfirm={note => { if (includeTarget) app.includeAnyway(id, includeTarget.candidateId, note) }} />
+
+      <CopyEmailDialog
+        open={!!emailCandidateIds}
+        onClose={() => setEmailCandidateIds(null)}
+        candidateIds={emailCandidateIds ?? shortlisted.map(m => m.candidateId)}
+        roleId={id}
+      />
+
       <Dialog open={compareOpen} onClose={() => setCompareOpen(false)} width={560}
         title={`Compare JD v${Math.max(1, role.jdVersion - 1)} with v${role.jdVersion} (current)`}
         description="What changed in the role between versions."
@@ -575,20 +1031,30 @@ function EliminatedView({ pool, pass, rules, rows, included, onInclude, onClose,
   )
 }
 
-/* ---------- Shortlist tab ---------- */
+/* ---------- Shortlist tab (T1, T3, T6) ---------- */
 function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onCopyEmail, onGoMatches }: {
   role: Role; items: Match[]; onReorder: (ids: string[]) => void; onRemove: (m: Match) => void; onPreview: (cid: string) => void
-  onCopyEmail: () => void; onGoMatches: () => void
+  onCopyEmail: (candidateIds: string[]) => void; onGoMatches: () => void
 }) {
   const app = useApp()
   const navigate = useNavigate()
   const [drag, setDrag] = useState<number | null>(null)
   const [over, setOver] = useState<number | null>(null)
+  const [sourceResumeByCandidate, setSourceResumeByCandidate] = useState<Record<string, string>>({})
+
+  const orderedIds = useMemo(() => items.map(m => m.id), [items])
+  const sel = useListSelection(orderedIds)
+
   const isClient = role.companyType === 'Client'
-  const ids = items.map(m => m.candidateId)
-  const types: OutputType[] = isClient ? ['Masked', 'Tailored', 'As-is'] : ['Masked']
-  const outFor = (cid: string, type: OutputType) => app.outputs.find(o => o.candidateId === cid && o.type === type && (o.roleId === role.id || (type === 'Masked' && o.roleId === null)))
-  const readyCount = items.filter(m => types.some(t => outFor(m.candidateId, t))).length
+  const activeItems = sel.selected.length > 0 ? items.filter(m => sel.isSelected(m.id)) : items
+  const activeIds = activeItems.map(m => m.candidateId)
+
+  const types: OutputType[] = isClient ? ['Masked', 'Editable', 'As-is'] : ['Masked']
+  const outFor = (cid: string, type: OutputType) =>
+    app.outputs.find(o => o.candidateId === cid && o.type === type && (o.roleId === role.id || (type === 'Masked' && o.roleId === null)))
+
+  const readyCount = activeItems.filter(m => types.some(t => outFor(m.candidateId, t))).length
+  const missingMasked = items.filter(m => !outFor(m.candidateId, 'Masked'))
 
   const move = (from: number, to: number) => {
     if (from === to || to < 0 || to >= items.length) return
@@ -608,35 +1074,77 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onCopyEmail
     )
   }
 
-  const masked = () => navigate(`/resumes/masked?role=${role.id}&candidates=${ids.join(',')}`)
-  const tailored = () => navigate(`/resumes/tailored?role=${role.id}&candidates=${ids.join(',')}`)
+  const masked = () => navigate(`/resumes/masked?role=${role.id}&candidates=${activeIds.join(',')}`)
+  const editable = () => navigate(`/resumes/editable?role=${role.id}&candidates=${activeIds.join(',')}`)
+
+  const allSelected = items.length > 0 && sel.selected.length === items.length
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-sm text-muted-foreground"><span className="font-mono text-foreground tnum">{items.length}</span> shortlisted · drag to set the order clients see</div>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          {sel.selected.length > 0 ? (
+            <>
+              <span className="font-mono text-foreground tnum">{sel.selected.length}</span> of <span className="font-mono text-foreground tnum">{items.length}</span> selected
+              <Button variant="link" className="text-xs" onClick={sel.clear}>Clear</Button>
+            </>
+          ) : (
+            <><span className="font-mono text-foreground tnum">{items.length}</span> shortlisted · drag to set the order clients see</>
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-2">
-          {isClient && <Button variant="primary" icon={<FileText />} onClick={tailored}>Prepare resumes for client</Button>}
-          <Button variant={isClient ? 'outline' : 'primary'} icon={<Sparkles />} onClick={masked}>Generate masked resumes</Button>
-          <Button variant="outline" icon={<Mail />} onClick={onCopyEmail}>Copy email text</Button>
+          {isClient && (
+            <GatedButton perm="genIdentity" variant="primary" icon={<FileText />} onClick={editable}>
+              Prepare editable resumes
+            </GatedButton>
+          )}
+          <Button variant={isClient ? 'outline' : 'primary'} icon={<Sparkles />} onClick={masked}>
+            Generate masked resumes
+          </Button>
+          <Button variant="outline" icon={<Mail />} onClick={() => onCopyEmail(activeIds)}>
+            Copy email text
+          </Button>
           <Button variant="outline" icon={<Download />} disabled={!readyCount} title={readyCount ? undefined : 'No resumes generated yet'}
             onClick={() => { app.toast(`Downloaded ${readyCount} resume${readyCount === 1 ? '' : 's'} as one ZIP`); app.log({ what: `Downloaded ${readyCount} resumes (ZIP)`, record: `${role.title} — ${role.company}`, recordHref: `/roles/${role.id}`, kind: 'Outputs' }) }}>
-            Download all
+            Download
           </Button>
         </div>
       </div>
+
+      {missingMasked.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-secondary/60 px-3.5 py-2 text-xs">
+          <span className="text-foreground">
+            <span className="font-mono font-medium tnum">{missingMasked.length}</span> without a masked resume
+          </span>
+          <Button
+            variant="link"
+            className="text-xs font-medium"
+            onClick={() => navigate(`/resumes/masked?role=${role.id}&candidates=${missingMasked.map(m => m.candidateId).join(',')}`)}
+          >
+            Generate ({missingMasked.length})
+          </Button>
+        </div>
+      )}
+
       {!isClient && <InfoNote>Prospect role: masked resumes are the only output here, so identities never reach a prospect by mistake.</InfoNote>}
 
       <ol className="overflow-hidden rounded-xl border border-border bg-card" aria-label="Shortlist order">
         <li className="hidden h-9 items-center gap-4 border-b border-border bg-secondary/70 px-4 sm:flex" aria-hidden>
+          <Checkbox
+            aria-label="Select all shortlisted"
+            checked={allSelected}
+            onChange={v => (v ? sel.selectAll() : sel.clear())}
+          />
           <span className="eyebrow w-12 text-[10px] text-gray-1000">Order</span>
           <span className="eyebrow flex-1 text-[10px] text-gray-1000">Candidate</span>
           <span className="eyebrow w-[260px] text-[10px] text-gray-1000">Outputs</span>
-          <span className="w-[176px]" />
+          <span className="w-[220px]" />
         </li>
         {items.map((m, i) => {
           const c = app.candidate(m.candidateId)
           if (!c) return null
+          const resumes = app.resumesFor(c.id)
+          const selectedResumeId = sourceResumeByCandidate[c.id] ?? m.scoredOnResumeId ?? resumes.find(r => r.isPrimary)?.id ?? resumes[0]?.id ?? ''
           return (
             <li key={m.id} draggable
               onDragStart={e => { setDrag(i); e.dataTransfer.effectAllowed = 'move' }}
@@ -644,17 +1152,35 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onCopyEmail
               onDrop={e => { e.preventDefault(); if (drag !== null) move(drag, i); setDrag(null); setOver(null) }}
               onDragEnd={() => { setDrag(null); setOver(null) }}
               className={cn('flex flex-wrap items-center gap-4 border-b border-border px-4 py-3 transition-colors last:border-0',
+                sel.isSelected(m.id) && 'bg-secondary/60',
                 drag === i && 'opacity-50', over === i && drag !== null && drag !== i && 'bg-muted')}>
+              <span onClickCapture={e => { if (e.shiftKey) { e.stopPropagation(); e.preventDefault(); sel.toggle(m.id, true) } }}>
+                <Checkbox aria-label={`Select ${c.name}`} checked={sel.isSelected(m.id)} onChange={() => sel.toggle(m.id, false)} />
+              </span>
               <div className="flex w-12 items-center gap-1.5">
                 <GripVertical className="size-4 cursor-grab text-gray-800" aria-hidden />
                 <span className="font-mono text-xs text-gray-1000 tnum">{i + 1}</span>
               </div>
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <Avatar initials={c.initials} size={32} />
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium">{c.name}</div>
                   <div className="truncate text-xs text-muted-foreground">{c.headline}</div>
                 </div>
+                {resumes.length > 1 && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] text-muted-foreground">Source resume</span>
+                    <Select
+                      aria-label={`Source resume for ${c.name}`}
+                      value={selectedResumeId}
+                      onChange={rid => {
+                        setSourceResumeByCandidate(s => ({ ...s, [c.id]: rid }))
+                        app.rescoreOnResume(m.id, rid)
+                      }}
+                      options={resumes.map(r => ({ value: r.id, label: r.label }))}
+                    />
+                  </div>
+                )}
               </div>
               <div className="flex w-[260px] flex-wrap items-center gap-1.5">
                 {types.map(t => {
@@ -669,7 +1195,10 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onCopyEmail
                   )
                 })}
               </div>
-              <div className="flex w-[176px] items-center justify-end gap-1">
+              <div className="flex w-[220px] items-center justify-end gap-1">
+                <Button variant="ghost" size="sm" icon={<Wand2 />} onClick={() => navigate('/resumes/masked?candidates=' + m.candidateId + '&role=' + role.id)}>
+                  Refine
+                </Button>
                 <Button variant="ghost" size="icon-sm" aria-label={`Move ${c.name} up`} disabled={i === 0} onClick={() => move(i, i - 1)} icon={<ArrowUp />} />
                 <Button variant="ghost" size="icon-sm" aria-label={`Move ${c.name} down`} disabled={i === items.length - 1} onClick={() => move(i, i + 1)} icon={<ArrowDown />} />
                 <Button size="sm" onClick={() => onPreview(c.id)}>Preview</Button>
@@ -683,114 +1212,163 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onCopyEmail
   )
 }
 
-/* ---------- Details tab ---------- */
-function DetailsTab({ role, versions, onCompare }: { role: Role; versions: { v: string; who: string; when: string }[]; onCompare: () => void }) {
+/* ---------- Details tab (T7, T9) ---------- */
+function DetailsTab({ role, onAddAsk }: { role: Role; onAddAsk: () => void }) {
+  const app = useApp()
+  const navigate = useNavigate()
+  const [openDiff, setOpenDiff] = useState<Record<string, boolean>>({})
+
+  const asks = app.asksFor(role.id)
+  const roleActivity = app.activity.filter(e => e.recordHref === `/roles/${role.id}`)
+  const recentEntries = [...roleActivity, ...app.activity.filter(e => e.recordHref !== `/roles/${role.id}`)].slice(0, 5)
+
   const yn = (v: 'Yes' | 'No' | 'Unknown') => (v === 'Unknown' ? <span className="text-muted-foreground">Unknown</span> : v)
   const Text = ({ v }: { v?: string }) => (v ? <p className="text-sm leading-relaxed whitespace-pre-wrap">{v}</p> : <NotCaptured />)
-  return (
-    <div className="grid gap-6 xl:grid-cols-2">
-      <div className="space-y-6">
-        <BezelCard title="Company">
-          <div className="grid grid-cols-2 gap-4">
-            <Fact label="Company">{role.company}</Fact>
-            <Fact label="Type"><CompanyTypeTag type={role.companyType} /></Fact>
-            <Fact label="Source">{role.companySource}</Fact>
-            <Fact label="Posting">{role.postingUrl ? <a href={role.postingUrl} target="_blank" rel="noreferrer" className="underline-offset-4 hover:underline">{role.postingUrl.replace(/^https?:\/\//, '')}</a> : <span className="text-muted-foreground">—</span>}</Fact>
-          </div>
-        </BezelCard>
-        <BezelCard title="Must-haves" description="Candidates who fail any of these are eliminated before ranking.">
-          <div className="grid grid-cols-2 gap-4">
-            <Fact label="Minimum years"><span className="flex items-center gap-2"><span className="tnum">{role.minYears}+ yrs</span><SourceBadge kind="JD" /></span></Fact>
-            <Fact label="Location"><span className="flex items-center gap-2">{role.location || <NotCaptured />}<SourceBadge kind="JD" /></span></Fact>
-            <Fact label="Work mode"><span className="flex items-center gap-2">{role.workMode}<SourceBadge kind="JD" /></span></Fact>
-            <Fact label="Relocation accepted">{role.relocationAccepted === null ? <NotCaptured /> : role.relocationAccepted ? 'Yes' : 'No'}</Fact>
-            <Fact label="Sponsorship offered">{yn(role.sponsorship)}</Fact>
-            <Fact label="Visa transfer supported">{yn(role.transfer)}</Fact>
-          </div>
-          <div className="mt-4 space-y-2">
-            <div className="eyebrow text-[10px] text-gray-1000">Must-have skills</div>
-            <div className="flex flex-wrap gap-1.5">{role.mustSkills.map(s => <Tag key={s} tone="dark">{s}</Tag>)}</div>
-          </div>
-        </BezelCard>
-        <BezelCard title="Nice-to-haves">
-          <div className="flex flex-wrap gap-1.5">{role.niceSkills.length ? role.niceSkills.map(s => <Tag key={s}>{s}</Tag>) : <span className="text-sm text-muted-foreground">None</span>}</div>
-        </BezelCard>
-        <BezelCard title="Pay">
-          <div className="grid grid-cols-2 gap-4">
-            <Fact label="Range">{role.pay && role.pay !== '—' ? <span className="tnum">{role.pay}</span> : <NotCaptured />}</Fact>
-            <Fact label="Seniority">{role.seniority}</Fact>
-          </div>
-        </BezelCard>
-      </div>
-      <div className="space-y-6">
-        <BezelCard title="Context">
-          <div className="space-y-4">
-            <Fact label="What good looks like · past hires"><Text v={role.whatGood} /></Fact>
-            <Fact label="Hiring team / founder research"><Text v={role.research} /></Fact>
-            <Fact label="Interview process"><Text v={role.interview} /></Fact>
-          </div>
-        </BezelCard>
-        <BezelCard title="Job description" action={<span className="font-mono text-[11px] text-muted-foreground">JD v{role.jdVersion}</span>}>
-          {role.jdText
-            ? <pre className="max-h-[360px] overflow-auto font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-gray-1100">{role.jdText}</pre>
-            : <p className="text-sm text-muted-foreground">No JD text saved for this role.</p>}
-        </BezelCard>
-        <BezelCard title="Version history">
-          <ul className="divide-y divide-border">
-            {versions.map((v, i) => (
-              <li key={v.v} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-                <span className="font-mono text-xs">{v.v}</span>
-                <span className="flex-1 text-xs text-muted-foreground">{v.who} · {v.when}</span>
-                {i === 0 ? <span className="eyebrow text-[9px] text-gray-1000">Current</span> : <Button variant="ghost" size="sm" onClick={onCompare}>Compare</Button>}
-              </li>
-            ))}
-          </ul>
-        </BezelCard>
-      </div>
-    </div>
-  )
-}
-
-/* ---------- History tab ---------- */
-function HistoryTab({ roleId }: { roleId: string }) {
-  const { activity } = useApp()
-  const [open, setOpen] = useState<Record<string, boolean>>({})
-  const entries = activity.filter(e => e.recordHref === `/roles/${roleId}`)
-  if (!entries.length) {
-    return <div className="rounded-2xl border border-border bg-card"><EmptyState icon={<FileText />} title="No history yet" body="Edits, runs, decisions, overrides and outputs for this role will show here." /></div>
-  }
+  const askTypeLabel = (type: string) => CLIENT_ASK_TYPES.find(t => t.value === type)?.label ?? type
   const initials = (who: string) => who.split(/\s+/).map(s => s[0]).join('').replace(/[^A-Z]/gi, '').slice(0, 2).toUpperCase()
+
   return (
-    <ol className="overflow-hidden rounded-xl border border-border bg-card">
-      {entries.map(e => {
-        const expandable = !!(e.before || e.after)
-        const isOpen = open[e.id]
-        return (
-          <li key={e.id} className="border-b border-border px-4 py-3 last:border-0">
-            <div className="flex items-start gap-3">
-              <Avatar initials={initials(e.who)} size={24} className="mt-0.5" />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm"><span className="font-medium">{e.who}</span> <span className="text-gray-1100">{e.what}</span></p>
-                <div className="mt-1 flex items-center gap-2">
-                  <span className="eyebrow text-[9px] text-gray-1000">{e.kind}</span>
-                  <span className="font-mono text-[11px] text-muted-foreground">{e.when}</span>
-                </div>
-              </div>
-              {expandable && (
-                <Button variant="ghost" size="sm" aria-expanded={!!isOpen} iconRight={isOpen ? <ChevronDown /> : <ChevronRight />}
-                  onClick={() => setOpen(o => ({ ...o, [e.id]: !o[e.id] }))}>{isOpen ? 'Hide change' : 'Show change'}</Button>
-              )}
+    <div className="space-y-6">
+      <div className="grid gap-6 xl:grid-cols-2">
+        <div className="space-y-6">
+          <BezelCard title="Company">
+            <div className="grid grid-cols-2 gap-4">
+              <Fact label="Company">{role.company}</Fact>
+              <Fact label="Type"><CompanyTypeTag type={role.companyType} /></Fact>
+              <Fact label="Source">{role.companySource}</Fact>
+              <Fact label="Posting">{role.postingUrl ? <a href={role.postingUrl} target="_blank" rel="noreferrer" className="underline-offset-4 hover:underline">{role.postingUrl.replace(/^https?:\/\//, '')}</a> : <span className="text-muted-foreground">—</span>}</Fact>
             </div>
-            {expandable && isOpen && (
-              <div className="mt-3 ml-9 grid gap-2 rounded-lg border border-border bg-background p-3 text-sm sm:grid-cols-2">
-                <div><div className="eyebrow mb-1 text-[9px] text-gray-1000">Before</div><span className="text-muted-foreground">{e.before ?? '—'}</span></div>
-                <div><div className="eyebrow mb-1 text-[9px] text-gray-1000">After</div><span>{e.after ?? '—'}</span></div>
-              </div>
+          </BezelCard>
+
+          <BezelCard title="Must-haves" description="Candidates who fail any of these are eliminated before ranking.">
+            <div className="grid grid-cols-2 gap-4">
+              <Fact label="Minimum years"><span className="flex items-center gap-2"><span className="tnum">{role.minYears}+ yrs</span><SourceBadge kind="JD" /></span></Fact>
+              <Fact label="Location"><span className="flex items-center gap-2">{role.location || <NotCaptured />}<SourceBadge kind="JD" /></span></Fact>
+              <Fact label="Work mode"><span className="flex items-center gap-2">{role.workMode}<SourceBadge kind="JD" /></span></Fact>
+              <Fact label="Relocation accepted">{role.relocationAccepted === null ? <NotCaptured /> : role.relocationAccepted ? 'Yes' : 'No'}</Fact>
+              <Fact label="Sponsorship offered">{yn(role.sponsorship)}</Fact>
+              <Fact label="Visa transfer supported">{yn(role.transfer)}</Fact>
+            </div>
+            <div className="mt-4 space-y-2">
+              <div className="eyebrow text-[10px] text-gray-1000">Must-have skills</div>
+              <div className="flex flex-wrap gap-1.5">{role.mustSkills.map(s => <Tag key={s} tone="dark">{s}</Tag>)}</div>
+            </div>
+          </BezelCard>
+
+          {/* T7 · Client asks card right after Must-haves */}
+          <BezelCard
+            title={<span className="flex items-center gap-2">Client asks <span className="font-mono text-xs font-normal text-muted-foreground tnum">{asks.length}</span></span>}
+            action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={onAddAsk}>Add client ask</Button>}
+            description="What the client said on calls, emails or chat outside the JD."
+          >
+            {asks.length > 0 ? (
+              <ul className="divide-y divide-border">
+                {asks.map(a => (
+                  <li key={a.id} className="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="text-sm font-medium text-foreground">{a.text}</div>
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                        <span className="rounded-md border border-border bg-secondary px-1.5 py-0.5 text-[11px] font-medium text-foreground">
+                          {askTypeLabel(a.type)}{a.column ? ` · ${a.column}` : ''}
+                        </span>
+                        <span>·</span>
+                        <span>{a.source}{a.saidBy ? ` · ${a.saidBy}` : ''} · {a.when}</span>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`Remove client ask ${a.text}`}
+                      title="Remove client ask"
+                      onClick={() => app.removeClientAsk(a.id)}
+                      icon={<X />}
+                    />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">No client asks captured yet.</p>
             )}
-          </li>
-        )
-      })}
-    </ol>
+          </BezelCard>
+
+          <BezelCard title="Nice-to-haves">
+            <div className="flex flex-wrap gap-1.5">{role.niceSkills.length ? role.niceSkills.map(s => <Tag key={s}>{s}</Tag>) : <span className="text-sm text-muted-foreground">None</span>}</div>
+          </BezelCard>
+
+          <BezelCard title="Pay">
+            <div className="grid grid-cols-2 gap-4">
+              <Fact label="Range">{role.pay && role.pay !== '—' ? <span className="tnum">{role.pay}</span> : <NotCaptured />}</Fact>
+              <Fact label="Seniority">{role.seniority}</Fact>
+            </div>
+          </BezelCard>
+        </div>
+
+        <div className="space-y-6">
+          <BezelCard title="Context">
+            <div className="space-y-4">
+              <Fact label="What good looks like · past hires"><Text v={role.whatGood} /></Fact>
+              <Fact label="Hiring team / founder research"><Text v={role.research} /></Fact>
+              <Fact label="Interview process"><Text v={role.interview} /></Fact>
+            </div>
+          </BezelCard>
+
+          <BezelCard title="Job description" action={<span className="font-mono text-[11px] text-muted-foreground">JD v{role.jdVersion}</span>}>
+            <details className="group">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium text-foreground select-none">
+                <span>Job description text (JD v{role.jdVersion})</span>
+                <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="mt-3 border-t border-border pt-3">
+                {role.jdText
+                  ? <pre className="max-h-[360px] overflow-auto font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-gray-1100">{role.jdText}</pre>
+                  : <p className="text-sm text-muted-foreground">No JD text saved for this role.</p>}
+              </div>
+            </details>
+          </BezelCard>
+        </div>
+      </div>
+
+      {/* T9 · Recent activity (5) merged at the bottom of Details */}
+      <BezelCard
+        title={`Recent activity (${recentEntries.length})`}
+        action={<Button variant="link" className="text-xs" onClick={() => navigate('/activity')}>See all in Activity</Button>}
+      >
+        {recentEntries.length > 0 ? (
+          <ol className="divide-y divide-border">
+            {recentEntries.map(e => {
+              const expandable = !!(e.before || e.after)
+              const isOpen = openDiff[e.id]
+              return (
+                <li key={e.id} className="py-2.5 first:pt-0 last:pb-0">
+                  <div className="flex items-start gap-3">
+                    <Avatar initials={initials(e.who)} size={24} className="mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm"><span className="font-medium">{e.who}</span> <span className="text-gray-1100">{e.what}</span></p>
+                      <div className="mt-1 flex items-center gap-2">
+                        <span className="eyebrow text-[9px] text-gray-1000">{e.kind}</span>
+                        <span className="font-mono text-[11px] text-muted-foreground">{e.when}</span>
+                      </div>
+                    </div>
+                    {expandable && (
+                      <Button variant="ghost" size="sm" aria-expanded={!!isOpen} iconRight={isOpen ? <ChevronDown /> : <ChevronRight />}
+                        onClick={() => setOpenDiff(o => ({ ...o, [e.id]: !o[e.id] }))}>{isOpen ? 'Hide change' : 'Show change'}</Button>
+                    )}
+                  </div>
+                  {expandable && isOpen && (
+                    <div className="mt-3 ml-9 grid gap-2 rounded-lg border border-border bg-background p-3 text-sm sm:grid-cols-2">
+                      <div><div className="eyebrow mb-1 text-[9px] text-gray-1000">Before</div><span className="text-muted-foreground">{e.before ?? '—'}</span></div>
+                      <div><div className="eyebrow mb-1 text-[9px] text-gray-1000">After</div><span>{e.after ?? '—'}</span></div>
+                    </div>
+                  )}
+                </li>
+              )
+            })}
+          </ol>
+        ) : (
+          <p className="text-sm text-muted-foreground">No activity recorded for this role yet.</p>
+        )}
+      </BezelCard>
+    </div>
   )
 }
 

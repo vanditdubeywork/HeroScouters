@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, Briefcase, CircleCheck, Copy, Lock, MoreHorizontal, Pause, Pencil, Plus, Search, SearchX } from 'lucide-react'
+import { AlertTriangle, Briefcase, CircleCheck, Copy, Lock, MoreHorizontal, Pause, Pencil, Plus, RefreshCw, Search, SearchX, Sparkles } from 'lucide-react'
 import { ScrollPage, useTopBar } from '../shell/AppShell'
 import {
   Button, CompanyTypeTag, EmptyState, ExampleMark, Input, Menu, PageHeader, PillTabs, Select, cn,
@@ -48,6 +48,11 @@ export function mustHavesSummary(r: Role) {
   return `${r.minYears}+ yrs · ${loc} · ${auth}`
 }
 
+/** v0.3 · T2 status vocabulary: Not scored · Scored · Out of date */
+export function matchStatusLabel(r: Role) {
+  return r.matchStatus === 'out-of-date' ? 'Out of date' : r.matchStatus === 'not-run' ? 'Not scored' : 'Scored'
+}
+
 function MatchesStatus({ r }: { r: Role }) {
   if (r.matchStatus === 'out-of-date') {
     return (
@@ -59,13 +64,13 @@ function MatchesStatus({ r }: { r: Role }) {
   if (r.matchStatus === 'not-run') {
     return (
       <span className="inline-flex h-6 items-center gap-1.5 rounded-md border border-dashed border-gray-700 px-2 text-xs whitespace-nowrap text-muted-foreground">
-        <span className="size-1.5 rounded-full border border-gray-800" />Not run
+        <span className="size-1.5 rounded-full border border-gray-800" />Not scored
       </span>
     )
   }
   return (
     <span className="inline-flex h-6 items-center gap-1.5 rounded-md border border-border bg-gray-100 px-2 text-xs whitespace-nowrap text-foreground">
-      <CircleCheck className="size-3.5 shrink-0 text-muted-foreground" />Up to date
+      <CircleCheck className="size-3.5 shrink-0 text-muted-foreground" />Scored
     </span>
   )
 }
@@ -102,7 +107,7 @@ export function RolesList() {
       .filter(r => category === 'all' || r.category === category)
       .filter(r => !needle || `${r.title} ${r.company} ${r.subcategory}`.toLowerCase().includes(needle))
       .filter(r => !attention || needsAction(r))
-      .sort((a, b) => (Number(needsAction(b)) - Number(needsAction(a))) || agoMinutes(a.updated) - agoMinutes(b.updated))
+      .sort((a, b) => (Number(needsAction(b)) - Number(needsAction(a))) || agoMinutes(a.latestUpdate?.when ?? a.updated) - agoMinutes(b.latestUpdate?.when ?? b.updated))
   }, [roles, tab, type, category, q, attention])
 
   const clearFilters = () => {
@@ -117,81 +122,84 @@ export function RolesList() {
     app.toast(status === 'On hold' ? `Put ${r.title} on hold` : `Closed ${r.title}`)
   }
   const duplicate = (r: Role) => {
-    const copy: Role = { ...r, id: `${r.id}-copy-${Date.now().toString(36)}`, title: `${r.title} (copy)`, matchStatus: 'not-run', outOfDateReason: undefined, shortlisted: 0, jdVersion: 1, updated: 'Just now', status: 'Open' }
+    const copy: Role = { ...r, id: `${r.id}-copy-${Date.now().toString(36)}`, title: `${r.title} (copy)`, matchStatus: 'not-run', outOfDateReason: undefined, shortlisted: 0, jdVersion: 1, updated: 'Just now', status: 'Open', scoredCount: 0, aiScoresUsed: 0, latestUpdate: { text: `Duplicated from ${r.title}`, who: app.currentUser.displayName.split(' ')[0], when: 'Just now' } }
     app.addRole(copy)
     app.log({ what: `Duplicated role from ${r.title} — ${r.company}`, record: `${copy.title} — ${copy.company}`, recordHref: `/roles/${copy.id}`, kind: 'Roles' })
     app.toast(`Duplicated ${r.title}`, { action: { label: 'Edit', onClick: () => navigate(`/roles/${copy.id}/edit`) } })
   }
-  const findMatches = (r: Role) => {
-    app.findMatches(r.id)
-    navigate(`/roles/${r.id}?tab=matches&run=1`)
-  }
+  /** "Review (5 new)" — scored matches nobody has decided on yet */
+  const newCount = (r: Role) => matches.filter(m => m.roleId === r.id && m.scored && (m.status === 'new' || m.status === 'requalified')).length
+  const lastWhen = (r: Role) => agoMinutes(r.latestUpdate?.when ?? r.updated)
+  const stop = (e: React.MouseEvent) => e.stopPropagation()
 
   const columns: Column<Role>[] = [
     {
-      key: 'role', header: 'Role', width: '24%', sortable: true, sortValue: r => r.title,
+      key: 'cat', header: 'Category', width: '150px', sortable: true, sortValue: r => r.category,
       render: r => (
         <div className="min-w-0">
-          <div className="truncate font-medium text-foreground">{r.title}</div>
-          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"><span className="truncate">{r.company}</span><CompanyTypeTag type={r.companyType} /></div>
-        </div>
-      ),
-    },
-    {
-      key: 'cat', header: 'Category', width: '17%',
-      render: r => (
-        <div className="flex items-center gap-1.5 whitespace-nowrap">
           <span className="inline-flex h-5 items-center rounded-sm border border-border bg-secondary px-1.5 text-[11px] font-medium text-foreground">{r.category}</span>
-          <span className="max-w-[115px] truncate text-xs text-gray-1100">{r.subcategory}</span>
+          <div className="mt-0.5 max-w-[140px] truncate text-xs text-muted-foreground">{r.subcategory}</div>
         </div>
       ),
     },
     {
-      key: 'must', header: 'Must-haves', width: '26%',
+      key: 'company', header: 'Company', width: '17%', sortable: true, sortValue: r => r.company,
+      render: r => (
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate text-foreground">{r.company}</span><CompanyTypeTag type={r.companyType} />
+        </div>
+      ),
+    },
+    {
+      key: 'title', header: 'Job title', width: '20%', sortable: true, sortValue: r => r.title,
+      render: r => <div className="truncate font-medium text-foreground">{r.title}</div>,
+    },
+    {
+      key: 'latest', header: 'Latest update', sortable: true, sortValue: r => lastWhen(r),
+      render: r => r.latestUpdate ? (
+        <div className="min-w-0" title={`${r.latestUpdate.text} · ${r.latestUpdate.who} · ${r.latestUpdate.when}`}>
+          <div className="truncate text-[13px] text-foreground">{r.latestUpdate.text}</div>
+          <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground tnum">{r.latestUpdate.who} · {r.latestUpdate.when}</div>
+        </div>
+      ) : <span className="font-mono text-xs text-muted-foreground tnum">Updated {r.updated}</span>,
+    },
+    {
+      key: 'next', header: 'Next step', width: '236px', sortable: true, sortValue: r => (r.matchStatus === 'out-of-date' ? 0 : r.matchStatus === 'not-run' ? 1 : 2),
       render: r => {
-        const city = r.location.split(',')[0]
-        const loc = r.workMode === 'Remote' ? 'Remote' : `${CITY_SHORT[city] ?? city} · ${r.workMode.toLowerCase()}`
-        const auth = r.sponsorship === 'No' ? 'No sponsorship' : r.sponsorship === 'Yes' ? 'Sponsors visa' : 'Sponsor unknown'
+        const n = newCount(r)
         return (
-          <div className="flex flex-wrap items-center gap-1" title={mustHavesSummary(r)}>
-            <span className="inline-flex h-5 items-center rounded-sm border border-border bg-gray-100 px-1.5 font-mono text-[11px] text-foreground tnum">{r.minYears}+ yrs</span>
-            <span className="inline-flex h-5 items-center rounded-sm border border-border bg-gray-100 px-1.5 text-[11px] text-gray-1100">{loc}</span>
-            <span className="inline-flex h-5 items-center rounded-sm border border-border bg-gray-100 px-1.5 text-[11px] text-gray-1100">{auth}</span>
+          <div className="flex items-center gap-2 whitespace-nowrap" onClick={stop}>
+            <MatchesStatus r={r} />
+            {r.matchStatus === 'out-of-date' && <Button variant="outline" size="sm" icon={<RefreshCw />} onClick={() => setRerunRole(r)}>Rerun</Button>}
+            {r.matchStatus === 'not-run' && <Button variant="outline" size="sm" icon={<Sparkles />} onClick={() => navigate(`/roles/${r.id}?tab=matches`)}>Score</Button>}
+            {r.matchStatus === 'up-to-date' && <Button variant="ghost" size="sm" onClick={() => navigate(`/roles/${r.id}?tab=matches`)}>{n ? <>Review (<span className="font-mono tnum">{n}</span> new)</> : 'Review'}</Button>}
           </div>
         )
       },
     },
     {
-      key: 'short', header: 'Shortlist', width: '114px', sortable: true, sortValue: r => shortlistCount(r),
+      key: 'short', header: 'Shortlist', width: '96px', sortable: true, sortValue: r => shortlistCount(r),
       render: r => {
         const n = shortlistCount(r)
         return (
-          <span className={cn('inline-flex items-center gap-1.5 text-xs whitespace-nowrap', n ? 'text-foreground' : 'text-muted-foreground')}>
-            <span className={cn('inline-flex h-5 min-w-5 items-center justify-center rounded-sm border px-1.5 font-mono text-[11px] tnum', n ? 'border-border bg-secondary text-foreground' : 'border-border bg-gray-100 text-muted-foreground')}>{n}</span>
-            shortlisted
-          </span>
+          <span className={cn('inline-flex h-5 min-w-5 items-center justify-center rounded-sm border px-1.5 font-mono text-[11px] tnum', n ? 'border-border bg-secondary text-foreground' : 'border-border bg-gray-100 text-muted-foreground')}
+            aria-label={`${n} shortlisted`}>{n}</span>
         )
       },
     },
-    { key: 'status', header: 'Matches', width: '130px', sortable: true, sortValue: r => (needsAction(r) ? 0 : 1), render: r => <MatchesStatus r={r} /> },
-    { key: 'updated', header: 'Updated', width: '92px', sortable: true, sortValue: r => agoMinutes(r.updated), render: r => <span className="font-mono text-xs text-muted-foreground whitespace-nowrap tnum">{r.updated}</span> },
   ]
 
   const rowActions = (r: Role) => (
-    <>
-      {r.matchStatus === 'out-of-date' && <Button variant="outline" size="sm" onClick={() => setRerunRole(r)}>Rerun</Button>}
-      {r.matchStatus === 'not-run' && <Button variant="outline" size="sm" onClick={() => findMatches(r)}>Find matches</Button>}
-      <Menu width={200}
-        trigger={({ toggle }) => <Button variant="ghost" size="icon-sm" aria-label={`More actions for ${r.title}`} onClick={toggle} icon={<MoreHorizontal />} />}
-        items={[
-          { label: 'Edit role', icon: <Pencil />, onSelect: () => navigate(`/roles/${r.id}/edit`) },
-          { label: 'Put on hold', icon: <Pause />, disabled: r.status === 'On hold', onSelect: () => setStatus(r, 'On hold') },
-          { label: 'Close role', icon: <Lock />, disabled: r.status === 'Closed', onSelect: () => setStatus(r, 'Closed') },
-          { separator: true, label: '' },
-          { label: 'Duplicate role', icon: <Copy />, onSelect: () => duplicate(r) },
-        ]}
-      />
-    </>
+    <Menu width={200}
+      trigger={({ toggle }) => <Button variant="ghost" size="icon-sm" aria-label={`More actions for ${r.title}`} onClick={toggle} icon={<MoreHorizontal />} />}
+      items={[
+        { label: 'Edit role', icon: <Pencil />, onSelect: () => navigate(`/roles/${r.id}/edit`) },
+        { label: 'Put on hold', icon: <Pause />, disabled: r.status === 'On hold', onSelect: () => setStatus(r, 'On hold') },
+        { label: 'Close role', icon: <Lock />, disabled: r.status === 'Closed', onSelect: () => setStatus(r, 'Closed') },
+        { separator: true, label: '' },
+        { label: 'Duplicate role', icon: <Copy />, onSelect: () => duplicate(r) },
+      ]}
+    />
   )
 
   const tabCount = (t: StatusTab) => roles.filter(r => t === 'All' || r.status === t).length
@@ -228,7 +236,7 @@ export function RolesList() {
           )}
           {attention && wf === 'default' && (
             <Banner variant="warning" onDismiss={() => setParams({})}>
-              Showing roles that need action: matches out of date or not run yet.
+              Showing roles that need action: matches out of date or not scored yet.
             </Banner>
           )}
 
@@ -260,18 +268,22 @@ export function RolesList() {
             )}
           />
           {wf === 'default' && rows.length > 0 && (
-            <p className="eyebrow text-[10px] text-gray-1000">Sorted by needs action first, then most recently updated</p>
+            <p className="eyebrow text-[10px] text-gray-1000">Sorted by needs action first, then latest update</p>
           )}
         </div>
       )}
 
       <RerunDialog open={!!rerunRole} onClose={() => setRerunRole(null)}
         roleLabel={rerunRole ? `${rerunRole.title} — ${rerunRole.company}` : ''}
-        count={rerunRole?.passCount ?? 0}
-        onConfirm={() => {
+        count={rerunRole ? matches.filter(m => m.roleId === rerunRole.id && m.scored).length || rerunRole.scoredCount : 0}
+        newPassers={rerunRole ? matches.filter(m => m.roleId === rerunRole.id && !m.scored && !m.skipped && m.status !== 'rejected').length : 0}
+        newScoreCount={app.defaultScoreCount}
+        onConfirm={opts => {
           if (!rerunRole) return
-          app.rerun(rerunRole.id)
-          app.toast(`Reran matching for ${rerunRole.title}`, { action: { label: 'Open', onClick: () => navigate(`/roles/${rerunRole.id}?tab=matches&reran=1`) } })
+          const r = rerunRole
+          app.rerun(r.id)
+          if (opts?.alsoScoreNew) app.scoreMatches(r.id, app.defaultScoreCount)
+          app.toast(`Reran matching for ${r.title}`, { action: { label: 'Open', onClick: () => navigate(`/roles/${r.id}?tab=matches&reran=1`) } })
         }} />
     </ScrollPage>
   )

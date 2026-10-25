@@ -265,6 +265,7 @@ export function DataTable<T extends { id: string }>({
                   <tr
                     key={r.id}
                     role="row"
+                    data-row-id={r.id}
                     tabIndex={onRowClick ? 0 : undefined}
                     onClick={() => onRowClick?.(r)}
                     onKeyDown={e => { if (e.key === 'Enter' && onRowClick) onRowClick(r) }}

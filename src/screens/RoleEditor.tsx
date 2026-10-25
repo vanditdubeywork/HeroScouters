@@ -1,15 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { AlertTriangle, Building2, FileText, Link2, Sparkles, Upload, Users, X } from 'lucide-react'
+import { AlertTriangle, Building2, FileAudio, FileText, Link2, MessageSquarePlus, Plus, Sparkles, Upload, Users, X } from 'lucide-react'
 import { SplitPane, useTopBar } from '../shell/AppShell'
 import {
-  BezelCard, Button, EmptyState, ExampleMark, Field, Input, Segmented, Select, Switch, Textarea, cn,
+  BezelCard, Button, EmptyState, ExampleMark, Field, Input, Segmented, Select, Switch, Tag, Textarea, cn,
 } from '../components/ui'
 import { AIStepper, Banner, InfoNote, NotCaptured, SourceBadge, useStepper } from '../components/hs'
-import { LeaveDialog, ProposedChangesDialog } from './Dialogs'
+import { AddClientAskDialog, LeaveDialog, ProposedChangesDialog } from './Dialogs'
 import { useApp, useWireframeState } from '../store/AppStore'
 import { POOL_SIZE, jdChangesNorthwind, roles as mockRoles } from '../data/mock'
-import { CATEGORIES, SUBCATEGORIES, type Category, type ProposedChange, type Role, type SourceKind, type WorkMode } from '../data/types'
+import { CATEGORIES, CLIENT_ASK_TYPES, SUBCATEGORIES, type Category, type ProposedChange, type Role, type SourceKind, type WorkMode } from '../data/types'
 
 /* ==========================================================================
    S-03 · New / edit role (split pane)
@@ -274,6 +274,9 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
   const [dirty, setDirty] = useState(false)
   const [leaveOpen, setLeaveOpen] = useState(false)
   const [revisedOpen, setRevisedOpen] = useState(false)
+  const [askDialog, setAskDialog] = useState<'type' | 'transcript' | null>(null)
+  const askRoleId = role?.id ?? 'northwind-spm'
+  const roleAsks = app.asksFor(askRoleId)
   const locationRef = useRef<HTMLInputElement>(null)
 
   useTopBar(
@@ -366,8 +369,10 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
       const slug = `${src.company || 'company'}-${f.title}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
       const newRole: Role = {
         id: `${slug}-${Date.now().toString(36).slice(-4)}`, company: src.company || 'Untitled company', companyType: src.companyType, companySource,
-        ...f, status: 'Open', jdVersion: 1, matchStatus: find ? 'up-to-date' : 'not-run', shortlisted: 0, updated: 'Just now',
+        ...f, status: 'Open', jdVersion: 1, matchStatus: 'not-run', shortlisted: 0, updated: 'Just now',
         passCount: pass ?? 0, jdText: src.tab === 'none' ? src.noJdLines : src.jdText || undefined, postingUrl: src.url || undefined,
+        scoredCount: 0, aiScoresUsed: 0,
+        latestUpdate: { text: `${pass ?? 0} pass the must-haves · not scored`, who: app.currentUser.displayName.split(' ')[0], when: 'Just now' },
       }
       const label = `${newRole.title} — ${newRole.company}`
       app.addRole(newRole)
@@ -583,6 +588,45 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
         </div>
       </BezelCard>
 
+      {/* v0.3 · T7 Client asks (structured requirements from calls/emails/chats) */}
+      <BezelCard
+        icon={<MessageSquarePlus />}
+        title={<span className="flex items-center gap-2">Client asks <span className="font-mono text-[10px] text-muted-foreground tnum">{roleAsks.length}</span></span>}
+        description="Requirements the client said outside the JD. Must-haves and nice-to-haves mark matches out of date; context doesn’t."
+        action={
+          <div className="flex items-center gap-1.5">
+            <Button variant="ghost" size="sm" icon={<FileAudio />} onClick={() => setAskDialog('transcript')}>Import transcript</Button>
+            <Button variant="outline" size="sm" icon={<Plus />} onClick={() => setAskDialog('type')}>Add client ask</Button>
+          </div>
+        }
+      >
+        {roleAsks.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No client asks yet. Add what the hiring manager said on the intake call or in Slack.</p>
+        ) : (
+          <ul className="divide-y divide-border rounded-xl border border-border">
+            {roleAsks.map(a => {
+              const meta = CLIENT_ASK_TYPES.find(t => t.value === a.type)
+              return (
+                <li key={a.id} className="flex items-start justify-between gap-3 px-3.5 py-2.5">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-foreground">“{a.text}”</span>
+                      <Tag tone={a.type.startsWith('must') ? 'dark' : a.type === 'nice' ? 'neutral' : 'outline'}>
+                        {meta?.label ?? a.type}{a.column ? ` · ${a.column}` : ''}
+                      </Tag>
+                    </div>
+                    <div className="font-mono text-[11px] text-muted-foreground">
+                      {a.source}{a.saidBy ? ` · ${a.saidBy}` : ''} · {a.when} · added by {a.addedBy}
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="icon-sm" aria-label={`Remove ${a.text}`} onClick={() => app.removeClientAsk(a.id)} icon={<X />} />
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </BezelCard>
+
       <BezelCard title="Basics">
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label={<Lbl src={sources.category}>Category</Lbl>} right={!d.categoryConfirmed && d.category ? <SuggestedBadge /> : undefined}>
@@ -677,6 +721,7 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
       <ProposedChangesDialog open={revisedOpen} onClose={() => { setRevisedOpen(false); if (wf === 'revised') setWf('live') }}
         changes={jdChangesNorthwind} onApply={applyRevised}
         subtitle={`From the revised JD you pasted (will become JD v${(role?.jdVersion ?? 1) + 1}). Accepted changes are logged and mark matches out of date.`} />
+      <AddClientAskDialog open={!!askDialog} onClose={() => setAskDialog(null)} roleId={askRoleId} initialMode={askDialog ?? 'type'} />
     </>
   )
 }

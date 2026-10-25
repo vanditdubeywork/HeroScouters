@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Briefcase, Users, FileText, Plus, Sparkles, ArrowRight, Keyboard, X } from 'lucide-react'
+import { Search, Briefcase, Users, FileText, Plus, Sparkles, ArrowRight, Keyboard, X, Terminal, MessageSquarePlus } from 'lucide-react'
 import { Avatar, CompanyTypeTag, Kbd, cn } from '../components/ui'
 import { useApp } from '../store/AppStore'
 
@@ -22,10 +22,10 @@ const SHORTCUTS: { keys: string[]; label: string }[] = [
   { keys: ['⌘', 'K'], label: 'Search people, roles and actions' },
   { keys: ['J', 'K'], label: 'Move through match or candidate rows' },
   { keys: ['␣'], label: 'Open candidate preview side panel' },
-  { keys: ['S'], label: 'Shortlist focused candidate' },
-  { keys: ['X'], label: 'Reject focused candidate (opens reason dialog)' },
+  { keys: ['X'], label: 'Select or unselect the focused row' },
+  { keys: ['S'], label: 'Shortlist focused or selected rows' },
+  { keys: ['E'], label: 'Reject focused or selected rows (reason dialog)' },
   { keys: ['U'], label: 'Undo last shortlist or reject decision' },
-  { keys: ['E'], label: 'Toggle eliminated candidates view' },
 ]
 
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -59,6 +59,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
           c.metro ?? '',
           c.workAuth.status ?? '',
           c.workAuth.visaType ?? '',
+          ...(c.domains ?? []),
           ...c.skills,
           ...c.predicted.map(p => p.name),
           ...c.companies.map(co => `${co.name} ${co.descriptor} ${co.title}`),
@@ -119,6 +120,22 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
         onSelect: () => { navigate('/candidates/new'); onClose() },
       },
       {
+        id: 'act-add-client-ask-nw',
+        group: 'Actions',
+        title: 'Add client ask to Northwind Pay',
+        subtitle: 'Record a requirement or context note from a client call or email',
+        icon: <MessageSquarePlus className="size-4 text-muted-foreground" />,
+        onSelect: () => { navigate('/roles/northwind-spm?tab=details'); onClose() },
+      },
+      {
+        id: 'act-edit-prompts',
+        group: 'Actions',
+        title: 'Edit prompts',
+        subtitle: 'Open Settings → Prompts to version or restore AI prompts',
+        icon: <Terminal className="size-4 text-muted-foreground" />,
+        onSelect: () => { navigate('/settings?tab=prompts'); onClose() },
+      },
+      {
         id: 'act-find-roles-priya',
         group: 'Actions',
         title: 'Find roles for Priya S.',
@@ -130,9 +147,17 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
         id: 'act-masked-priya',
         group: 'Actions',
         title: 'Masked resume for Priya S.',
-        subtitle: 'Open one-click masked PDF builder',
+        subtitle: 'Open one-click masked PDF builder with prompt refinement',
         icon: <FileText className="size-4 text-muted-foreground" />,
         onSelect: () => { navigate('/resumes/masked?candidates=priya&role=northwind-spm'); onClose() },
+      },
+      {
+        id: 'act-editable-priya',
+        group: 'Actions',
+        title: 'Editable resume for Priya S.',
+        subtitle: 'Open editable client resume review (PDF + DOCX)',
+        icon: <FileText className="size-4 text-muted-foreground" />,
+        onSelect: () => { navigate('/resumes/editable?role=northwind-spm&candidates=priya,jordant'); onClose() },
       },
       {
         id: 'act-marketing-list',

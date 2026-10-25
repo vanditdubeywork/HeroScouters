@@ -9,15 +9,24 @@ import type { LogEntry, LogKind } from '../data/types'
 
 /* ==========================================================================
    S-12 · Activity log — trust and memory ("why was Marcus rejected?")
+   PRD v0.3: logs bulk decisions, AI scoring rounds, prompt versions, client asks & signed takes
    ========================================================================== */
 
 const KINDS: LogKind[] = ['Roles', 'Candidates', 'Decisions', 'Reruns', 'Outputs', 'Overrides']
 const STATES = [
   { id: 'default', label: 'Default' },
+  { id: 'batch', label: 'Batch & v0.3 events' },
   { id: 'empty', label: 'Empty' },
   { id: 'filtered', label: 'Filtered (Decisions)' },
 ]
 const initialsOf = (who: string) => who === 'System' ? 'SY' : who.replace(/\(.*\)/, '').trim().split(/\s+/).map(s => s[0]).join('').replace('.', '').slice(0, 2).toUpperCase()
+
+const V3_BATCH_ENTRIES: LogEntry[] = [
+  { id: 'v3-1', who: 'Purvesh N.', what: 'Shortlisted 4 in bulk', record: 'Senior PM — Northwind Pay', recordHref: '/roles/northwind-spm', when: '4 min ago', kind: 'Decisions', after: 'Priya S., Jordan T., Elena V., Sara M.' },
+  { id: 'v3-2', who: 'Vandit D.', what: 'Approved and signed take as Vandit D.', record: 'Priya S.', recordHref: '/candidates/priya', when: '12 min ago', kind: 'Candidates', after: 'The most commercially sharp payments PM I have spoken to this quarter.' },
+  { id: 'v3-3', who: 'Purvesh N.', what: 'Saved Masking prompt v4 · Lead with impact for the role', record: 'Settings · Prompts', recordHref: '/settings?tab=prompts', when: '18 min ago', kind: 'Overrides', before: 'v3', after: 'v4' },
+  { id: 'v3-4', who: 'Purvesh N.', what: 'Added client ask · Has led a team of 5+ (Call · Sean (VP Product))', record: 'Senior PM — Northwind Pay', recordHref: '/roles/northwind-spm', when: 'Yesterday', kind: 'Roles' },
+]
 
 export function ActivityLog() {
   const app = useApp()
@@ -26,12 +35,17 @@ export function ActivityLog() {
 
   const [kinds, setKinds] = useState<LogKind[]>([])
   const [person, setPerson] = useState('all')
-  const [open, setOpen] = useState<string[]>([])
+  const [open, setOpen] = useState<string[]>(['v3-1'])
 
   const activeKinds = wf === 'filtered' ? (kinds.length ? kinds : ['Decisions'] as LogKind[]) : kinds
-  const all = wf === 'empty' ? [] : app.activity
+  const all = useMemo(() => {
+    if (wf === 'empty') return []
+    if (wf === 'batch') return [...V3_BATCH_ENTRIES, ...app.activity]
+    return app.activity
+  }, [wf, app.activity])
+
   const rows = useMemo(() => all.filter(e => (!activeKinds.length || activeKinds.includes(e.kind)) && (person === 'all' || e.who === person)), [all, activeKinds, person])
-  const people = Array.from(new Set(app.activity.map(e => e.who)))
+  const people = Array.from(new Set(all.map(e => e.who)))
   const filtered = activeKinds.length > 0 || person !== 'all'
 
   const toggleKind = (k: LogKind) => {

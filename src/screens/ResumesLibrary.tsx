@@ -1,18 +1,20 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { AlertTriangle, Copy, Download, FileText, RefreshCw, SearchX } from 'lucide-react'
+import { AlertTriangle, Copy, Download, FileText, RefreshCw, SearchX, Wand2 } from 'lucide-react'
 import { ScrollPage, useTopBar } from '../shell/AppShell'
 import { Avatar, Button, EmptyState, ExampleMark, PageHeader, Select } from '../components/ui'
 import { DataTable, FilterChip, type Column } from '../components/hs'
+import { latestVersion } from '../components/outputs'
 import { useApp, useWireframeState } from '../store/AppStore'
 import { CopyEmailDialog } from './Dialogs'
 import type { OutputType, ResumeOutput } from '../data/types'
 
 /* ==========================================================================
    S-11 · Resumes library — find what was generated and sent, and reuse it.
+   PRD v0.3 §7.3 (T3 Source column) & §7.6 (T6 Prompt + Revisions + Refine)
    ========================================================================== */
 
-const TYPES: OutputType[] = ['Masked', 'Tailored', 'As-is']
+const TYPES: OutputType[] = ['Masked', 'Editable', 'As-is']
 const STATES = [
   { id: 'default', label: 'Default' },
   { id: 'empty', label: 'Empty' },
@@ -41,14 +43,21 @@ export function ResumesLibrary() {
   const filtered = types.length > 0 || roleF !== 'all' || byF !== 'all'
   const clear = () => { setTypes([]); setRoleF('all'); setByF('all') }
 
-  const regenerate = (o: ResumeOutput) => {
+  const openBuilder = (o: ResumeOutput) => {
     if (o.type === 'Masked') navigate(`/resumes/masked?candidates=${o.candidateId}&role=${o.roleId ?? 'none'}`)
-    else navigate(`/resumes/tailored?role=${o.roleId ?? 'northwind-spm'}&candidates=${o.candidateId}`)
+    else navigate(`/resumes/editable?role=${o.roleId ?? 'northwind-spm'}&candidates=${o.candidateId}`)
   }
   const download = (o: ResumeOutput) => {
     const c = app.candidate(o.candidateId)
     app.log({ what: `Downloaded ${o.type.toLowerCase()} resume for ${c?.name}`, record: c?.name ?? '', recordHref: `/candidates/${o.candidateId}`, kind: 'Outputs' })
     app.toast(`${o.type === 'As-is' ? 'Resume' : `${o.type} resume`} downloaded`)
+  }
+
+  const sourceText = (o: ResumeOutput) => {
+    const list = app.resumesFor(o.candidateId)
+    const r = (o.sourceResumeId ? list.find(x => x.id === o.sourceResumeId) : undefined) ?? list.find(x => x.isPrimary) ?? list[0]
+    const v = o.sourceVersion ?? latestVersion(r)
+    return r ? `${r.label} resume v${v}` : `Resume v${v}`
   }
 
   const columns: Column<ResumeOutput>[] = [
@@ -76,17 +85,42 @@ export function ResumesLibrary() {
       render: o => {
         const r = o.roleId ? app.role(o.roleId) : undefined
         return r
-          ? <span className="block max-w-[175px] truncate text-xs font-medium text-foreground" title={`${r.title} — ${r.company}`}>{r.title} <span className="font-normal text-muted-foreground">· {r.company}</span></span>
+          ? <span className="block max-w-[165px] truncate text-xs font-medium text-foreground" title={`${r.title} — ${r.company}`}>{r.title} <span className="font-normal text-muted-foreground">· {r.company}</span></span>
           : <span className="text-xs text-muted-foreground">No role</span>
       },
     },
+    {
+      key: 'source', header: 'Source',
+      render: o => <span className="block max-w-[130px] truncate text-xs text-gray-1100 whitespace-nowrap">{sourceText(o)}</span>,
+    },
     { key: 'template', header: 'Template', render: o => <span className="block max-w-[115px] truncate text-xs text-gray-1100">{o.template}</span> },
+    {
+      key: 'prompt', header: 'Prompt',
+      render: o => <span className="font-mono text-[11px] text-gray-1100 whitespace-nowrap">{o.promptVersion ?? 'Masking v4'}</span>,
+    },
+    {
+      key: 'revisions', header: 'Revisions',
+      render: o => {
+        const n = o.revisions?.length ?? 1
+        const latest = o.revisions?.[o.revisions.length - 1]
+        return (
+          <span title={latest ? `v${n}: ${latest.instruction} (${latest.scope})` : 'v1: Generated'} className="inline-flex h-5 items-center rounded-sm border border-border bg-background px-1.5 font-mono text-[11px] text-foreground tnum">
+            v{n}
+          </span>
+        )
+      },
+    },
     { key: 'by', header: 'Created by', sortable: true, sortValue: o => o.createdBy, render: o => <span className="block max-w-[100px] truncate text-xs text-gray-1100 whitespace-nowrap">{o.createdBy}</span> },
     { key: 'created', header: 'Created', render: o => <span className="font-mono text-[11px] text-muted-foreground whitespace-nowrap tnum">{o.created}</span> },
     {
       key: 'status', header: 'Status',
       render: o => o.stale
-        ? <span title="Profile changed since" className="inline-flex h-6 items-center gap-1 rounded-md border border-warning/40 bg-warning/[0.08] px-2 text-xs whitespace-nowrap text-[#b45309]"><AlertTriangle className="size-3 shrink-0 text-warning" />Stale · changed</span>
+        ? (
+          <span title={o.staleReason ?? 'Profile changed since'} className="inline-flex h-6 max-w-[190px] items-center gap-1 rounded-md border border-warning/40 bg-warning/[0.08] px-2 text-xs whitespace-nowrap text-[#b45309]">
+            <AlertTriangle className="size-3 shrink-0 text-warning" />
+            <span className="truncate">Stale · {o.staleReason ?? 'changed'}</span>
+          </span>
+        )
         : <span className="inline-flex h-5 items-center rounded-sm border border-border bg-gray-100 px-2 text-[11px] text-muted-foreground">Ready</span>,
     },
   ]
@@ -116,9 +150,10 @@ export function ResumesLibrary() {
         onRowClick={o => navigate(`/candidates/${o.candidateId}`)}
         rowActions={o => (
           <>
-            <Button variant="outline" size="sm" icon={<Download />} onClick={() => download(o)}>PDF</Button>
+            <Button variant="outline" size="sm" icon={<Download />} onClick={() => download(o)}>Download</Button>
             <Button variant="ghost" size="icon-sm" aria-label="Copy email text" title="Copy email text" icon={<Copy />} onClick={() => setEmail(o)} />
-            <Button variant="ghost" size="icon-sm" aria-label="Regenerate" title="Regenerate" icon={<RefreshCw />} onClick={() => regenerate(o)} />
+            <Button variant="ghost" size="sm" icon={<Wand2 />} onClick={() => openBuilder(o)}>Refine</Button>
+            <Button variant="ghost" size="icon-sm" aria-label="Regenerate" title="Regenerate" icon={<RefreshCw />} onClick={() => openBuilder(o)} />
           </>
         )}
         empty={all.length === 0

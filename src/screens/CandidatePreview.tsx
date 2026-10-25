@@ -1,8 +1,9 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ExternalLink, X, MapPin, Clock, Star, ShieldCheck, DollarSign, Calendar } from 'lucide-react'
+import { ExternalLink, X, MapPin, Clock, Star, ShieldCheck, DollarSign, Calendar, Layers, MessageSquareText } from 'lucide-react'
 import { Avatar, Button, Tag } from '../components/ui'
-import { BandChip, ChipRow, MatchChipView, OverviewGrid, PanelNav, SidePanel, SourceBadge, WorkAuthChip } from '../components/hs'
+import { BandChip, ChipRow, MatchChipView, OverviewGrid, PanelNav, SidePanel, SourceBadge, WorkAuthChip, type OverviewRow } from '../components/hs'
+import { TakeMarker, signature } from '../components/v3'
 import { useApp } from '../store/AppStore'
 import type { Match } from '../data/types'
 
@@ -25,7 +26,7 @@ export interface CandidatePreviewProps {
 }
 
 export function CandidatePreview({ open, onClose, candidateId, list, onNavigate, match, onShortlist, onReject }: CandidatePreviewProps) {
-  const { candidate, addToAskList } = useApp()
+  const { candidate, addToAskList, resumesFor, takeFor, member } = useApp()
   const navigate = useNavigate()
   const c = candidateId ? candidate(candidateId) : undefined
   const idx = candidateId ? list.indexOf(candidateId) : -1
@@ -47,9 +48,64 @@ export function CandidatePreview({ open, onClose, candidateId, list, onNavigate,
   }, [open, next, prev, onShortlist, onReject, match?.status])
 
   if (!c) return null
+  const resumes = resumesFor(c.id)
+  const take = takeFor(c.id, match?.roleId ?? null)
+  const takeAuthor = take ? member(take.authorId) : undefined
   const gaps = match ? match.chips.filter(ch => ch.kind === 'gap' || ch.kind === 'assumed') : []
   const why = match ? match.chips.filter(ch => ch.kind === 'evidence' || ch.kind === 'predicted') : []
   const isShortlisted = match?.status === 'shortlisted'
+
+  const overviewRows: OverviewRow[] = [
+    {
+      icon: <MapPin />,
+      field: 'Location',
+      value: (
+        <span>
+          {c.metro ?? <span className="text-[#b45309]">Not captured</span>}
+          {c.workModes ? <span className="text-muted-foreground"> · {c.workModes.join('/').toLowerCase()}</span> : <SourceBadge kind="ASSUMED" className="ml-1.5" />}
+        </span>
+      ),
+    },
+    {
+      icon: <Clock />,
+      field: 'Category',
+      value: (
+        <span className="inline-flex h-5 items-center rounded-md border border-emerald-500/35 bg-emerald-500/12 px-2 text-[11px] font-medium text-emerald-400">
+          {c.category} · {c.subcategory}
+        </span>
+      ),
+    },
+    ...(c.domains?.length ? [{
+      icon: <Layers />,
+      field: 'Domain',
+      value: <span>{c.domains.join(', ')}</span>,
+    }] : []),
+    {
+      icon: <Star />,
+      field: 'Experience',
+      value: c.years !== null ? <span className="tnum">{c.years} yrs</span> : <span className="text-[#b45309]">Not captured</span>,
+    },
+    {
+      icon: <ShieldCheck />,
+      field: 'Work Auth',
+      value: <WorkAuthChip w={c.workAuth} />,
+    },
+    {
+      icon: <DollarSign />,
+      field: 'Salary',
+      value: c.pay ?? <span className="text-[#b45309]">Not captured</span>,
+    },
+    {
+      icon: <Calendar />,
+      field: 'Availability',
+      value: `${c.availability ?? 'Not captured'} · ${c.searchStatus ?? 'Status unknown'}`,
+    },
+    {
+      icon: <MessageSquareText />,
+      field: 'Our take',
+      value: <TakeMarker candidateId={c.id} />,
+    },
+  ]
 
   return (
     <SidePanel open={open} onClose={onClose} label={`Preview ${c.name}`}
@@ -67,6 +123,7 @@ export function CandidatePreview({ open, onClose, candidateId, list, onNavigate,
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-base font-semibold tracking-tight">{c.name}</h2>
+                {resumes.length > 1 && <Tag tone="outline">{resumes.length} resumes</Tag>}
                 {match && <BandChip band={match.band} score={match.score} />}
                 {match && <span className="font-mono text-[11px] text-gray-1000">#{match.rank}</span>}
               </div>
@@ -97,6 +154,18 @@ export function CandidatePreview({ open, onClose, candidateId, list, onNavigate,
             </div>
           </section>
         )}
+        {take?.status === 'signed' && (
+          <section className="rounded-2xl border border-border bg-gray-100 p-3">
+            <div className="mb-2 flex items-center justify-between px-1">
+              <h3 className="text-sm font-semibold text-foreground">Our take</h3>
+              <TakeMarker candidateId={c.id} />
+            </div>
+            <blockquote className="rounded-xl border border-border bg-card p-3.5 text-xs leading-relaxed text-foreground">
+              “{take.text}”
+              <footer className="mt-1.5 text-[11px] text-muted-foreground">{signature(takeAuthor)}</footer>
+            </blockquote>
+          </section>
+        )}
         {match && gaps.length > 0 && (
           <section className="rounded-2xl border border-border bg-gray-100 p-3">
             <h3 className="mb-2 px-1 text-sm font-semibold text-foreground">Gaps & assumptions</h3>
@@ -113,47 +182,7 @@ export function CandidatePreview({ open, onClose, candidateId, list, onNavigate,
 
         <OverviewGrid
           title="Overview"
-          rows={[
-            {
-              icon: <MapPin />,
-              field: 'Location',
-              value: (
-                <span>
-                  {c.metro ?? <span className="text-[#b45309]">Not captured</span>}
-                  {c.workModes ? <span className="text-muted-foreground"> · {c.workModes.join('/').toLowerCase()}</span> : <SourceBadge kind="ASSUMED" className="ml-1.5" />}
-                </span>
-              ),
-            },
-            {
-              icon: <Clock />,
-              field: 'Category',
-              value: (
-                <span className="inline-flex h-5 items-center rounded-md border border-emerald-500/35 bg-emerald-500/12 px-2 text-[11px] font-medium text-emerald-400">
-                  {c.category} · {c.subcategory}
-                </span>
-              ),
-            },
-            {
-              icon: <Star />,
-              field: 'Experience',
-              value: c.years !== null ? <span className="tnum">{c.years} yrs</span> : <span className="text-[#b45309]">Not captured</span>,
-            },
-            {
-              icon: <ShieldCheck />,
-              field: 'Work Auth',
-              value: <WorkAuthChip w={c.workAuth} />,
-            },
-            {
-              icon: <DollarSign />,
-              field: 'Salary',
-              value: c.pay ?? <span className="text-[#b45309]">Not captured</span>,
-            },
-            {
-              icon: <Calendar />,
-              field: 'Availability',
-              value: `${c.availability ?? 'Not captured'} · ${c.searchStatus ?? 'Status unknown'}`,
-            },
-          ]}
+          rows={overviewRows}
         />
 
         {c.companies.length > 0 && (

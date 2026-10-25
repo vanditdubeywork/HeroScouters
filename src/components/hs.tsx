@@ -155,7 +155,7 @@ function parseColStyle(w?: string): React.CSSProperties | undefined {
 export function DataTable<T extends { id: string }>({
   columns, rows, onRowClick, selectable, selected, onSelectedChange, loading, empty, rowActions, rowClassName, dense,
   columnMenu, isSelectable, quietCheckbox, caption, toolbar, stickyActions = true,
-  defaultPageSize = 10, pageSizeOptions = [5, 10, 25, 50, 100], totalPoolCount, footerNote, maxHeight = 'max-h-[430px]', paginated = true,
+  defaultPageSize = 10, pageSizeOptions = [5, 10, 25, 50, 100], totalPoolCount, footerNote, maxHeight = 'h-[calc(100vh-280px)] max-h-[calc(100vh-280px)]', paginated = true,
 }: {
   columns: Column<T>[]; rows: T[]; onRowClick?: (r: T) => void
   selectable?: boolean; selected?: string[]; onSelectedChange?: (ids: string[]) => void
@@ -219,13 +219,13 @@ export function DataTable<T extends { id: string }>({
   }
 
   return (
-    <section className="rounded-2xl border border-border bg-gray-100 p-1">
+    <section className="flex flex-col rounded-2xl border border-border bg-gray-100 p-1">
       {toolbar && (
-        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2">
           {toolbar}
         </div>
       )}
-      <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
         {/* Locked-height internal scroll container with sticky header */}
         <div
           tabIndex={0}
@@ -374,9 +374,9 @@ export function DataTable<T extends { id: string }>({
           </table>
         </div>
 
-        {/* Bottom SaaS Page-Size ("Show in one go") & Pagination Footer Bar */}
+        {/* Bottom SaaS Page-Size ("Show in one go") & Pagination Footer Bar — Fixed/Docked at bottom of table */}
         {!loading && totalRows > 0 && paginated && (
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-gray-100/90 px-4 py-2.5 text-xs">
+          <div className="sticky bottom-0 z-20 mt-auto flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border bg-gray-100/95 px-4 py-2.5 text-xs backdrop-blur-xs">
             {/* Left: Range readout + Show results in one go selector */}
             <div className="flex flex-wrap items-center gap-3">
               <span className="text-muted-foreground">

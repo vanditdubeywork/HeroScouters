@@ -316,16 +316,16 @@ function WireframeToolbar() {
   if (hidden) {
     return (
       <button onClick={() => setHidden(false)} title="Show wireframe controls"
-        className="fixed bottom-4 left-4 z-[55] flex size-8 items-center justify-center rounded-full border border-white/10 bg-[#111] text-white shadow-xl md:left-[calc(16rem+16px)]">
+        className="fixed top-2 left-1/2 z-[55] flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-white/10 bg-[#111] text-white shadow-xl">
         <Eye className="size-4" />
       </button>
     )
   }
 
   return (
-    <div className="fixed right-4 bottom-16 z-[55]">
+    <div className="fixed top-1.5 left-[55%] z-[55] -translate-x-1/2 opacity-90 transition-opacity hover:opacity-100">
       {open && (
-        <div className="anim-pop absolute right-0 bottom-full mb-2 w-[380px] rounded-2xl border border-white/10 bg-[#111] p-1.5 text-white shadow-2xl">
+        <div className="anim-pop absolute top-full left-1/2 mt-2 w-[380px] -translate-x-1/2 rounded-2xl border border-white/10 bg-[#111] p-1.5 text-white shadow-2xl">
           {open === 'states' && cur && (
             <div>
               <div className="px-2.5 pt-1.5 pb-2 font-mono text-[10px] tracking-[0.12em] text-white/50 uppercase">{cur.screenId} · {cur.title} · states</div>
@@ -390,7 +390,7 @@ export function ScrollPage({ children, className, footer }: { children: React.Re
   return (
     <div className="flex h-full flex-col">
       <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto">
-        <div className={cn('mx-auto w-full space-y-6 px-4 py-6 sm:px-6 sm:py-8 pb-24', className)}>{children}</div>
+        <div className={cn('mx-auto flex min-h-full w-full flex-col gap-3.5 px-4 pt-4 pb-2.5 sm:px-6', className)}>{children}</div>
       </div>
       {footer}
     </div>

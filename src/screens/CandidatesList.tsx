@@ -1283,7 +1283,7 @@ export function CandidatesList() {
 
   /* ---------- Shared Candidate Table View ---------- */
   const renderCandidateTableSection = (compactForSplitWorkspace = false) => (
-    <div className={compactForSplitWorkspace ? 'space-y-3' : 'space-y-6'}>
+    <div className={cn('flex flex-1 flex-col', compactForSplitWorkspace ? 'space-y-3' : 'space-y-4')}>
       {(selected.length > 0 || allMatching) && (
         <SelectionBar
           count={selected.length}
@@ -1362,7 +1362,7 @@ export function CandidatesList() {
           onMask={id => setBulkMaskCandIds([id])}
         />
       ) : (
-        <div onKeyDown={onTableKey}>
+        <div className="flex flex-1 flex-col" onKeyDown={onTableKey}>
           <DataTable
             caption="Candidates pool"
             dense={compactForSplitWorkspace}
@@ -1377,8 +1377,13 @@ export function CandidatesList() {
             onRowClick={c => setPreview(c.id)}
             defaultPageSize={10}
             totalPoolCount={count}
-            maxHeight="max-h-[430px]"
-            footerNote="P3: Missing fields pass as Assumed"
+            maxHeight={
+              compactForSplitWorkspace
+                ? 'h-[calc(100vh-285px)] max-h-[calc(100vh-285px)]'
+                : consoleExpanded
+                  ? 'h-[calc(100vh-520px)] max-h-[calc(100vh-520px)] min-h-[260px]'
+                  : 'h-[calc(100vh-352px)] max-h-[calc(100vh-352px)]'
+            }
             rowActions={c => compactForSplitWorkspace ? (
               <>
                 <Button variant="outline" size="sm" icon={<Shield />} title="Select resume & mask for a role" onClick={() => setBulkMaskCandIds([c.id])}>Mask</Button>
@@ -2100,9 +2105,9 @@ export function CandidatesList() {
            2. 11-Dimension Structured Filter Console (expandable/collapsible)
            3. Table View (with row click opening S-08 Slide-Over Sidebar) & Split Detail View (CandidateSplitView)
            ====================================================================== */
-        <div className="space-y-6">
+        <div className="flex flex-1 flex-col gap-4">
           {/* Unified Double-Bezel Command & Filter Console (Sheets FilterBar + Quick Presets + Expandable 11-Dimension Grid) */}
-          <section className="relative z-20 rounded-2xl border border-border bg-gray-100 p-1">
+          <section className="relative z-20 shrink-0 rounded-2xl border border-border bg-gray-100 p-1">
             <div className="divide-y divide-border rounded-xl border border-border bg-card">
               {/* Row 1: Single-Line Unified Command Bar (Search · Quick Presets · 11-Dim Drawer Toggle · View Switcher · Export) */}
               <div className="flex h-12 flex-wrap items-center justify-between gap-2 rounded-t-xl bg-gray-100/90 px-4">
@@ -2783,8 +2788,8 @@ function CandidateSplitView({
       <div className="overflow-hidden rounded-xl border border-border bg-card">
         <div className="grid grid-cols-1 divide-y divide-border lg:grid-cols-[1.06fr_1fr] lg:divide-x lg:divide-y-0">
           {/* ==================== LEFT PANE: Locked-Height Scrollable Table ==================== */}
-          <div className="min-w-0">
-            <div tabIndex={0} role="region" aria-label="Candidates split list" className="max-h-[460px] overflow-y-auto outline-none">
+          <div className="flex min-w-0 flex-col">
+            <div tabIndex={0} role="region" aria-label="Candidates split list" className="h-[calc(100vh-352px)] max-h-[calc(100vh-352px)] overflow-y-auto outline-none">
               <table className="w-full table-fixed border-separate border-spacing-0 text-left text-xs">
                 <thead className="sticky top-0 z-20 bg-gray-100">
                   <tr className="h-10 divide-x divide-border bg-gray-100/95 text-gray-1000 [&>th]:border-b [&>th]:border-border">

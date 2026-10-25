@@ -576,7 +576,6 @@ export function RolesList() {
               />
             }
           />
-          <p className="eyebrow text-[10px] text-gray-1000">Sorted by needs action first, then latest update</p>
         </div>
       )}
 

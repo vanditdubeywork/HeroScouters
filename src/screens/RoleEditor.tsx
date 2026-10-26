@@ -864,9 +864,9 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
   )
 
   const topModeBar = (
-    <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-background px-4 py-2 sm:px-6">
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold text-foreground">
+    <div className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-4 border-b border-border bg-background px-6 py-2.5">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="truncate text-sm font-semibold text-foreground">
           {mode === 'new' ? 'New role' : (role?.title ?? 'Role setup')}
         </span>
         {role && (
@@ -877,15 +877,15 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
         <ExampleMark />
       </div>
 
-      {/* Top Pill Switcher: Find with AI (default) | Manual */}
-      <div role="tablist" aria-label="Role setup mode" className="inline-flex items-center gap-0.5 rounded-2xl border border-border bg-gray-100 p-0.5">
+      {/* Top Pill Switcher: Find with AI (default) | Manual — geometrically centered */}
+      <div role="tablist" aria-label="Role setup mode" className="inline-flex items-center gap-1 rounded-2xl border border-border bg-gray-100 p-1">
         <button
           type="button"
           role="tab"
           aria-selected={entryMode === 'ai'}
           onClick={() => switchEntryMode('ai')}
           className={cn(
-            'inline-flex h-7 items-center gap-1.5 rounded-2xl px-3 text-xs btn-type transition-all cursor-pointer',
+            'inline-flex h-7 items-center gap-1.5 rounded-xl px-3.5 text-xs btn-type transition-all cursor-pointer',
             entryMode === 'ai'
               ? 'border border-violet-500/40 bg-card text-foreground shadow-2xs'
               : 'border border-transparent text-muted-foreground hover:text-foreground',
@@ -910,7 +910,7 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
             switchEntryMode('manual')
           }}
           className={cn(
-            'inline-flex h-7 items-center gap-1.5 rounded-2xl px-3 text-xs btn-type transition-all cursor-pointer',
+            'inline-flex h-7 items-center gap-1.5 rounded-xl px-3.5 text-xs btn-type transition-all cursor-pointer',
             entryMode === 'manual'
               ? 'border border-border bg-card text-foreground shadow-2xs'
               : 'border border-transparent text-muted-foreground hover:text-foreground',
@@ -921,7 +921,7 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
         </button>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center justify-end gap-2">
         {entryMode === 'ai' && draft && (
           <Button variant="outline" size="sm" onClick={() => switchEntryMode('manual')}>
             Review role setup →
@@ -941,38 +941,74 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
       {topModeBar}
 
       {entryMode === 'ai' ? (
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-8">
           {aiProcessing ? (
-            <div className="mx-auto flex h-full max-w-[540px] flex-col items-center justify-center">
+            <div className="mx-auto flex h-full max-w-[640px] flex-col items-center justify-center">
               <AIStepper title="Setting up role & preparing candidate shortlist" steps={STEPS} current={aiStepper.step} />
             </div>
           ) : (
-            <div className="anim-fade mx-auto flex min-h-full w-full max-w-[680px] flex-col justify-center space-y-5 py-4">
-              {/* Calm Centered Emblem & Title */}
-              <header className="flex flex-col items-center space-y-2.5 text-center">
+            <div className="anim-fade mx-auto flex min-h-full w-full max-w-[1000px] flex-col justify-center space-y-6 py-4">
+              {/* Calm Centered Emblem & Title (24px section rhythm) */}
+              <header className="flex flex-col items-center space-y-3 text-center">
                 <div className="relative flex size-12 items-center justify-center rounded-2xl border border-violet-500/35 bg-gradient-to-b from-violet-500/15 to-transparent p-1 shadow-custom">
                   <div className="flex size-full items-center justify-center rounded-xl border border-border bg-card">
                     <Sparkles className="size-5 text-violet-400" />
                   </div>
+                  <span className="anim-glow absolute -top-0.5 -right-0.5 size-2.5 rounded-full border-2 border-background bg-violet-400" />
                 </div>
-                <div className="space-y-1">
+                <div className="space-y-1.5">
                   <h2 className="title-type text-xl text-foreground">
                     Paste all role data — AI sets up the rest
                   </h2>
-                  <p className="max-w-lg text-xs leading-relaxed text-muted-foreground">
-                    Simply copy-paste the job description, company info, Fathom call link, or client notes in one place — or upload a file. You’ll verify the extracted setup before shortlisting candidates.
+                  <p className="max-w-xl text-xs leading-relaxed text-muted-foreground">
+                    Copy-paste the job description, company details, Fathom call link, or client intake notes in one box — or upload a JD file. AI structures the role and prepares your candidate shortlist.
                   </p>
                 </div>
               </header>
 
-              {/* ChatGPT / Claude-Style Centered Double-Bezel Composer */}
-              <section className="rounded-2xl border border-border bg-gray-100 p-1 shadow-custom">
-                <div className="rounded-xl border border-border bg-card p-4 transition-colors focus-within:border-gray-800">
+              {/* Wide SaaS Double-Bezel Composer (1000px max-w, 16px outer radius -> 4px inset -> 12px inner radius, 24px inner well padding) */}
+              <section className="rounded-2xl border border-border bg-gray-100 shadow-custom transition-all duration-200">
+                {/* Outer Bezel Header Bar: px-5 py-3 */}
+                <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-xs">
+                  <div className="flex items-center gap-2 text-gray-1100">
+                    <Sparkles className="size-3.5 text-violet-400" />
+                    <span>AI Role Intake · Extracts company, requirements, Fathom call context &amp; Stage 1 eliminators</span>
+                    {(aiRawText.trim() || aiFileName) && (
+                      <span className="inline-flex items-center gap-1 rounded-sm border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-foreground">
+                        <Check className="size-2.5 text-emerald-400" />
+                        <span>Context loaded</span>
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!draft) {
+                          const x = extractDraft(src.jdText ? src : EXAMPLE_SOURCE)
+                          if (!src.jdText) setSrc(EXAMPLE_SOURCE)
+                          setDraft(x.draft)
+                          setSources(x.sources)
+                          setBaseline(x.draft)
+                          setPhase('extracted')
+                        }
+                        switchEntryMode('manual')
+                      }}
+                      className="inline-flex items-center gap-1 font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline cursor-pointer"
+                    >
+                      <span>Manual setup</span>
+                      <ArrowRight className="size-3" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Inner Well: mx-1.5 mb-1.5 rounded-xl border border-border bg-card p-6 */}
+                <div className="mx-1.5 mb-1.5 rounded-xl border border-border bg-card p-6 transition-colors focus-within:border-gray-800">
                   <div className="relative">
                     <textarea
                       aria-label="Paste role JD, company info, and Fathom call notes"
                       autoFocus
-                      rows={6}
+                      rows={8}
                       value={aiRawText}
                       onChange={e => setAiRawText(e.target.value)}
                       onKeyDown={e => {
@@ -981,8 +1017,8 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
                           runAiRoleSetup()
                         }
                       }}
-                      placeholder="Paste the job description, company name, hiring contact, Fathom call link, or raw intake notes here…"
-                      className="w-full resize-none bg-transparent pr-7 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none"
+                      placeholder="Paste everything here — job description, company name, hiring contact, Fathom call link, compensation, or raw intake notes…"
+                      className="min-h-[200px] w-full resize-none bg-transparent pr-8 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none"
                     />
                     {aiRawText && (
                       <button
@@ -998,7 +1034,7 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
 
                   {/* Attached file / Fathom call pills */}
                   {(aiFileName || aiCallUrl || showCallInput) && (
-                    <div className="mt-2.5 flex flex-wrap items-center gap-2 border-t border-border/60 pt-2.5">
+                    <div className="mt-3.5 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3.5">
                       {aiFileName && (
                         <span className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 text-xs text-foreground">
                           <FileText className="size-3.5 text-violet-400" />
@@ -1011,8 +1047,8 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
                       {aiCallUrl && !showCallInput && (
                         <span className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 text-xs text-foreground">
                           <FileAudio className="size-3.5 text-emerald-400" />
-                          <span className="max-w-[260px] truncate">{aiCallUrl}</span>
-                          <span className="eyebrow text-[9px] text-muted-foreground">CALL</span>
+                          <span className="max-w-[340px] truncate">{aiCallUrl}</span>
+                          <span className="eyebrow text-[9px] text-muted-foreground">OPTIONAL · CALL</span>
                           <button type="button" onClick={() => setAiCallUrl('')} className="text-muted-foreground hover:text-foreground">
                             <X className="size-3" />
                           </button>
@@ -1025,9 +1061,9 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
                             placeholder="Paste Fathom or Granola call link (optional continuous context)…"
                             value={aiCallUrl}
                             onChange={e => setAiCallUrl(e.target.value)}
-                            className="h-7 text-xs"
+                            className="h-8 text-xs"
                           />
-                          <Button size="sm" variant="ghost" onClick={() => setShowCallInput(false)}>Done</Button>
+                          <Button size="sm" variant="outline" onClick={() => setShowCallInput(false)}>Attach</Button>
                         </div>
                       )}
                     </div>
@@ -1047,8 +1083,8 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
                   />
 
                   {/* Bottom Toolbar inside ChatGPT/Claude Composer */}
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-                    <div className="flex flex-wrap items-center gap-1.5">
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3.5">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={() => {
@@ -1077,13 +1113,16 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
                           setAiFileName('Northwind-Pay-Senior-PM.pdf')
                           setAiCallUrl('https://fathom.video/share/northwind-pay-intake')
                         }}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-2xl px-2.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground cursor-pointer"
+                        className="inline-flex h-8 items-center gap-1.5 rounded-2xl border border-border/60 bg-background px-3 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground cursor-pointer"
                       >
                         <span>Paste example role</span>
                       </button>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <span className="hidden items-center gap-1 text-xs text-muted-foreground sm:inline-flex">
+                        <Kbd>⌘↵</Kbd>
+                      </span>
                       <Button
                         variant="chroma"
                         icon={<Sparkles />}

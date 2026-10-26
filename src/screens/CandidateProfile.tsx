@@ -464,13 +464,7 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
   const outputsFor: ResumeOutput[] = app.outputs.filter(o => o.candidateId === c.id)
   const outputSel = useListSelection(outputsFor.map(o => o.id))
 
-  const pill = (
-    <span className="inline-flex h-6 items-center gap-2 rounded-md border border-border px-2">
-      <span className="text-xs text-muted-foreground">Profile</span>
-      <CompletenessMeter compact value={c.completeness} />
-    </span>
-  )
-  useTopBar([{ label: 'Candidates', to: '/candidates' }, { label: c.name }], pill, [c.completeness])
+  useTopBar([{ label: 'Candidates', to: '/candidates' }, { label: c.name }])
 
   /* ---------- Find roles stepper ---------- */
   const findSteps = ['Checking must-haves across 14 open roles', `Ranking roles for ${c.name}`]
@@ -600,7 +594,6 @@ function ProfileScreen({ stored }: { stored: Candidate }) {
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span>{c.city ?? <span className="text-[#b45309]">Location not captured</span>}{c.workModes && ` · ${c.workModes.join('/').toLowerCase()}`}</span>
               <WorkAuthChip w={c.workAuth} />
-              <CompletenessMeter value={c.completeness} onClick={flashAsk} />
             </div>
           </div>
         </div>

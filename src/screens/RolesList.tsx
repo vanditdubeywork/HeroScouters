@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Briefcase, Building2, CircleCheck, Copy, Eye, Layers, ListChecks,
@@ -87,6 +87,30 @@ export function RolesList() {
   const colPrefs = useColumnPrefs('roles-v4-saas-no-next', ROLE_COL_SPECS.filter(s => s.defaultVisible).map(s => s.key))
 
   useTopBar([{ label: 'Roles' }])
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (rerunRole || pitchesOpen || bulkMaskRoleId) return
+      if (document.querySelector('[role="dialog"]')) return
+      const target = e.target as HTMLElement | null
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return
+      }
+      if (e.key.toLowerCase() === 'n') {
+        e.preventDefault()
+        navigate('/roles/new')
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [navigate, rerunRole, pitchesOpen, bulkMaskRoleId])
 
   const openCount = roles.filter(r => r.status === 'Open').length
   const shortlistCount = (r: Role) => {
@@ -340,7 +364,7 @@ export function RolesList() {
             <Button variant="outline" icon={<Shield />} onClick={() => setBulkMaskRoleId(roles[0]?.id ?? 'northwind-spm')}>
               Select resumes &amp; bulk mask
             </Button>
-            <Button variant="primary" icon={<Plus />} onClick={() => navigate('/roles/new')}>
+            <Button variant="primary" icon={<Plus />} kbd="N" onClick={() => navigate('/roles/new')}>
               New role
             </Button>
           </div>

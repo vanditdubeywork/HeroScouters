@@ -678,7 +678,6 @@ function RoleView({ role }: { role: Role }) {
       pool={elim.pool} pass={passCount} rules={elim.rules} rows={elim.rows}
       included={app.included[id] ?? []}
       onInclude={row => setIncludeTarget(row)}
-      onBulkMask={cids => setBulkMaskCandIds(cids)}
       onClose={() => setElimOpen(false)}
       noneMode={view === 'none'}
     />
@@ -773,14 +772,6 @@ function RoleView({ role }: { role: Role }) {
             <Button
               variant="outline"
               size="sm"
-              icon={<Shield />}
-              onClick={() => setBulkMaskCandIds(selectedMatches.map(m => m.candidateId))}
-            >
-              Select resumes &amp; bulk mask ({selectedMatches.length})
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
               icon={<Wand2 />}
               onClick={() => navigate(`/resumes/masked?role=${id}&candidates=${selectedMatches.map(m => m.candidateId).join(',')}`)}
             >
@@ -836,23 +827,13 @@ function RoleView({ role }: { role: Role }) {
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 {unscoredRows.length > 0 && (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => sel.selectAll(unscoredRows.filter(m => m.status !== 'rejected').map(m => m.id))}
-                    >
-                      Select all ({unscoredRows.filter(m => m.status !== 'rejected').length})
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      icon={<Shield />}
-                      onClick={() => setBulkMaskCandIds(unscoredRows.map(m => m.candidateId))}
-                    >
-                      Bulk mask ({unscoredRows.length})
-                    </Button>
-                  </>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => sel.selectAll(unscoredRows.filter(m => m.status !== 'rejected').map(m => m.id))}
+                  >
+                    Select all ({unscoredRows.filter(m => m.status !== 'rejected').length})
+                  </Button>
                 )}
                 <ScoreControl unscored={totalUnscoredPool || unscoredRows.length} onScore={n => triggerScore(n)} />
               </div>
@@ -920,14 +901,6 @@ function RoleView({ role }: { role: Role }) {
                   >
                     Shortlist all Strong
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    icon={<Shield />}
-                    onClick={() => setBulkMaskCandIds(scoredRows.map(m => m.candidateId))}
-                  >
-                    Bulk mask scored ({scoredRows.length})
-                  </Button>
                 </div>
               </div>
             )}
@@ -965,14 +938,6 @@ function RoleView({ role }: { role: Role }) {
                       }}
                     >
                       Select all ({unscoredRows.filter(m => m.status !== 'rejected').length})
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      icon={<Shield />}
-                      onClick={() => setBulkMaskCandIds(unscoredRows.map(m => m.candidateId))}
-                    >
-                      Bulk mask ({unscoredRows.length})
                     </Button>
                     <ScoreControl unscored={unscoredRows.length} more onScore={n => triggerScore(n)} />
                   </div>
@@ -1196,9 +1161,9 @@ function RoleView({ role }: { role: Role }) {
 }
 
 /* ---------- §6.4 Eliminated view ---------- */
-function EliminatedView({ roleId, pool, pass, rules, rows, included, onInclude, onBulkMask, onClose, noneMode }: {
+function EliminatedView({ roleId, pool, pass, rules, rows, included, onInclude, onClose, noneMode }: {
   roleId: string; pool: number; pass: number; rules: { rule: string; count: number }[]; rows: Eliminated[]; included: string[]
-  onInclude: (r: Eliminated) => void; onBulkMask: (cids: string[]) => void; onClose: () => void; noneMode?: boolean
+  onInclude: (r: Eliminated) => void; onClose: () => void; noneMode?: boolean
 }) {
   const app = useApp()
   const { candidate } = app
@@ -1247,7 +1212,6 @@ function EliminatedView({ roleId, pool, pass, rules, rows, included, onInclude, 
           ? <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Check className="size-3.5" />Included in ranking</span>
           : (
             <div className="flex items-center gap-1.5">
-              <Button variant="ghost" size="sm" icon={<Shield />} onClick={() => onBulkMask([r.candidateId])}>Mask</Button>
               <Button variant="ghost" size="sm" onClick={() => onInclude(r)}>Include anyway</Button>
             </div>
           )}
@@ -1281,9 +1245,6 @@ function EliminatedView({ roleId, pool, pass, rules, rows, included, onInclude, 
           <SelectionBar count={sel.selected.length} note="eliminated selected" onClear={sel.clear}>
             <Button variant="primary" size="sm" icon={<Check />} onClick={bulkIncludeSelected}>
               Include {sel.selected.length} anyway
-            </Button>
-            <Button variant="outline" size="sm" icon={<Shield />} onClick={() => onBulkMask(sel.selected)}>
-              Select resumes &amp; bulk mask ({sel.selected.length})
             </Button>
           </SelectionBar>
         )}

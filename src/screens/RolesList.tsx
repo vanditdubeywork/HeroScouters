@@ -11,7 +11,6 @@ import {
 } from '../components/ui'
 import { Banner, DataTable, FilterChip, type Column } from '../components/hs'
 import { ColumnsMenu, SelectionBar, useColumnPrefs, useListSelection } from '../components/v3'
-import { BulkMaskForRoleDialog } from '../components/BulkMaskModal'
 import { CreateGmailDraftsDialog, RerunDialog } from './Dialogs'
 import { useApp, useWireframeState } from '../store/AppStore'
 import { CATEGORIES, type Role, type RoleStatus } from '../data/types'
@@ -83,7 +82,6 @@ export function RolesList() {
   const [q, setQ] = useState('')
   const [rerunRole, setRerunRole] = useState<Role | null>(null)
   const [pitchesOpen, setPitchesOpen] = useState(false)
-  const [bulkMaskRoleId, setBulkMaskRoleId] = useState<string | null>(null)
   const colPrefs = useColumnPrefs('roles-v4-saas-no-next', ROLE_COL_SPECS.filter(s => s.defaultVisible).map(s => s.key))
 
   useTopBar([{ label: 'Roles' }])
@@ -91,7 +89,7 @@ export function RolesList() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return
-      if (rerunRole || pitchesOpen || bulkMaskRoleId) return
+      if (rerunRole || pitchesOpen) return
       if (document.querySelector('[role="dialog"]')) return
       const target = e.target as HTMLElement | null
       if (
@@ -110,7 +108,7 @@ export function RolesList() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [navigate, rerunRole, pitchesOpen, bulkMaskRoleId])
+  }, [navigate, rerunRole, pitchesOpen])
 
   const openCount = roles.filter(r => r.status === 'Open').length
   const shortlistCount = (r: Role) => {
@@ -310,15 +308,6 @@ export function RolesList() {
   const rowActions = (r: Role) => (
     <>
       <Button
-        variant="outline"
-        size="sm"
-        icon={<Shield />}
-        title={`Select resumes & bulk mask for ${r.title}`}
-        onClick={() => setBulkMaskRoleId(r.id)}
-      >
-        Mask
-      </Button>
-      <Button
         variant="ghost"
         size="icon-sm"
         aria-label={`Preview masked links for ${r.title}`}
@@ -333,7 +322,6 @@ export function RolesList() {
         )}
         items={[
           { label: 'View masked role links', icon: <Eye />, onSelect: () => navigate(`/resumes/masked-view?role=${r.id}`) },
-          { label: 'Select resumes & bulk mask…', icon: <Sparkles />, onSelect: () => setBulkMaskRoleId(r.id) },
           { separator: true, label: '' },
           { label: 'Edit role', icon: <Pencil />, onSelect: () => navigate(`/roles/${r.id}/edit`) },
           { label: 'Put on hold', icon: <Pause />, disabled: r.status === 'On hold', onSelect: () => setStatus(r, 'On hold') },
@@ -361,9 +349,6 @@ export function RolesList() {
         meta={<span className="tnum">{isEmpty ? 0 : openCount} open · {outputs.filter(o => o.type === 'Masked').length} masked links</span>}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" icon={<Shield />} onClick={() => setBulkMaskRoleId(roles[0]?.id ?? 'northwind-spm')}>
-              Select resumes &amp; bulk mask
-            </Button>
             <Button variant="primary" icon={<Plus />} kbd="N" onClick={() => navigate('/roles/new')}>
               New role
             </Button>
@@ -397,9 +382,6 @@ export function RolesList() {
               onClear={sel.clear}
               note={prospectIds.length > 0 && prospectIds.length < sel.selected.length ? `${prospectIds.length} prospect role(s)` : undefined}
             >
-              <Button variant="primary" size="sm" icon={<Sparkles />} onClick={() => setBulkMaskRoleId(sel.selected[0])}>
-                Select resumes &amp; bulk mask
-              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -557,12 +539,6 @@ export function RolesList() {
         onClose={() => setPitchesOpen(false)}
         roleIds={prospectIds.length > 0 ? prospectIds : sel.selected}
         mode="prospect-pitches"
-      />
-
-      <BulkMaskForRoleDialog
-        open={!!bulkMaskRoleId}
-        onClose={() => setBulkMaskRoleId(null)}
-        initialRoleId={bulkMaskRoleId}
       />
     </ScrollPage>
   )

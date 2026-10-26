@@ -288,10 +288,13 @@ function TopBar({ crumbs, pill, onMenu, onSearch }: { crumbs: Crumb[]; pill: Rea
           <Button variant="ghost" size="icon" className="sm:hidden" aria-label="Search" onClick={onSearch} icon={<Search />} />
           <Button variant="ghost" size="icon" aria-label={light ? 'Switch to dark mode' : 'Switch to light mode'} title={light ? 'Switch to dark mode' : 'Switch to light mode'} onClick={toggleTheme} icon={light ? <Moon /> : <Sun />} />
           <Menu
+            width={230}
             trigger={({ toggle }) => <Button onClick={toggle} icon={<Plus />} iconRight={<ChevronDown className="!size-3.5 text-muted-foreground" />}><span className="hidden sm:inline">New</span></Button>}
             items={[
               { label: 'New role', icon: <Briefcase />, hint: 'N R', onSelect: () => navigate('/roles/new') },
-              { label: 'New candidate', icon: <Users />, hint: 'N C', onSelect: () => navigate('/candidates/new') },
+              { separator: true, label: '' },
+              { label: 'Add new candidate', icon: <Users />, hint: 'N C', onSelect: () => navigate('/candidates/new?mode=single') },
+              { label: 'Upload candidates in bulk', icon: <Layers />, hint: 'Sheet / PDFs', onSelect: () => navigate('/candidates/new?mode=bulk') },
             ]}
           />
         </div>

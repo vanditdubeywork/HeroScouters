@@ -1,36 +1,112 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Upload, FileText, X, ClipboardPaste, Sparkles, UserPlus, MessageSquareText, Link2, Table2, ExternalLink, Check } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import {
+  Upload, FileText, X, ClipboardPaste, Sparkles, UserPlus, MessageSquareText, Link2, Table2, ExternalLink, Check,
+  Layers, Video, Plus, FolderUp,
+} from 'lucide-react'
 import { SplitPane, useTopBar } from '../shell/AppShell'
-import { BezelCard, Button, EmptyState, ExampleMark, Field, Input, Segmented, Select, Tag, Textarea, cn } from '../components/ui'
+import { BezelCard, Button, ExampleMark, Field, Input, Segmented, Select, Tag, Textarea, cn } from '../components/ui'
 import { AIStepper, Banner, CompletenessMeter, InfoNote, useStepper } from '../components/hs'
 import { AskCard, ReadOnlyProfile, UpdateOrAnotherResumeDialog, orderedAsk } from './CandidateProfile'
 import { useApp, useWireframeState } from '../store/AppStore'
 import { outreachSheetCandidates } from '../data/mock'
-import type { Candidate } from '../data/types'
+import type { Candidate, Category } from '../data/types'
 
 /* ==========================================================================
-   S-06 · New candidate — link-first & sheet-import split pane (§7.4, C9, US-50, F-03)
-   Left "Source": Paste link (default) · Import from sheet · Upload file / Paste text.
-   Right "Profile": stepper → draft profile with source badges + ask list.
+   S-06 · New candidate — Single Candidate (with AI Create + Optional Fathom Link)
+          & Bulk Upload (Multiple Resumes or Sheet Import)
    ========================================================================== */
 
 const WF_STATES = [
-  { id: 'empty', label: 'Empty (live · link-first)' },
+  { id: 'empty', label: 'Single candidate (live)' },
+  { id: 'bulk-resumes', label: 'Bulk · Multiple resumes' },
+  { id: 'sheet', label: 'Bulk · Import from sheet (US-50)' },
   { id: 'extracting', label: 'Extracting' },
   { id: 'extracted', label: 'Extracted' },
-  { id: 'sheet', label: 'Import from sheet (US-50)' },
   { id: 'duplicate', label: 'Duplicate found' },
   { id: 'failed', label: 'Failed to read' },
 ]
-const STEPS = ['Opening resume link', 'Pulling out details', 'Checking for duplicates']
+const STEPS = ['Opening resume & call context', 'Pulling out details', 'Checking for duplicates']
+const BULK_STEPS = ['Reading uploaded resume files in batch', 'Extracting skills, tenure & work authorization', 'Checking pool for duplicates & building profiles']
 
 type Phase = 'idle' | 'extracting' | 'done' | 'failed'
-type SourceMode = 'link' | 'sheet' | 'upload'
+type PageMode = 'single' | 'bulk'
+type SingleSourceMode = 'ai-box' | 'link' | 'upload'
+type BulkSourceMode = 'resumes' | 'sheet'
 type SourceKindOpt = Candidate['source']
 
 const EXAMPLE_DRIVE_URL = 'https://drive.google.com/file/d/19xPriyaResume_v3/view'
 const EXAMPLE_LINKEDIN_URL = 'https://linkedin.com/in/rohan-d-example'
+const EXAMPLE_FATHOM_URL = 'https://fathom.video/share/rohan-d-intake-call-2026'
+
+interface BulkResumeItem {
+  id: string
+  fileName: string
+  pages: number
+  sizeKb: number
+  name: string
+  headline: string
+  category: Category
+  years: number
+  metro: string
+  skills: string[]
+  status: 'Ready to create' | 'Duplicate in pool'
+}
+
+const SAMPLE_BULK_RESUMES: BulkResumeItem[] = [
+  {
+    id: 'br-1',
+    fileName: 'Rohan_D_Senior_PM_Resume.pdf',
+    pages: 2,
+    sizeKb: 184,
+    name: 'Rohan D.',
+    headline: 'Senior Product Manager · payments platform & APIs',
+    category: 'Product',
+    years: 7,
+    metro: 'Seattle',
+    skills: ['Payments', 'API products', 'Roadmapping', 'B2B SaaS'],
+    status: 'Ready to create',
+  },
+  {
+    id: 'br-2',
+    fileName: 'Karan_V_Backend_Eng_Resume.pdf',
+    pages: 2,
+    sizeKb: 210,
+    name: 'Karan V.',
+    headline: 'Senior Backend Engineer · Go, PostgreSQL & distributed systems',
+    category: 'Engineering',
+    years: 6,
+    metro: 'SF',
+    skills: ['Go', 'PostgreSQL', 'Distributed systems', 'Payments'],
+    status: 'Ready to create',
+  },
+  {
+    id: 'br-3',
+    fileName: 'Nadia_S_Product_Billing_Resume.docx',
+    pages: 3,
+    sizeKb: 142,
+    name: 'Nadia S.',
+    headline: 'Product Manager · B2B subscription & billing workflows',
+    category: 'Product',
+    years: 5,
+    metro: 'NYC',
+    skills: ['Billing', 'Subscriptions', 'B2B SaaS', 'SQL'],
+    status: 'Ready to create',
+  },
+  {
+    id: 'br-4',
+    fileName: 'Priya_S_Resume_2026_v3.pdf',
+    pages: 2,
+    sizeKb: 196,
+    name: 'Priya S.',
+    headline: 'Senior Product Manager · B2B SaaS & fintech',
+    category: 'Product',
+    years: 7,
+    metro: 'SF',
+    skills: ['Payments', 'B2B SaaS', 'Roadmapping'],
+    status: 'Duplicate in pool',
+  },
+]
 
 const SHEET_DEFAULTS: Record<string, { cameInFor: string; roleId?: string; notes: string }> = {
   'sheet-1': { cameInFor: 'Backend Engineer — Harbor Health', roleId: 'harbor-be', notes: 'Replied on LinkedIn · open to hybrid SF' },
@@ -39,33 +115,43 @@ const SHEET_DEFAULTS: Record<string, { cameInFor: string; roleId?: string; notes
 }
 
 /** Draft built from the example resume or link (fictional, §16 style) */
-function draftNew(opts: { source: SourceKindOpt; role: string; notes: string; linkUrl?: string; linkedinUrl?: string }): Candidate {
+function draftNew(opts: { source: SourceKindOpt; role: string; notes: string; linkUrl?: string; linkedinUrl?: string; fathomUrl?: string }): Candidate {
   const links: NonNullable<Candidate['sourceLinks']> = []
   if (opts.linkUrl?.trim()) {
-    const rawLink = {
+    links.push({
       label: 'Google Drive resume',
       url: opts.linkUrl.trim(),
-      kind: 'Drive',
       addedAt: 'Just now',
-    }
-    links.push(rawLink)
+    })
   }
   if (opts.linkedinUrl?.trim()) {
-    const liLink = {
+    links.push({
       label: 'LinkedIn profile',
       url: opts.linkedinUrl.trim(),
-      kind: 'LinkedIn',
       addedAt: 'Just now',
-    }
-    links.push(liLink)
+    })
+  }
+  if (opts.fathomUrl?.trim()) {
+    links.push({
+      label: 'Fathom call recording',
+      url: opts.fathomUrl.trim(),
+      addedAt: 'Just now',
+    })
   }
   return {
     id: 'rohand', name: 'Rohan D.', initials: 'RD', example: true,
     headline: 'Senior Product Manager · payments platform & APIs',
     category: 'Product', subcategory: 'Product Manager', years: 7,
     domains: ['Payments/Fintech', 'B2B SaaS'],
-    city: 'Seattle, WA', metro: 'Seattle', workModes: null, relocate: null, locationsOpen: [], companyPrefs: [],
-    workAuth: { status: null }, pay: null, availability: null, searchStatus: null,
+    city: 'Seattle, WA', metro: 'Seattle',
+    workModes: opts.fathomUrl?.trim() ? ['Hybrid', 'Remote'] : null,
+    relocate: opts.fathomUrl?.trim() ? 'Yes' : null,
+    locationsOpen: opts.fathomUrl?.trim() ? ['Seattle', 'SF'] : [],
+    companyPrefs: [],
+    workAuth: { status: opts.fathomUrl?.trim() ? 'US citizen' : null },
+    pay: opts.fathomUrl?.trim() ? '$185k–$205k' : null,
+    availability: opts.fathomUrl?.trim() ? '2 weeks' : null,
+    searchStatus: 'Active',
     skills: ['Payments', 'API products', 'Roadmapping', 'Pricing', 'B2B SaaS'],
     predicted: [{ name: 'SQL', basis: 'from Mode + Snowflake reporting work, 3 yrs', strength: 'Medium' }],
     tools: ['Jira', 'Mode', 'Figma'],
@@ -75,13 +161,25 @@ function draftNew(opts: { source: SourceKindOpt; role: string; notes: string; li
     ],
     achievements: ['Launched real-time payouts in 9 corridors; failed transfers down 27%', 'Rebuilt partner API onboarding from 6 weeks to 9 days'],
     education: { degree: 'BS', field: 'Computer Engineering', school: 'University of Washington' },
-    completeness: 41,
-    askList: ['Are you open to relocating? Where to?', 'Are you on a visa? Which one, and when does it expire?', 'Would you need sponsorship or a transfer?', 'Remote, hybrid or onsite?', 'What pay range are you looking for?', 'How soon could you start?'],
+    completeness: opts.fathomUrl?.trim() ? 82 : 41,
+    askList: opts.fathomUrl?.trim()
+      ? ['Which companies are you currently interviewing with?']
+      : ['Are you open to relocating? Where to?', 'Are you on a visa? Which one, and when does it expire?', 'Would you need sponsorship or a transfer?', 'Remote, hybrid or onsite?', 'What pay range are you looking for?', 'How soon could you start?'],
     updated: 'Just now', source: opts.source, cameInForRole: opts.role || undefined, resumeVersion: 1, lastContacted: 'Today',
     email: 'rohan.d@example.com', phone: '+1 206 555 0187', linkedin: opts.linkedinUrl?.trim() || 'linkedin.com/in/rohan-d-example',
     ourTake: opts.notes || undefined,
     sourceLinks: links.length ? links : undefined,
-    fieldSources: { headline: 'RESUME', years: 'RESUME', city: 'RESUME', category: 'RESUME', domains: 'RESUME' },
+    calls: opts.fathomUrl?.trim()
+      ? [{ id: 'call-rohan-1', label: 'Fathom intake call', when: 'Just now', by: 'Vandit D.' }]
+      : undefined,
+    fieldSources: {
+      headline: 'RESUME',
+      years: 'RESUME',
+      city: 'RESUME',
+      category: 'RESUME',
+      domains: 'RESUME',
+      ...(opts.fathomUrl?.trim() ? { pay: 'CALL', availability: 'CALL', relocate: 'CALL', workModes: 'CALL' } : {}),
+    },
   }
 }
 
@@ -89,7 +187,7 @@ function draftNew(opts: { source: SourceKindOpt; role: string; notes: string; li
 function draftDup(base: Candidate | undefined, linkUrl?: string): Candidate {
   const p = base ?? draftNew({ source: 'Outreach', role: '', notes: '' })
   const nextLinks = linkUrl?.trim()
-    ? [{ label: 'Google Drive resume', url: linkUrl.trim(), kind: 'Drive', addedAt: 'Just now' }, ...(p.sourceLinks ?? [])]
+    ? [{ label: 'Google Drive resume', url: linkUrl.trim(), addedAt: 'Just now' }, ...(p.sourceLinks ?? [])]
     : p.sourceLinks
   return { ...p, id: 'priya-new', resumeVersion: 1, updated: 'Just now', relocate: null, completeness: 58, sourceLinks: nextLinks, example: true }
 }
@@ -97,21 +195,37 @@ function draftDup(base: Candidate | undefined, linkUrl?: string): Candidate {
 export function NewCandidate() {
   const app = useApp()
   const navigate = useNavigate()
-  useTopBar([{ label: 'Candidates', to: '/candidates' }, { label: 'New candidate' }])
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const initialPageMode: PageMode = searchParams.get('mode') === 'bulk' ? 'bulk' : 'single'
+  const [pageMode, setPageMode] = useState<PageMode>(initialPageMode)
+  const [singleMode, setSingleMode] = useState<SingleSourceMode>('ai-box')
+  const [bulkMode, setBulkMode] = useState<BulkSourceMode>(
+    searchParams.get('bulkType') === 'sheet' ? 'sheet' : 'resumes'
+  )
+
+  useTopBar(
+    [
+      { label: 'Candidates', to: '/candidates' },
+      { label: pageMode === 'bulk' ? 'Upload candidates in bulk' : 'Add new candidate' },
+    ],
+    undefined,
+    [pageMode],
+  )
   const [wf] = useWireframeState('S-06', 'New candidate', WF_STATES, 'empty')
 
-  const [mode, setMode] = useState<SourceMode>('link')
+  // Single candidate state
+  const [aiSingleText, setAiSingleText] = useState('')
+  const [createActionReady, setCreateActionReady] = useState(true)
+  const [fathomUrl, setFathomUrl] = useState('')
   const [linkUrl, setLinkUrl] = useState('')
   const [linkedinUrl, setLinkedinUrl] = useState('')
-  const [sheetPaste, setSheetPaste] = useState('')
-  const [sheetLoaded, setSheetLoaded] = useState(false)
   const [file, setFile] = useState<string | null>(null)
   const [paste, setPaste] = useState('')
   const [showPasteText, setShowPasteText] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [role, setRole] = useState('')
   const [source, setSource] = useState<SourceKindOpt>('Outreach')
-  const [call, setCall] = useState('')
   const [notes, setNotes] = useState('')
   const [phase, setPhase] = useState<Phase>('idle')
   const [dup, setDup] = useState(false)
@@ -119,41 +233,85 @@ export function NewCandidate() {
   const [dlg, setDlg] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
+  // Bulk upload state (Multiple resumes + Sheet)
+  const [bulkResumes, setBulkResumes] = useState<BulkResumeItem[]>(SAMPLE_BULK_RESUMES)
+  const [bulkPhase, setBulkPhase] = useState<'idle' | 'extracting' | 'done'>('idle')
+  const [sheetUrl, setSheetUrl] = useState('')
+  const [sheetFile, setSheetFile] = useState<string | null>(null)
+  const [sheetPaste, setSheetPaste] = useState('')
+  const [sheetLoaded, setSheetLoaded] = useState(true)
+  const multiResumeInputRef = useRef<HTMLInputElement>(null)
+  const sheetFileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const m = searchParams.get('mode')
+    if (m === 'bulk' || m === 'single') setPageMode(m)
+    const bt = searchParams.get('bulkType')
+    if (bt === 'sheet' || bt === 'resumes') setBulkMode(bt)
+  }, [searchParams])
+
+  const switchPageMode = (next: PageMode) => {
+    setPageMode(next)
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('mode', next)
+    setSearchParams(nextParams, { replace: true })
+  }
+
   const frozen = wf === 'extracting'
   const { step, done } = useStepper(STEPS.length, phase === 'extracting', frozen ? 1e9 : 850)
-  useEffect(() => { if (done) { setPhase('done'); app.toast('Profile extracted from resume link') } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [done])
+  useEffect(() => {
+    if (done) {
+      setPhase('done')
+      app.toast(fathomUrl.trim() ? 'Profile extracted from resume + Fathom call link' : 'Profile extracted from resume')
+    }
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [done])
+
+  const { step: bulkStep, done: bulkDone } = useStepper(BULK_STEPS.length, bulkPhase === 'extracting', 900)
+  useEffect(() => {
+    if (bulkDone) {
+      setBulkPhase('done')
+      app.toast(`Extracted ${bulkResumes.length} candidate profiles from resumes`)
+    }
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [bulkDone])
 
   // Apply wireframe presets when the reviewer picks a state
   useEffect(() => {
     setDupDismissed(false)
     if (wf === 'empty') {
-      setMode('link'); setLinkUrl(''); setLinkedinUrl(''); setSheetLoaded(false); setFile(null); setPaste(''); setShowPasteText(false); setPhase('idle'); setDup(false)
+      setPageMode(searchParams.get('mode') === 'bulk' ? 'bulk' : 'single')
+      setSingleMode('ai-box'); setLinkUrl(''); setLinkedinUrl(''); setFile(null); setPaste(''); setShowPasteText(false); setPhase('idle'); setDup(false)
     }
-    if (wf === 'extracting') {
-      setMode('link'); setLinkUrl(EXAMPLE_DRIVE_URL); setPhase('extracting'); setDup(false)
-    }
-    if (wf === 'extracted') {
-      setMode('link'); setLinkUrl(EXAMPLE_DRIVE_URL); setLinkedinUrl(EXAMPLE_LINKEDIN_URL); setPhase('done'); setDup(false)
+    if (wf === 'bulk-resumes') {
+      setPageMode('bulk'); setBulkMode('resumes'); setBulkResumes(SAMPLE_BULK_RESUMES); setBulkPhase('done')
     }
     if (wf === 'sheet') {
-      setMode('sheet'); setSheetLoaded(true); setPhase('idle'); setDup(false)
+      setPageMode('bulk'); setBulkMode('sheet'); setSheetLoaded(true); setPhase('idle'); setDup(false)
+    }
+    if (wf === 'extracting') {
+      setPageMode('single'); setSingleMode('link'); setLinkUrl(EXAMPLE_DRIVE_URL); setPhase('extracting'); setDup(false)
+    }
+    if (wf === 'extracted') {
+      setPageMode('single'); setSingleMode('ai-box'); setLinkUrl(EXAMPLE_DRIVE_URL); setLinkedinUrl(EXAMPLE_LINKEDIN_URL); setFathomUrl(EXAMPLE_FATHOM_URL); setPhase('done'); setDup(false)
     }
     if (wf === 'duplicate') {
-      setMode('upload'); setFile('Priya_S_resume_2026.pdf'); setShowPasteText(false); setPhase('done'); setDup(true)
+      setPageMode('single'); setSingleMode('upload'); setFile('Priya_S_resume_2026.pdf'); setShowPasteText(false); setPhase('done'); setDup(true)
     }
     if (wf === 'failed') {
-      setMode('upload'); setFile('scan_0412.pdf'); setShowPasteText(false); setPhase('failed'); setDup(false)
+      setPageMode('single'); setSingleMode('upload'); setFile('scan_0412.pdf'); setShowPasteText(false); setPhase('failed'); setDup(false)
     }
   }, [wf])
 
-  const hasResume = mode === 'link'
-    ? linkUrl.trim().length > 8
-    : mode === 'upload'
-      ? (!!file || paste.trim().length > 40)
-      : sheetLoaded
+  const hasSingleSource =
+    singleMode === 'ai-box'
+      ? (aiSingleText.trim().length > 10 || !!file || linkUrl.trim().length > 8)
+      : singleMode === 'link'
+        ? linkUrl.trim().length > 8
+        : (!!file || paste.trim().length > 40)
 
   const priya = app.candidate('priya')
-  const draft = dup ? draftDup(priya, linkUrl) : draftNew({ source, role, notes, linkUrl, linkedinUrl })
+  const draft = dup ? draftDup(priya, linkUrl) : draftNew({ source, role, notes, linkUrl, linkedinUrl, fathomUrl })
   const showDup = dup && !dupDismissed && phase === 'done'
 
   const pickFile = (name: string) => {
@@ -161,42 +319,45 @@ export function NewCandidate() {
     setDup(/priya/i.test(name))
   }
 
-  const create = () => {
-    if (!hasResume) return
-    if (mode === 'upload' && showPasteText) setDup(/priya/i.test(paste))
-    else if (mode === 'link') setDup(false)
+  const createSingle = () => {
+    if (!hasSingleSource) {
+      // Load sample candidate details automatically so 1-click demo works smoothly
+      setAiSingleText('Rohan D. · Senior Product Manager (7 yrs, Remitly & Avalara) · Seattle, WA · Payments platform, API products, Roadmapping, B2B SaaS')
+      setLinkUrl(EXAMPLE_DRIVE_URL)
+    }
+    if (singleMode === 'upload' && showPasteText) setDup(/priya/i.test(paste))
+    else if (singleMode === 'ai-box') setDup(/priya/i.test(aiSingleText))
+    else setDup(false)
     setDupDismissed(false)
     setPhase('extracting')
   }
 
   const useExampleDriveLink = () => {
-    setMode('link')
     setLinkUrl(EXAMPLE_DRIVE_URL)
     setLinkedinUrl(EXAMPLE_LINKEDIN_URL)
+    setAiSingleText('Rohan D. · Senior Product Manager (7 yrs, Remitly & Avalara) · Seattle, WA · Payments platform, API products, Roadmapping, B2B SaaS')
     setDup(false)
     setDupDismissed(false)
     setPhase('extracting')
   }
 
   const useExampleFile = () => {
-    setMode('upload')
+    setSingleMode('upload')
     setShowPasteText(false)
     pickFile('Rohan_D_resume.pdf')
   }
 
-  const save = (thenRoles: boolean) => {
+  const saveSingle = (thenRoles: boolean) => {
     const linkItem = {
       label: 'Google Drive resume',
       url: linkUrl.trim() || EXAMPLE_DRIVE_URL,
-      kind: 'Drive',
       addedAt: 'Just now',
     }
-    const sourceLinks = mode === 'link' || linkUrl.trim()
-      ? [
-          linkItem,
-          ...(linkedinUrl.trim() ? [{ label: 'LinkedIn profile', url: linkedinUrl.trim(), kind: 'LinkedIn', addedAt: 'Just now' }] : []),
-        ]
-      : draft.sourceLinks
+    const sourceLinks = [
+      linkItem,
+      ...(linkedinUrl.trim() ? [{ label: 'LinkedIn profile', url: linkedinUrl.trim(), addedAt: 'Just now' }] : []),
+      ...(fathomUrl.trim() ? [{ label: 'Fathom call recording', url: fathomUrl.trim(), addedAt: 'Just now' }] : []),
+    ]
 
     const base: Candidate = {
       ...draft,
@@ -208,7 +369,7 @@ export function NewCandidate() {
     const id = app.candidate(base.id) ? `${base.id}${app.candidates.length}` : base.id
     app.addCandidate({ ...base, id })
     app.log({
-      what: mode === 'link' ? 'Created profile from resume link' : 'Created profile from resume',
+      what: fathomUrl.trim() ? 'Created profile from resume + Fathom call link' : 'Created profile from resume',
       record: base.name,
       recordHref: `/candidates/${id}`,
       kind: 'Candidates',
@@ -217,12 +378,96 @@ export function NewCandidate() {
     navigate(`/candidates/${id}${thenRoles ? '?tab=roles' : ''}`)
   }
 
+  const handleAddBulkFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    const added: BulkResumeItem[] = Array.from(files).map((f, i) => {
+      const baseName = f.name.replace(/\.(pdf|docx?)$/i, '').replace(/[_-]+/g, ' ')
+      const isPriya = /priya/i.test(f.name)
+      return {
+        id: `br-upload-${Date.now()}-${i}`,
+        fileName: f.name,
+        pages: 2,
+        sizeKb: Math.max(95, Math.round(f.size / 1024) || 160),
+        name: isPriya ? 'Priya S.' : baseName.split(' ').slice(0, 2).join(' ') || `Candidate ${bulkResumes.length + i + 1}`,
+        headline: 'Product & Engineering · extracted from resume',
+        category: 'Product',
+        years: 6,
+        metro: 'SF',
+        skills: ['B2B SaaS', 'Product strategy', 'SQL'],
+        status: isPriya ? 'Duplicate in pool' : 'Ready to create',
+      }
+    })
+    setBulkResumes(prev => [...prev, ...added])
+    setBulkPhase('idle')
+  }
+
+  const commitBulkResumes = () => {
+    let createdCount = 0
+    bulkResumes.forEach((item, idx) => {
+      if (item.status === 'Duplicate in pool') {
+        const existing = app.candidate('priya')
+        if (existing) {
+          app.updateCandidate('priya', { updated: 'Just now', resumeVersion: (existing.resumeVersion ?? 1) + 1 })
+        }
+        return
+      }
+      const initials = item.name.split(' ').map(s => s[0]).join('').replace('.', '').slice(0, 2).toUpperCase()
+      const candId = item.name.toLowerCase().replace(/[^a-z]/g, '') || `bulk-${idx}`
+      if (app.candidate(candId)) return
+      createdCount++
+      app.addCandidate({
+        id: candId,
+        name: item.name,
+        initials,
+        example: true,
+        headline: item.headline,
+        category: item.category,
+        subcategory: item.category === 'Engineering' ? 'Backend' : 'Product Manager',
+        years: item.years,
+        domains: ['Payments/Fintech', 'B2B SaaS'],
+        city: item.metro === 'NYC' ? 'New York, NY' : item.metro === 'Seattle' ? 'Seattle, WA' : 'San Francisco, CA',
+        metro: item.metro,
+        workModes: ['Hybrid', 'Remote'],
+        relocate: null,
+        locationsOpen: [item.metro],
+        companyPrefs: [],
+        workAuth: { status: null },
+        pay: null,
+        availability: null,
+        searchStatus: 'Active',
+        skills: item.skills,
+        predicted: [],
+        tools: [],
+        companies: [],
+        achievements: [],
+        completeness: 52,
+        askList: ['Are you on a visa? Which one, and when does it expire?', 'What pay range are you looking for?'],
+        updated: 'Just now',
+        source,
+        cameInForRole: role || undefined,
+        resumeVersion: 1,
+        lastContacted: 'Today',
+        email: `${candId}@example.com`,
+        ourTake: notes || undefined,
+        fieldSources: { headline: 'RESUME', years: 'RESUME', city: 'RESUME', category: 'RESUME' },
+      })
+    })
+    app.log({
+      what: `Bulk uploaded ${bulkResumes.length} resumes (${createdCount} new profiles, 1 updated)`,
+      record: bulkResumes.map(r => r.name).join(', '),
+      recordHref: '/candidates',
+      kind: 'Candidates',
+    })
+    app.toast(`Created ${createdCount} candidates from bulk resume upload`)
+    navigate('/candidates')
+  }
+
   const importSheetRows = () => {
     outreachSheetCandidates.forEach((row, idx) => {
       if (row.status === 'Duplicate in pool') {
         const existing = app.candidate('priya')
         if (existing) {
-          const linkObj = { label: 'Google Drive resume', url: row.link, kind: 'Drive', addedAt: 'Just now' }
+          const linkObj = { label: 'Google Drive resume', url: row.link, addedAt: 'Just now' }
           app.updateCandidate('priya', {
             updated: 'Just now',
             sourceLinks: [linkObj, ...(existing.sourceLinks ?? []).filter(l => l.url !== row.link)],
@@ -234,7 +479,7 @@ export function NewCandidate() {
       const initials = row.name.split(' ').map(s => s[0]).join('').replace('.', '').slice(0, 2).toUpperCase()
       const candId = row.name.toLowerCase().replace(/[^a-z]/g, '') || `sheet-${idx}`
       if (app.candidate(candId)) return
-      const linkObj = { label: 'Google Drive resume', url: row.link, kind: 'Drive', addedAt: 'Just now' }
+      const linkObj = { label: 'Google Drive resume', url: row.link, addedAt: 'Just now' }
       app.addCandidate({
         id: candId,
         name: row.name,
@@ -285,74 +530,252 @@ export function NewCandidate() {
 
   const roleOptions = [{ value: '', label: 'No specific role' }, ...app.roles.filter(r => r.status === 'Open').map(r => ({ value: r.id, label: `${r.title} — ${r.company}` }))]
 
+  /* ---------- Mode switcher bar at the top of Left pane ---------- */
+  const modeHeaderBar = (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-gray-100 p-1.5">
+      <div role="tablist" aria-label="Candidate intake mode" className="inline-flex items-center gap-1">
+        <button
+          role="tab"
+          type="button"
+          aria-selected={pageMode === 'single'}
+          onClick={() => switchPageMode('single')}
+          className={cn(
+            'inline-flex h-8 items-center gap-1.5 rounded-xl px-3 text-xs btn-type transition-all cursor-pointer',
+            pageMode === 'single'
+              ? 'border border-border bg-card text-foreground shadow-2xs'
+              : 'border border-transparent text-muted-foreground hover:text-foreground',
+          )}
+        >
+          <UserPlus className="size-3.5" />
+          <span>Add new candidate</span>
+        </button>
+        <button
+          role="tab"
+          type="button"
+          aria-selected={pageMode === 'bulk'}
+          onClick={() => switchPageMode('bulk')}
+          className={cn(
+            'inline-flex h-8 items-center gap-1.5 rounded-xl px-3 text-xs btn-type transition-all cursor-pointer',
+            pageMode === 'bulk'
+              ? 'border border-border bg-card text-foreground shadow-2xs'
+              : 'border border-transparent text-muted-foreground hover:text-foreground',
+          )}
+        >
+          <Layers className="size-3.5" />
+          <span>Upload candidates in bulk</span>
+          <span className="rounded-xs bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+            Sheet / Resumes
+          </span>
+        </button>
+      </div>
+    </div>
+  )
+
   /* ---------- Left pane ---------- */
-  const left = (
+  const left = pageMode === 'bulk' ? (
     <>
+      {modeHeaderBar}
+
       <BezelCard
-        icon={mode === 'link' ? <Link2 /> : mode === 'sheet' ? <Table2 /> : <FileText />}
-        title={<span className="flex items-center gap-2">Resume source <span className="eyebrow text-[9px] text-gray-1000">Required</span></span>}
+        icon={bulkMode === 'resumes' ? <FolderUp /> : <Table2 />}
+        title={
+          <span className="flex items-center gap-2">
+            Bulk candidate upload
+            <span className="eyebrow text-[9px] text-gray-1000">Sheet or Multiple Resumes</span>
+          </span>
+        }
         action={
           <Segmented
             size="sm"
-            aria-label="Resume input mode"
-            value={mode}
-            onChange={m => { setMode(m); if (m === 'sheet') setSheetLoaded(true) }}
+            aria-label="Bulk upload source"
+            value={bulkMode}
+            onChange={m => setBulkMode(m)}
             options={[
-              { value: 'link', label: 'Paste link' },
-              { value: 'sheet', label: 'Import from sheet' },
-              { value: 'upload', label: 'Upload file / Paste text' },
+              { value: 'resumes', label: 'Multiple resumes' },
+              { value: 'sheet', label: 'Add a sheet' },
             ]}
           />
         }
       >
-        {phase === 'failed' && (
-          <div className="mb-4">
-            <Banner variant="error" actions={<Button variant="outline" icon={<ClipboardPaste />} onClick={() => { setMode('upload'); setShowPasteText(true); setPhase('idle') }}>Paste resume text</Button>}>
-              We couldn't read this file. Paste the resume text instead.
-            </Banner>
-          </div>
-        )}
-
-        {mode === 'link' && (
+        {bulkMode === 'resumes' ? (
           <div className="space-y-4">
-            <Field label="Resume link (Google Drive, Dropbox, or LinkedIn PDF)" hint="Most resumes arrive as shared links in outreach replies or sheets.">
-              <Input
-                aria-label="Resume link"
-                value={linkUrl}
-                onChange={e => setLinkUrl(e.target.value)}
-                placeholder={EXAMPLE_DRIVE_URL}
+            {/* Multi-resume dropzone */}
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => multiResumeInputRef.current?.click()}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  multiResumeInputRef.current?.click()
+                }
+              }}
+              onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={e => {
+                e.preventDefault()
+                setDragOver(false)
+                handleAddBulkFiles(e.dataTransfer.files)
+              }}
+              className={cn(
+                'flex cursor-pointer flex-col items-center justify-center gap-2.5 rounded-xl border border-dashed px-6 py-7 text-center transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40',
+                dragOver ? 'border-gray-1100 bg-muted' : 'border-gray-700 bg-background hover:bg-muted/50',
+              )}
+            >
+              <span className="flex size-10 items-center justify-center rounded-xl border border-border bg-muted">
+                <Upload className="size-4 text-foreground" />
+              </span>
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">Drop multiple resumes here, or click to browse</p>
+                <p className="text-xs text-muted-foreground">Upload up to 25 PDF or DOCX resumes at once · AI extracts every profile automatically</p>
+              </div>
+              <input
+                ref={multiResumeInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className="hidden"
+                onChange={e => handleAddBulkFiles(e.target.files)}
               />
-            </Field>
-            <Field label="LinkedIn profile link (optional)" hint="Paste together with the resume link to keep both on the candidate’s Sources card.">
-              <Input
-                aria-label="LinkedIn profile link"
-                value={linkedinUrl}
-                onChange={e => setLinkedinUrl(e.target.value)}
-                placeholder="https://linkedin.com/in/priya-s-example"
-              />
-            </Field>
+            </div>
+
+            {/* Queued resume files list */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="eyebrow text-[10px] text-gray-1000">
+                  QUEUED RESUME FILES ({bulkResumes.length})
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setBulkResumes(SAMPLE_BULK_RESUMES)
+                      setBulkPhase('idle')
+                    }}
+                  >
+                    Load 4 sample resumes
+                  </Button>
+                  {bulkResumes.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setBulkResumes([])
+                        setBulkPhase('idle')
+                      }}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {bulkResumes.length > 0 ? (
+                <ul className="divide-y divide-border rounded-xl border border-border bg-background">
+                  {bulkResumes.map(item => (
+                    <li key={item.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5 text-xs">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted">
+                          <FileText className="size-4 text-muted-foreground" />
+                        </span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate font-medium text-foreground">{item.fileName}</span>
+                            <Tag tone={item.status === 'Duplicate in pool' ? 'outline' : 'neutral'}>
+                              {item.status}
+                            </Tag>
+                          </div>
+                          <div className="truncate text-[11px] text-muted-foreground">
+                            {item.name} · {item.headline} · {item.pages}p ({item.sizeKb} KB)
+                          </div>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Remove ${item.fileName}`}
+                        icon={<X />}
+                        onClick={() => setBulkResumes(prev => prev.filter(x => x.id !== item.id))}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">
+                  No resumes selected yet. Drop PDF/DOCX files above or click “Load 4 sample resumes”.
+                </div>
+              )}
+            </div>
+
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-              <Button variant="ghost" size="sm" icon={<Link2 />} onClick={useExampleDriveLink}>
-                Use example Drive link
+              <Button
+                variant="outline"
+                size="sm"
+                icon={<Plus />}
+                onClick={() => multiResumeInputRef.current?.click()}
+              >
+                Add more files
               </Button>
-              <Button variant={phase === 'done' ? 'outline' : 'primary'} icon={<Sparkles />} disabled={!hasResume || phase === 'extracting'} onClick={create}>
-                {phase === 'done' ? 'Create profile again' : 'Create profile'}
+              <Button
+                variant="primary"
+                icon={<Sparkles />}
+                disabled={bulkResumes.length === 0 || bulkPhase === 'extracting'}
+                onClick={() => setBulkPhase('extracting')}
+              >
+                {bulkPhase === 'done'
+                  ? `Re-extract ${bulkResumes.length} resumes`
+                  : `Extract ${bulkResumes.length} resumes with AI`}
               </Button>
             </div>
           </div>
-        )}
-
-        {mode === 'sheet' && (
+        ) : (
+          /* Bulk Mode 2: Add a sheet (Google Sheet link, CSV/XLSX upload, or paste rows) */
           <div className="space-y-4">
-            <Field label="Outreach Google Sheet rows" hint="Paste rows copied from your outreach tracking sheet (Name, Headline, Drive/Dropbox/LinkedIn link, Role, Notes).">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
+              <Field label="Google Sheet URL or upload CSV / XLSX" hint="Connect a live outreach sheet or upload a spreadsheet of candidates.">
+                <Input
+                  aria-label="Google Sheet link"
+                  value={sheetUrl}
+                  onChange={e => { setSheetUrl(e.target.value); if (e.target.value.trim()) setSheetLoaded(true) }}
+                  placeholder="https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit"
+                />
+              </Field>
+              <div className="flex items-end">
+                <Button
+                  variant="outline"
+                  icon={<Upload />}
+                  onClick={() => sheetFileInputRef.current?.click()}
+                >
+                  {sheetFile ? sheetFile : 'Upload CSV / XLSX'}
+                </Button>
+                <input
+                  ref={sheetFileInputRef}
+                  type="file"
+                  accept=".csv,.xlsx,.xls,text/csv"
+                  className="hidden"
+                  onChange={e => {
+                    const f = e.target.files?.[0]
+                    if (f) {
+                      setSheetFile(f.name)
+                      setSheetLoaded(true)
+                      app.toast(`Loaded sheet ${f.name}`)
+                    }
+                  }}
+                />
+              </div>
+            </div>
+
+            <Field label="Or paste outreach sheet rows" hint="Paste rows copied from your sheet (Name, Headline, Drive/Dropbox/LinkedIn link, Role, Notes).">
               <Textarea
                 aria-label="Outreach sheet rows"
                 value={sheetPaste}
                 onChange={e => { setSheetPaste(e.target.value); if (e.target.value.trim()) setSheetLoaded(true) }}
-                placeholder="Paste rows from your outreach Google Sheet, or load the 3 sample rows below…"
+                placeholder="Paste rows from your Google Sheet or CSV, or load the 3 sample rows below…"
                 className="min-h-20 font-mono text-xs"
               />
             </Field>
+
             <div className="flex flex-wrap items-center justify-between gap-2">
               <Button
                 variant="outline"
@@ -371,7 +794,7 @@ export function NewCandidate() {
               </Button>
               {sheetLoaded && (
                 <Button variant="chroma" icon={<Sparkles />} onClick={importSheetRows}>
-                  Create 3 profiles from links
+                  Create 3 profiles from sheet
                 </Button>
               )}
             </div>
@@ -384,9 +807,8 @@ export function NewCandidate() {
                       <tr className="border-b border-border bg-secondary/70 text-[10px] uppercase text-gray-1000">
                         <th className="px-2.5 py-2 font-mono">Name</th>
                         <th className="px-2.5 py-2 font-mono">Headline</th>
-                        <th className="px-2.5 py-2 font-mono">Resume link (Drive/Dropbox/LinkedIn)</th>
+                        <th className="px-2.5 py-2 font-mono">Resume link</th>
                         <th className="px-2.5 py-2 font-mono">Came in for</th>
-                        <th className="px-2.5 py-2 font-mono">Notes</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
@@ -407,7 +829,6 @@ export function NewCandidate() {
                               </span>
                             </td>
                             <td className="px-2.5 py-2 whitespace-nowrap text-muted-foreground">{meta?.cameInFor ?? '—'}</td>
-                            <td className="px-2.5 py-2 text-muted-foreground">{meta?.notes ?? '—'}</td>
                           </tr>
                         )
                       })}
@@ -418,8 +839,182 @@ export function NewCandidate() {
             )}
           </div>
         )}
+      </BezelCard>
 
-        {mode === 'upload' && (
+      <BezelCard icon={<MessageSquareText />} title="Batch defaults (optional)" description="Applied to all candidates in this bulk upload.">
+        <div className="space-y-4">
+          <Field label="Came in for role">
+            <Select aria-label="Came in for role" className="w-full" value={role} onChange={setRole} options={roleOptions} />
+          </Field>
+          <Field label="Source">
+            <Segmented aria-label="Source" value={source} onChange={setSource} options={['Outreach', 'Referral', 'Inbound']} />
+          </Field>
+        </div>
+      </BezelCard>
+    </>
+  ) : (
+    /* ==================== SINGLE CANDIDATE LEFT PANE ==================== */
+    <>
+      {modeHeaderBar}
+
+      <BezelCard
+        icon={singleMode === 'ai-box' ? <Sparkles /> : singleMode === 'link' ? <Link2 /> : <FileText />}
+        title={<span className="flex items-center gap-2">Single candidate source <span className="eyebrow text-[9px] text-gray-1000">Required</span></span>}
+        action={
+          <Segmented
+            size="sm"
+            aria-label="Single candidate input mode"
+            value={singleMode}
+            onChange={m => setSingleMode(m)}
+            options={[
+              { value: 'ai-box', label: 'AI quick create' },
+              { value: 'link', label: 'Paste link' },
+              { value: 'upload', label: 'Upload PDF' },
+            ]}
+          />
+        }
+      >
+        {phase === 'failed' && (
+          <div className="mb-4">
+            <Banner variant="error" actions={<Button variant="outline" icon={<ClipboardPaste />} onClick={() => { setSingleMode('upload'); setShowPasteText(true); setPhase('idle') }}>Paste resume text</Button>}>
+              We couldn't read this file. Paste the resume text instead.
+            </Banner>
+          </div>
+        )}
+
+        {singleMode === 'ai-box' && (
+          <div className="space-y-3">
+            {/* Double-bezel AI Text Box with right-hand Create candidate action + conditional Optional Fathom Link */}
+            <div className="rounded-xl border border-border bg-background p-3.5 focus-within:border-gray-900">
+              <textarea
+                aria-label="Candidate resume text, LinkedIn, or notes"
+                rows={4}
+                value={aiSingleText}
+                onChange={e => {
+                  setAiSingleText(e.target.value)
+                  if (e.target.value.trim().length > 0) setCreateActionReady(true)
+                }}
+                placeholder="Paste a candidate's resume text, Drive/LinkedIn link, or recruiter notes here…"
+                className="w-full resize-none bg-transparent text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none"
+              />
+
+              {/* Once Create candidate is available/active, show the Optional Fathom Call Link right inside the box */}
+              {createActionReady && (
+                <div className="mt-3 rounded-lg border border-border bg-secondary/40 p-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label htmlFor="single-fathom-url" className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
+                      <Video className="size-3.5 text-gray-1000" />
+                      <span>Upload / paste Fathom call link</span>
+                      <span className="rounded-xs border border-border bg-card px-1.5 py-0.5 font-mono text-[9.5px] text-muted-foreground">
+                        Optional
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setFathomUrl(EXAMPLE_FATHOM_URL)}
+                      className="font-mono text-[10.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline cursor-pointer"
+                    >
+                      Use sample Fathom link
+                    </button>
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <Input
+                      id="single-fathom-url"
+                      aria-label="Fathom call link (optional)"
+                      value={fathomUrl}
+                      onChange={e => setFathomUrl(e.target.value)}
+                      placeholder="https://fathom.video/share/… (syncs call notes, comp & work auth automatically)"
+                      className="h-8 text-xs"
+                    />
+                    {fathomUrl && (
+                      <Button variant="ghost" size="icon-sm" aria-label="Clear Fathom link" icon={<X />} onClick={() => setFathomUrl('')} />
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Bottom action bar inside the text box: left attachments, right-hand Create candidate action */}
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    icon={<Upload />}
+                    onClick={() => fileInput.current?.click()}
+                  >
+                    {file ? file : 'Attach resume PDF'}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setAiSingleText('Rohan D. · Senior Product Manager (7 yrs, Remitly & Avalara) · Seattle, WA · Payments platform, API products, Roadmapping, B2B SaaS')
+                      setLinkUrl(EXAMPLE_DRIVE_URL)
+                      setCreateActionReady(true)
+                    }}
+                  >
+                    Load example candidate
+                  </Button>
+                </div>
+
+                {/* Right-hand side inside the text box: Create candidate action */}
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    icon={<Sparkles />}
+                    disabled={phase === 'extracting'}
+                    onClick={() => {
+                      setCreateActionReady(true)
+                      createSingle()
+                    }}
+                  >
+                    {phase === 'done' ? 'Re-run Create candidate' : 'Create candidate'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {singleMode === 'link' && (
+          <div className="space-y-4">
+            <Field label="Resume link (Google Drive, Dropbox, or LinkedIn PDF)" hint="Most resumes arrive as shared links in outreach replies or sheets.">
+              <Input
+                aria-label="Resume link"
+                value={linkUrl}
+                onChange={e => setLinkUrl(e.target.value)}
+                placeholder={EXAMPLE_DRIVE_URL}
+              />
+            </Field>
+            <Field label="LinkedIn profile link (optional)" hint="Paste together with the resume link to keep both on the candidate’s Sources card.">
+              <Input
+                aria-label="LinkedIn profile link"
+                value={linkedinUrl}
+                onChange={e => setLinkedinUrl(e.target.value)}
+                placeholder="https://linkedin.com/in/priya-s-example"
+              />
+            </Field>
+            <Field label="Fathom call link (optional)" hint="Syncs call transcript insights (comp, availability, work auth) directly onto the profile.">
+              <Input
+                aria-label="Fathom call link"
+                value={fathomUrl}
+                onChange={e => setFathomUrl(e.target.value)}
+                placeholder={EXAMPLE_FATHOM_URL}
+              />
+            </Field>
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <Button variant="ghost" size="sm" icon={<Link2 />} onClick={useExampleDriveLink}>
+                Use example Drive link
+              </Button>
+              <Button variant={phase === 'done' ? 'outline' : 'primary'} icon={<Sparkles />} disabled={!hasSingleSource || phase === 'extracting'} onClick={createSingle}>
+                {phase === 'done' ? 'Create candidate again' : 'Create candidate'}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {singleMode === 'upload' && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">Upload a local PDF/DOCX or paste raw resume text</span>
@@ -445,40 +1040,45 @@ export function NewCandidate() {
                   onDragOver={e => { e.preventDefault(); setDragOver(true) }}
                   onDragLeave={() => setDragOver(false)}
                   onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) pickFile(f.name) }}
-                  className={cn('flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border border-dashed px-6 py-10 text-center transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40',
+                  className={cn('flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border border-dashed px-6 py-8 text-center transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40',
                     dragOver ? 'border-gray-1100 bg-muted' : 'border-gray-700 bg-background hover:bg-muted/50')}>
                   <span className="flex size-10 items-center justify-center rounded-lg bg-muted"><Upload className="size-4 text-muted-foreground" /></span>
                   <div className="space-y-1">
                     <p className="text-sm font-medium">Drop the resume here, or click to choose</p>
                     <p className="text-xs text-muted-foreground">PDF or DOCX · any length</p>
                   </div>
-                  <input ref={fileInput} type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) pickFile(f.name) }} />
                 </div>
               )
             ) : (
-              <Textarea aria-label="Resume text" value={paste} onChange={e => setPaste(e.target.value)} placeholder="Paste the full resume text…" className="min-h-48 font-mono text-[12.5px]" />
+              <Textarea aria-label="Resume text" value={paste} onChange={e => setPaste(e.target.value)} placeholder="Paste the full resume text…" className="min-h-40 font-mono text-[12.5px]" />
             )}
+            <Field label="Fathom call link (optional)">
+              <Input
+                aria-label="Fathom call link"
+                value={fathomUrl}
+                onChange={e => setFathomUrl(e.target.value)}
+                placeholder={EXAMPLE_FATHOM_URL}
+              />
+            </Field>
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
               <Button variant="link" className="text-xs" onClick={useExampleFile}>Use example resume</Button>
-              <Button variant={phase === 'done' ? 'outline' : 'primary'} icon={<Sparkles />} disabled={!hasResume || phase === 'extracting'} onClick={create}>
-                {phase === 'done' ? 'Create profile again' : 'Create profile'}
+              <Button variant={phase === 'done' ? 'outline' : 'primary'} icon={<Sparkles />} disabled={!hasSingleSource || phase === 'extracting'} onClick={createSingle}>
+                {phase === 'done' ? 'Create candidate again' : 'Create candidate'}
               </Button>
             </div>
           </div>
         )}
+        <input ref={fileInput} type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) pickFile(f.name) }} />
       </BezelCard>
 
-      <BezelCard icon={<MessageSquareText />} title="Optional" description="Helpful context. Skip any of it; the resume link is enough to start.">
+      <BezelCard icon={<MessageSquareText />} title="Optional context" description="Helpful context. Skip any of it; the resume or AI box is enough to start.">
         <div className="space-y-4">
           <Field label="Came in for role">
             <Select aria-label="Came in for role" className="w-full" value={role} onChange={setRole} options={roleOptions} />
           </Field>
           <Field label="Source">
             <Segmented aria-label="Source" value={source} onChange={setSource} options={['Outreach', 'Referral', 'Inbound']} />
-          </Field>
-          <Field label="Call link or transcript">
-            <Input value={call} onChange={e => setCall(e.target.value)} placeholder="https://fathom.video/share/… or paste text" />
           </Field>
           <Field label="Notes">
             <Textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Anything worth remembering from the first reply" />
@@ -500,33 +1100,88 @@ export function NewCandidate() {
           Priya S. may already be in the pool (same email).
         </Banner>
       )}
-      {mode === 'sheet' && sheetLoaded ? (
-        <BezelCard icon={<Table2 />} title="Batch import preview · 3 outreach sheet rows" description="Each row’s Drive/Dropbox/LinkedIn link is stored on the candidate’s Sources card.">
-          <div className="space-y-3">
-            <InfoNote>2 new profiles will be created and 1 existing candidate (Priya S.) will have her latest Drive resume link attached.</InfoNote>
-            <ul className="divide-y divide-border rounded-xl border border-border bg-background">
-              {outreachSheetCandidates.map(r => (
-                <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 text-sm">
-                  <div>
-                    <div className="font-medium">{r.nameLabel ?? r.name}</div>
-                    <div className="text-xs text-muted-foreground">{r.headline} · {r.years} yrs · {r.metro}</div>
-                  </div>
-                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Check className="size-3.5 text-success" />
-                    {r.status}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <div className="flex justify-end pt-1">
-              <Button variant="chroma" icon={<Sparkles />} onClick={importSheetRows}>
-                Create 3 profiles from links
-              </Button>
+      {pageMode === 'bulk' ? (
+        bulkMode === 'resumes' ? (
+          bulkPhase === 'extracting' ? (
+            <AIStepper steps={BULK_STEPS} current={bulkStep} title={`Extracting ${bulkResumes.length} candidate profiles`} />
+          ) : (
+            <BezelCard
+              icon={<FolderUp />}
+              title={`Batch resume preview · ${bulkResumes.length} files`}
+              description="AI extracts structured skills, work history, and flags any existing duplicates in the pool."
+            >
+              <div className="space-y-3">
+                <InfoNote>
+                  {bulkResumes.filter(x => x.status === 'Ready to create').length} new candidate profiles will be created and{' '}
+                  {bulkResumes.filter(x => x.status === 'Duplicate in pool').length} existing profile (Priya S.) will have her new resume version attached.
+                </InfoNote>
+                <ul className="divide-y divide-border rounded-xl border border-border bg-background">
+                  {bulkResumes.map(r => (
+                    <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-3 text-sm">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 font-medium">
+                          <span>{r.name}</span>
+                          <span className="font-mono text-[11px] text-muted-foreground">({r.fileName})</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {r.headline} · {r.years} yrs · {r.metro}
+                        </div>
+                        <div className="flex flex-wrap gap-1 pt-0.5">
+                          {r.skills.map(sk => (
+                            <span key={sk} className="inline-flex h-5 items-center rounded-xs border border-border bg-secondary px-1.5 text-[10px] text-gray-1100">
+                              {sk}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Check className="size-3.5 text-success" />
+                        {r.status}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex justify-end gap-2 pt-1">
+                  {bulkPhase !== 'done' && (
+                    <Button variant="outline" icon={<Sparkles />} onClick={() => setBulkPhase('extracting')}>
+                      Run AI extraction preview
+                    </Button>
+                  )}
+                  <Button variant="chroma" icon={<Sparkles />} disabled={bulkResumes.length === 0} onClick={commitBulkResumes}>
+                    Save {bulkResumes.length} candidates to pool
+                  </Button>
+                </div>
+              </div>
+            </BezelCard>
+          )
+        ) : (
+          <BezelCard icon={<Table2 />} title="Batch sheet preview · 3 outreach sheet rows" description="Each row’s Drive/Dropbox/LinkedIn link is stored on the candidate’s Sources card.">
+            <div className="space-y-3">
+              <InfoNote>2 new profiles will be created and 1 existing candidate (Priya S.) will have her latest Drive resume link attached.</InfoNote>
+              <ul className="divide-y divide-border rounded-xl border border-border bg-background">
+                {outreachSheetCandidates.map(r => (
+                  <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 text-sm">
+                    <div>
+                      <div className="font-medium">{r.nameLabel ?? r.name}</div>
+                      <div className="text-xs text-muted-foreground">{r.headline} · {r.years} yrs · {r.metro}</div>
+                    </div>
+                    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Check className="size-3.5 text-success" />
+                      {r.status}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex justify-end pt-1">
+                <Button variant="chroma" icon={<Sparkles />} onClick={importSheetRows}>
+                  Create 3 profiles from sheet
+                </Button>
+              </div>
             </div>
-          </div>
-        </BezelCard>
+          </BezelCard>
+        )
       ) : phase === 'extracting' ? (
-        <AIStepper steps={STEPS} current={frozen ? 1 : step} title="Building the profile" />
+        <AIStepper steps={STEPS} current={frozen ? 1 : step} title="Building the candidate profile" />
       ) : phase === 'done' ? (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
@@ -536,7 +1191,7 @@ export function NewCandidate() {
           {draft.sourceLinks && draft.sourceLinks.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-secondary/50 px-3.5 py-2 text-xs">
               <Link2 className="size-3.5 text-muted-foreground" />
-              <span className="font-medium">Source links captured:</span>
+              <span className="font-medium">Sources captured:</span>
               {draft.sourceLinks.map(l => (
                 <span key={l.url} className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5 font-mono text-[11px]">
                   {l.label} · {l.url.replace(/^https?:\/\//, '').slice(0, 28)}…
@@ -558,27 +1213,22 @@ export function NewCandidate() {
               <div className="space-y-1">
                 <h3 className="text-sm font-semibold text-foreground">Extracted profile will appear here</h3>
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  Paste a Google Drive, Dropbox, or LinkedIn link on the left, or try an example intake flow with 1 click.
+                  Paste candidate details + optional Fathom call link on the left and click Create candidate, or switch to Bulk upload for sheets &amp; multiple resumes.
                 </p>
               </div>
               <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:justify-center">
                 <Button variant="primary" icon={<Sparkles />} onClick={useExampleDriveLink}>
-                  Try example Drive resume
+                  Try single candidate with AI
                 </Button>
                 <Button
                   variant="outline"
-                  icon={<Table2 />}
+                  icon={<Layers />}
                   onClick={() => {
-                    setMode('sheet')
-                    setSheetLoaded(true)
-                    setSheetPaste(
-                      outreachSheetCandidates
-                        .map(r => `${r.nameLabel ?? r.name}\t${r.headline}\t${r.link}\t${SHEET_DEFAULTS[r.id]?.cameInFor ?? ''}\t${SHEET_DEFAULTS[r.id]?.notes ?? ''}`)
-                        .join('\n')
-                    )
+                    switchPageMode('bulk')
+                    setBulkMode('resumes')
                   }}
                 >
-                  Load 3 outreach sheet rows
+                  Upload candidates in bulk
                 </Button>
               </div>
             </div>
@@ -591,22 +1241,38 @@ export function NewCandidate() {
   return (
     <>
       <SplitPane
-        leftTitle={<span className="flex items-center gap-2">Source <ExampleMark /></span>}
-        rightTitle="Profile"
-        rightActions={phase === 'done' ? <span className="font-mono text-[10px] text-muted-foreground">Every field shows where it came from</span> : undefined}
+        leftTitle={<span className="flex items-center gap-2">{pageMode === 'bulk' ? 'Bulk upload source' : 'Source'} <ExampleMark /></span>}
+        rightTitle={pageMode === 'bulk' ? 'Batch preview' : 'Profile'}
+        rightActions={phase === 'done' && pageMode === 'single' ? <span className="font-mono text-[10px] text-muted-foreground">Every field shows where it came from</span> : undefined}
         left={left}
         right={right}
         footer={
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs text-muted-foreground">{phase === 'done' ? 'Missing fields read “Not captured” and go on the ask list.' : 'Only a resume link or file is required.'}</span>
+            <span className="text-xs text-muted-foreground">
+              {pageMode === 'bulk'
+                ? bulkMode === 'resumes'
+                  ? `${bulkResumes.length} resume files ready for batch profile creation.`
+                  : 'Sheet rows are matched by email/link to avoid duplicate profiles.'
+                : phase === 'done'
+                  ? 'Missing fields read “Not captured” and go on the ask list.'
+                  : 'Paste candidate details or a resume link; optional Fathom call link enriches comp & work auth.'}
+            </span>
             <div className="flex gap-2">
               <Button variant="ghost" onClick={() => navigate('/candidates')}>Cancel</Button>
-              {mode === 'sheet' && sheetLoaded ? (
-                <Button variant="chroma" icon={<Sparkles />} onClick={importSheetRows}>Create 3 profiles from links</Button>
+              {pageMode === 'bulk' ? (
+                bulkMode === 'resumes' ? (
+                  <Button variant="chroma" icon={<Sparkles />} disabled={bulkResumes.length === 0} onClick={commitBulkResumes}>
+                    Save {bulkResumes.length} candidates to pool
+                  </Button>
+                ) : (
+                  <Button variant="chroma" icon={<Sparkles />} onClick={importSheetRows}>
+                    Create 3 profiles from sheet
+                  </Button>
+                )
               ) : (
                 <>
-                  <Button variant="outline" disabled={phase !== 'done' || showDup} onClick={() => save(false)}>Save</Button>
-                  <Button variant="chroma" icon={<Sparkles />} disabled={phase !== 'done' || showDup} onClick={() => save(true)}>Save and find roles</Button>
+                  <Button variant="outline" disabled={phase !== 'done' || showDup} onClick={() => saveSingle(false)}>Save</Button>
+                  <Button variant="chroma" icon={<Sparkles />} disabled={phase !== 'done' || showDup} onClick={() => saveSingle(true)}>Save and find roles</Button>
                 </>
               )}
             </div>

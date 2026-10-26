@@ -222,9 +222,16 @@ html.light {
   background-size: 300% 100%, 300% 100%;
   will-change: background-position;
 }
+.chroma-text-animate-parent {
+  animation: 3.2s ease-in-out infinite chroma-btn-breathe;
+}
 .chroma-text-animate-parent:hover .chroma-text-out,
 .chroma-text-animate-parent:focus-visible .chroma-text-out {
   animation: 2s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite chroma-expand-bidirectional-repeat;
+}
+@keyframes chroma-btn-breathe {
+  0%, 100% { box-shadow: 0 0 14px -4px rgba(139, 92, 246, 0.35), inset 0 0 10px -6px rgba(56, 189, 248, 0.25); }
+  50% { box-shadow: 0 0 22px -2px rgba(139, 92, 246, 0.6), inset 0 0 14px -4px rgba(244, 114, 182, 0.35); }
 }
 @keyframes chroma-expand-bidirectional-repeat {
   0% { background-position: 100% 0, 100% 0; }

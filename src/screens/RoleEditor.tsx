@@ -227,6 +227,32 @@ function SuggestedBadge() {
   return <span title="Suggested from the JD. Confirm or change it." className="inline-flex h-4 items-center gap-1 rounded-xs border border-info/50 bg-info/5 px-1 font-mono text-[9px] tracking-[0.1em] text-[#0e7490] uppercase"><Sparkles className="size-2.5" />Suggested</span>
 }
 
+/** Runs a 4-step demo animation with a randomized total duration between 3.2s and 5.8s (3–6s) */
+function useRandomDemoStepper(total: number, running: boolean, minTotalMs = 3200, maxTotalMs = 5800) {
+  const [step, setStep] = useState(0)
+  const delaysRef = useRef<number[]>([])
+
+  useEffect(() => {
+    if (!running) {
+      setStep(0)
+      delaysRef.current = []
+      return
+    }
+    if (delaysRef.current.length !== total) {
+      const targetTotal = minTotalMs + Math.random() * (maxTotalMs - minTotalMs)
+      const weights = Array.from({ length: total }, () => 0.65 + Math.random() * 0.7)
+      const weightSum = weights.reduce((a, b) => a + b, 0)
+      delaysRef.current = weights.map(w => Math.round((w / weightSum) * targetTotal))
+    }
+    if (step >= total) return
+    const ms = delaysRef.current[step] ?? 1000
+    const t = window.setTimeout(() => setStep(s => s + 1), ms)
+    return () => window.clearTimeout(t)
+  }, [running, step, total, minTotalMs, maxTotalMs])
+
+  return { step, done: running && step >= total }
+}
+
 const WF_NEW = [
   { id: 'live', label: '✦ Find with AI (default)' },
   { id: 'ai-extracting', label: '✦ AI Setup · Extracting' },
@@ -386,7 +412,7 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
     if (wf === 'failed') { setSrc({ ...EXAMPLE_SOURCE, tab: 'upload', jdText: '', fileName: 'Northwind-JD-scan.pdf' }); setDraft(null); setPhase('empty'); setFailed(true) }
   }, [wf, mode])
 
-  const aiStepper = useStepper(STEPS.length, aiProcessing && wf !== 'ai-extracting', 500)
+  const aiStepper = useRandomDemoStepper(STEPS.length, aiProcessing && wf !== 'ai-extracting', 3200, 5600)
   useEffect(() => {
     if (!aiStepper.done || !aiProcessing || wf === 'ai-extracting') return
     setAiProcessing(false)
@@ -422,7 +448,7 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
   }
 
   const isPinnedShortlistRunning = wf === 'shortlist-running' || searchParams.get('state') === 'shortlist-running'
-  const shortlistStepper = useStepper(SHORTLIST_STEPS.length, shortlistPhase === 'running' && !isPinnedShortlistRunning, 600)
+  const shortlistStepper = useRandomDemoStepper(SHORTLIST_STEPS.length, shortlistPhase === 'running' && !isPinnedShortlistRunning, 3400, 5800)
   useEffect(() => {
     if (!shortlistStepper.done || shortlistPhase !== 'running' || isPinnedShortlistRunning) return
     setShortlistPhase('idle')
@@ -922,9 +948,6 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
   )
 
   const activeShortlistStep = isPinnedShortlistRunning ? 2 : shortlistStepper.step
-  const shortlistProgressPct = isPinnedShortlistRunning
-    ? 68
-    : Math.min(96, Math.round(((shortlistStepper.step + 1) / SHORTLIST_STEPS.length) * 95))
 
   const topModeBar = (
     <div className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-4 border-b border-border bg-background px-6 py-2.5">
@@ -1005,127 +1028,13 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
 
       {entryMode === 'ai' ? (
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-8">
-          {aiExtractFailed ? (
-            <div className="anim-fade mx-auto flex min-h-full w-full max-w-[680px] flex-col justify-center py-6">
-              <section className="rounded-2xl border border-destructive/40 bg-gray-100 shadow-custom">
-                <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-xs">
-                  <div className="flex items-center gap-2 font-medium text-destructive">
-                    <AlertTriangle className="size-3.5" />
-                    <span>AI Role Extraction Interrupted</span>
-                  </div>
-                  <span className="font-mono text-[11px] text-muted-foreground">Context preserved in composer</span>
-                </div>
-                <div className="mx-1.5 mb-1.5 space-y-5 rounded-xl border border-border bg-card p-6">
-                  <div className="space-y-1.5">
-                    <h3 className="title-type text-base text-foreground">
-                      We couldn’t finish extracting role details right now
-                    </h3>
-                    <p className="text-xs leading-relaxed text-muted-foreground">
-                      The AI extraction service timed out while parsing the job description and Fathom call context. Your pasted text is safely kept — retry with AI or continue in manual setup.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">
-                    <Button variant="ghost" onClick={() => setAiExtractFailed(false)}>
-                      ← Back to AI composer
-                    </Button>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setAiExtractFailed(false)
-                          const x = extractDraft(src.jdText ? src : EXAMPLE_SOURCE)
-                          if (!src.jdText) setSrc(EXAMPLE_SOURCE)
-                          setDraft(x.draft)
-                          setSources(x.sources)
-                          setBaseline(x.draft)
-                          setPhase('extracted')
-                          switchEntryMode('manual')
-                        }}
-                      >
-                        Set up manually instead
-                      </Button>
-                      <Button variant="chroma" icon={<RefreshCw />} onClick={runAiRoleSetup}>
-                        Retry with AI
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </section>
-            </div>
-          ) : aiProcessing ? (
-            <div className="anim-fade mx-auto flex min-h-full w-full max-w-[720px] flex-col justify-center py-6">
-              <section className="overflow-hidden rounded-2xl border border-violet-500/35 bg-gray-100 shadow-custom">
-                <div className="rainbow-line h-0.5 w-full opacity-90" />
-                <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-xs">
-                  <div className="flex items-center gap-2 text-foreground">
-                    <Loader2 className="size-3.5 animate-spin text-violet-400" />
-                    <span className="font-medium">AI Role Setup · Structuring role details &amp; Stage 1 eliminators</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => { setAiProcessing(false); setAiExtractFailed(true) }}
-                    className="font-mono text-[11px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline cursor-pointer"
-                  >
-                    Simulate failure
-                  </button>
-                </div>
-                <div className="mx-1.5 mb-1.5 space-y-5 rounded-xl border border-border bg-card p-6">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <h3 className="title-type text-base text-foreground">
-                        Reading pasted JD &amp; Fathom call context…
-                      </h3>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        Extracting company details, Stage 1 eliminators, and AI scoring signals into your role setup view.
-                      </p>
-                    </div>
-                    <span className="rounded-lg border border-violet-500/30 bg-violet-500/10 px-2.5 py-1 font-mono text-xs font-medium text-violet-300 tnum">
-                      Step {Math.min(aiStepper.step + 1, STEPS.length)} of {STEPS.length}
-                    </span>
-                  </div>
-
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-violet-500 via-indigo-500 to-sky-400 transition-all duration-500"
-                      style={{ width: `${Math.min(95, Math.round(((aiStepper.step + 1) / STEPS.length) * 92))}%` }}
-                    />
-                  </div>
-
-                  <ol className="space-y-2.5 pt-1">
-                    {STEPS.map((label, idx) => {
-                      const done = idx < aiStepper.step
-                      const active = idx === aiStepper.step
-                      return (
-                        <li
-                          key={label}
-                          className={cn(
-                            'flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-xs transition-all',
-                            done
-                              ? 'border-emerald-500/25 bg-emerald-500/5 text-foreground'
-                              : active
-                                ? 'border-violet-500/40 bg-violet-500/10 text-foreground shadow-2xs'
-                                : 'border-border/60 bg-secondary/40 text-muted-foreground',
-                          )}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            {done ? (
-                              <CheckCircle2 className="size-4 shrink-0 text-emerald-400" />
-                            ) : active ? (
-                              <Loader2 className="size-4 shrink-0 animate-spin text-violet-400" />
-                            ) : (
-                              <span className="size-4 shrink-0 rounded-full border border-border" />
-                            )}
-                            <span className={cn(active && 'font-medium')}>{label}</span>
-                          </div>
-                          <span className="font-mono text-[10px] text-muted-foreground">
-                            {done ? 'Done' : active ? 'In progress…' : 'Queued'}
-                          </span>
-                        </li>
-                      )
-                    })}
-                  </ol>
-                </div>
-              </section>
+          {aiProcessing ? (
+            <div className="mx-auto flex h-full max-w-[640px] flex-col items-center justify-center">
+              <AIStepper
+                title="Setting up role & preparing candidate shortlist"
+                steps={STEPS}
+                current={wf === 'ai-extracting' ? 2 : aiStepper.step}
+              />
             </div>
           ) : (
             <div className="anim-fade mx-auto flex min-h-full w-full max-w-[1000px] flex-col justify-center space-y-6 py-4">
@@ -1320,289 +1229,79 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
         </div>
       ) : shortlistPhase === 'running' ? (
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-8">
-          <div className="anim-fade mx-auto flex min-h-full w-full max-w-[820px] flex-col justify-center space-y-6 py-4">
-            <header className="flex flex-col items-center space-y-3 text-center">
-              <div className="relative flex size-12 items-center justify-center rounded-2xl border border-violet-500/35 bg-gradient-to-b from-violet-500/15 to-transparent p-1 shadow-custom">
-                <div className="flex size-full items-center justify-center rounded-xl border border-border bg-card">
-                  <Sparkles className="size-5 animate-pulse text-violet-400" />
-                </div>
-                <span className="anim-glow absolute -top-0.5 -right-0.5 size-2.5 rounded-full border-2 border-background bg-violet-400" />
-              </div>
-              <div className="space-y-1.5">
-                <h2 className="title-type text-xl text-foreground">
-                  Shortlisting candidates with AI…
-                </h2>
-                <p className="max-w-lg text-xs leading-relaxed text-muted-foreground">
-                  Running Stage 1 eliminators and scoring top candidates against {reqs.length} requirements for{' '}
-                  <span className="font-medium text-foreground">{d?.title || role?.title || 'Senior Product Manager'}</span> at{' '}
-                  <span className="font-medium text-foreground">{src.company || role?.company || 'Northwind Pay'}</span>.
-                </p>
-              </div>
-            </header>
-
-            {/* Double-Bezel Animated AI Shortlist Engine Card */}
-            <section className="overflow-hidden rounded-2xl border border-violet-500/35 bg-gray-100 shadow-custom">
-              <div className="rainbow-line h-0.5 w-full opacity-90" />
-              <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-xs">
-                <div className="flex items-center gap-2 text-foreground">
-                  <Loader2 className="size-3.5 animate-spin text-violet-400" />
-                  <span className="font-medium">
-                    AI Shortlist Engine · Evaluating {POOL_SIZE} candidates in talent pool
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (wf === 'shortlist-running') setWf('live')
-                      setShortlistPhase('failed')
-                    }}
-                    className="font-mono text-[11px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline cursor-pointer"
-                  >
-                    Simulate failure
-                  </button>
-                  <span className="text-border">·</span>
-                  <button
-                    type="button"
-                    onClick={() => { setShortlistPhase('idle'); save(true) }}
-                    className="inline-flex items-center gap-1 font-medium text-violet-400 underline-offset-4 hover:text-violet-300 hover:underline cursor-pointer"
-                  >
-                    <span>Skip animation</span>
-                    <ArrowRight className="size-3" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="mx-1.5 mb-1.5 space-y-6 rounded-xl border border-border bg-card p-6">
-                {/* 3-Column Live Funnel Counter Cards */}
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-border bg-secondary/40 p-3.5">
-                    <div className="flex items-center justify-between">
-                      <span className="eyebrow text-[10px] text-muted-foreground">1 · TALENT POOL</span>
-                      <CheckCircle2 className="size-3.5 text-emerald-400" />
-                    </div>
-                    <div className="mt-1.5 flex items-baseline gap-2">
-                      <span className="font-mono text-lg font-semibold text-foreground tnum">{POOL_SIZE}</span>
-                      <span className="text-xs text-muted-foreground">candidates scanned</span>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-violet-500/30 bg-violet-500/5 p-3.5">
-                    <div className="flex items-center justify-between">
-                      <span className="eyebrow text-[10px] text-violet-300">2 · STAGE 1 ELIMINATORS</span>
-                      {activeShortlistStep >= 2 ? (
-                        <CheckCircle2 className="size-3.5 text-emerald-400" />
-                      ) : (
-                        <Filter className="size-3.5 text-violet-400" />
-                      )}
-                    </div>
-                    <div className="mt-1.5 flex items-baseline gap-2">
-                      <span className="font-mono text-lg font-semibold text-foreground tnum">~{pass ?? 27}</span>
-                      <span className="text-xs text-muted-foreground">pass {elimCount} eliminators</span>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-border bg-secondary/40 p-3.5">
-                    <div className="flex items-center justify-between">
-                      <span className="eyebrow text-[10px] text-muted-foreground">3 · AI SHORTLIST</span>
-                      <Sparkles className="size-3.5 text-violet-400" />
-                    </div>
-                    <div className="mt-1.5 flex items-baseline gap-2">
-                      <span className="font-mono text-lg font-semibold text-violet-300 tnum">
-                        Top {app.autoSuggestCount}
-                      </span>
-                      <span className="text-xs text-muted-foreground">evidence-verified</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Progress Bar */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-foreground">
-                      {SHORTLIST_STEPS[Math.min(activeShortlistStep, SHORTLIST_STEPS.length - 1)]}
-                    </span>
-                    <span className="font-mono text-xs text-violet-300 tnum">{shortlistProgressPct}%</span>
-                  </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-violet-500 via-indigo-500 to-sky-400 transition-all duration-500"
-                      style={{ width: `${shortlistProgressPct}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* 4-Step Animated Pipeline Checklist */}
-                <ol className="space-y-2">
-                  {SHORTLIST_STEPS.map((label, idx) => {
-                    const done = idx < activeShortlistStep
-                    const active = idx === activeShortlistStep
-                    return (
-                      <li
-                        key={label}
-                        className={cn(
-                          'flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-xs transition-all',
-                          done
-                            ? 'border-emerald-500/25 bg-emerald-500/5 text-foreground'
-                            : active
-                              ? 'border-violet-500/40 bg-violet-500/10 text-foreground shadow-2xs'
-                              : 'border-border/60 bg-secondary/30 text-muted-foreground',
-                        )}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          {done ? (
-                            <CheckCircle2 className="size-4 shrink-0 text-emerald-400" />
-                          ) : active ? (
-                            <Loader2 className="size-4 shrink-0 animate-spin text-violet-400" />
-                          ) : (
-                            <span className="size-4 shrink-0 rounded-full border border-border" />
-                          )}
-                          <span className={cn(active && 'font-medium')}>{label}</span>
-                        </div>
-                        <span className="font-mono text-[10px] text-muted-foreground">
-                          {done ? 'Completed' : active ? 'Running…' : 'Pending'}
-                        </span>
-                      </li>
-                    )
-                  })}
-                </ol>
-
-                {/* Live Assembling Candidate Preview Skeleton Strip */}
-                <div className="space-y-2 border-t border-border pt-4">
-                  <div className="flex items-center justify-between">
-                    <span className="eyebrow text-[10px] text-muted-foreground">
-                      ASSEMBLING SHORTLIST PREVIEW · STAGE 2 EVIDENCE CITATIONS
-                    </span>
-                    <span className="font-mono text-[10px] text-muted-foreground">
-                      Missing fields never hide candidates
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {[
-                      { name: 'Priya S.', meta: '7 yrs · Payments & Ledger · H-1B transfer', badge: 'Strong match · 5/5 met' },
-                      { name: 'Marcus T.', meta: '8 yrs · B2B FinTech · US Citizen', badge: 'Scoring evidence…' },
-                    ].map((item, idx) => (
-                      <div
-                        key={item.name}
-                        className="flex items-center justify-between rounded-lg border border-border bg-secondary/40 px-3 py-2 text-xs"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 font-medium text-foreground">
-                            <span className="shrink-0">{item.name}</span>
-                            <span className="truncate font-normal text-muted-foreground">· {item.meta}</span>
-                          </div>
-                        </div>
-                        <span
-                          className={cn(
-                            'ml-2 shrink-0 rounded-md border px-1.5 py-0.5 font-mono text-[10px]',
-                            idx === 0
-                              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-                              : 'border-violet-500/30 bg-violet-500/10 text-violet-300',
-                          )}
-                        >
-                          {item.badge}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </section>
+          <div className="anim-fade mx-auto flex h-full max-w-[640px] flex-col items-center justify-center">
+            <AIStepper
+              title={`Shortlisting candidates with AI for ${d?.title || role?.title || 'Senior Product Manager'}`}
+              steps={SHORTLIST_STEPS}
+              current={activeShortlistStep}
+            />
+            <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+              <button
+                type="button"
+                onClick={() => {
+                  if (wf === 'shortlist-running') setWf('live')
+                  setShortlistPhase('failed')
+                }}
+                className="font-mono text-[11px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline cursor-pointer"
+              >
+                Simulate failure
+              </button>
+              <span className="text-border">·</span>
+              <button
+                type="button"
+                onClick={() => { setShortlistPhase('idle'); save(true) }}
+                className="inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline cursor-pointer"
+              >
+                <span>Skip</span>
+                <ArrowRight className="size-3" />
+              </button>
+            </div>
           </div>
         </div>
       ) : shortlistPhase === 'failed' ? (
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-8">
-          <div className="anim-fade mx-auto flex min-h-full w-full max-w-[740px] flex-col justify-center space-y-6 py-4">
-            <header className="flex flex-col items-center space-y-3 text-center">
-              <div className="flex size-12 items-center justify-center rounded-2xl border border-warning/40 bg-warning/10 p-1 shadow-custom">
-                <div className="flex size-full items-center justify-center rounded-xl border border-border bg-card">
-                  <AlertTriangle className="size-5 text-warning" />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <h2 className="title-type text-xl text-foreground">
-                  AI shortlisting timed out — your role setup is saved
-                </h2>
-                <p className="max-w-lg text-xs leading-relaxed text-muted-foreground">
-                  Stage 1 eliminators finished (~{pass ?? 27} of {POOL_SIZE} candidates pass), but Stage 2 AI evidence scoring took longer than expected. Nothing was lost.
-                </p>
-              </div>
-            </header>
-
-            {/* Double-Bezel Failure & Recovery Card */}
-            <section className="rounded-2xl border border-warning/35 bg-gray-100 shadow-custom">
-              <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-xs">
-                <div className="flex items-center gap-2 font-medium text-foreground">
-                  <ShieldCheck className="size-3.5 text-emerald-400" />
-                  <span>Checkpoint saved · {src.company || role?.company || 'Northwind Pay'} — {d?.title || role?.title || 'Senior Product Manager'}</span>
-                </div>
-                <span className="font-mono text-[11px] text-muted-foreground">ERR_AI_SCORE_TIMEOUT</span>
-              </div>
-
-              <div className="mx-1.5 mb-1.5 space-y-5 rounded-xl border border-border bg-card p-6">
-                {/* Checkpoint status breakdown */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-3.5 py-2.5 text-xs">
-                    <div className="flex items-center gap-2.5 text-foreground">
-                      <CheckCircle2 className="size-4 text-emerald-400" />
-                      <span>Role details, Fathom context &amp; {reqs.length} requirements saved</span>
-                    </div>
-                    <span className="font-mono text-[10px] text-emerald-400">SAVED</span>
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-3.5 py-2.5 text-xs">
-                    <div className="flex items-center gap-2.5 text-foreground">
-                      <CheckCircle2 className="size-4 text-emerald-400" />
-                      <span>Stage 1 eliminators completed (~{pass ?? 27} of {POOL_SIZE} candidates pass)</span>
-                    </div>
-                    <span className="font-mono text-[10px] text-emerald-400">READY</span>
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-xl border border-warning/35 bg-warning/10 px-3.5 py-2.5 text-xs">
-                    <div className="flex items-center gap-2.5 text-foreground">
-                      <AlertTriangle className="size-4 text-warning" />
-                      <span>Stage 2 AI evidence scoring &amp; top-{app.autoSuggestCount} shortlist interrupted</span>
-                    </div>
-                    <span className="font-mono text-[10px] text-[#b45309]">NEEDS RETRY</span>
-                  </div>
-                </div>
-
-                {/* Recovery Actions */}
-                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      if (wf === 'shortlist-failed') setWf('live')
-                      setShortlistPhase('idle')
-                    }}
-                  >
-                    ← Back to role setup
-                  </Button>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        if (wf === 'shortlist-failed') setWf('live')
-                        setShortlistPhase('idle')
-                        save(false)
-                      }}
-                    >
-                      Open Stage 1 matches (~{pass ?? 27})
-                    </Button>
-                    <Button
-                      variant="chroma"
-                      icon={<RefreshCw />}
-                      onClick={() => {
-                        if (wf === 'shortlist-failed') setWf('live')
-                        setShortlistPhase('running')
-                      }}
-                    >
-                      Retry shortlisting with AI
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </section>
+          <div className="anim-fade mx-auto flex h-full max-w-[520px] flex-col items-center justify-center gap-5 px-6 py-16 text-center">
+            <div className="h-0.5 w-40 overflow-hidden rounded-full bg-warning/40" />
+            <div className="space-y-1.5">
+              <p className="flex items-center justify-center gap-2 text-sm font-medium text-foreground">
+                <AlertTriangle className="size-4 text-warning" />
+                <span>Couldn’t finish shortlisting candidates right now</span>
+              </p>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Your role setup and Stage 1 eliminators (~{pass ?? 27} of {POOL_SIZE} pass) are saved. Retry shortlisting with AI or return to role setup.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  if (wf === 'shortlist-failed') setWf('live')
+                  setShortlistPhase('idle')
+                }}
+              >
+                ← Back to role setup
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (wf === 'shortlist-failed') setWf('live')
+                  setShortlistPhase('idle')
+                  save(false)
+                }}
+              >
+                Open Stage 1 matches
+              </Button>
+              <Button
+                variant="chroma"
+                icon={<RefreshCw />}
+                onClick={() => {
+                  if (wf === 'shortlist-failed') setWf('live')
+                  setShortlistPhase('running')
+                }}
+              >
+                Retry with AI
+              </Button>
+            </div>
           </div>
         </div>
       ) : (

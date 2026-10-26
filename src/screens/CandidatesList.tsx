@@ -1636,13 +1636,12 @@ export function CandidatesList() {
               className={cn(
                 'inline-flex h-7 items-center gap-1.5 rounded-2xl px-3 text-xs btn-type transition-all cursor-pointer',
                 screenMode === 'ai'
-                  ? 'border border-violet-500/40 bg-card text-foreground shadow-[0_0_12px_-4px_rgba(139,92,246,0.4)]'
+                  ? 'border border-border bg-card text-foreground shadow-2xs'
                   : 'border border-transparent text-muted-foreground hover:text-foreground',
               )}
             >
-              <Sparkles className="size-3.5 text-violet-400" />
+              <Sparkles className="size-3.5" />
               <span>AI Scout</span>
-              {screenMode === 'ai' && <span className="anim-glow size-1.5 rounded-full bg-violet-400" />}
             </button>
             <button
               role="tab"
@@ -1718,141 +1717,97 @@ export function CandidatesList() {
            Stage 3 ('results')    -> 3/4 Table & Data + 1/4 SaaS AI Chatbot Split Screen
            ====================================================================== */
         aiStage === 'home' ? (
-          /* -------------------- STAGE 1: MINIMAL CENTERED AI HOME -------------------- */
-          <div className="anim-fade mx-auto flex min-h-[calc(100vh-11.5rem)] w-full max-w-[920px] flex-col justify-center space-y-6 py-4">
-            {/* Centered Monochrome Emblem & Calm Heading (Zero Cognitive Bias) */}
-            <header className="flex flex-col items-center space-y-3 text-center">
-              <div className="relative flex size-12 items-center justify-center rounded-2xl border border-border bg-gray-100 p-1 shadow-custom">
+          /* -------------------- STAGE 1: RIGHTFIT DOUBLE-BEZEL AI WORKSPACE -------------------- */
+          <div className="anim-fade mx-auto flex min-h-[calc(100vh-11.5rem)] w-full max-w-3xl flex-col justify-center space-y-6 py-6">
+            {/* Page Header (HEROSCOUTERSPACING.txt §3.3: header.space-y-1) */}
+            <header className="flex flex-col items-center space-y-2 text-center">
+              <div className="relative flex size-10 items-center justify-center rounded-2xl border border-border bg-gray-100 p-1 shadow-custom">
                 <div className="flex size-full items-center justify-center rounded-xl border border-border bg-card">
-                  <Layers className="size-5 text-foreground" />
+                  <Layers className="size-4 text-foreground" />
                 </div>
-                <span className="anim-glow absolute -top-0.5 -right-0.5 size-2.5 rounded-full border-2 border-background bg-foreground" />
               </div>
               <div className="space-y-1">
-                <h2 className="title-type text-xl text-foreground">
+                <h2 className="text-lg font-semibold tracking-tight text-foreground">
                   {aiActionMode === 'create'
-                    ? 'Create a candidate profile with AI'
+                    ? 'Create a candidate profile'
                     : aiActionMode === 'bulk'
-                      ? 'Upload candidates in bulk with AI'
+                      ? 'Upload candidates in bulk'
                       : aiActionMode === 'clients'
-                        ? 'Read or create client context & match candidates'
+                        ? 'Read or create client context'
                         : 'What would you like AI to do today?'}
                 </h2>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-sm text-muted-foreground">
                   {aiActionMode === 'create'
-                    ? 'Paste resume text or candidate notes below, attach an optional Fathom call link, and AI builds the structured profile.'
+                    ? 'Paste resume text or attach a PDF/DOCX and optional Fathom call link.'
                     : aiActionMode === 'bulk'
-                      ? 'Drop multiple PDF/DOCX resumes or import an outreach Google Sheet to create profiles in bulk.'
+                      ? 'Upload multiple PDF/DOCX resumes or import an outreach Google Sheet.'
                       : aiActionMode === 'clients'
-                        ? 'Read client intake notes, Fathom calls, or job descriptions to extract requirements and rank candidates.'
-                        : 'Find candidates, create single or bulk candidate profiles, or read client requirements — all from one AI workspace.'}
+                        ? 'Read existing client requirements or create a new client role from intake notes.'
+                        : 'Find candidates, create single or bulk profiles, or read client requirements.'}
                 </p>
               </div>
             </header>
 
-            {/* Double-Bezel AI Prompt Composer (Exact Rightfit Spacing: rounded-2xl outer -> px-4 py-2.5 header -> mx-1 mb-1 rounded-xl p-4 inner well) */}
+            {/* Double-Bezel Section Card (HEROSCOUTERDESIGNSYSTEM.txt §5.1: rounded-2xl outer -> px-4 py-2.5 header -> mx-1 mb-1 rounded-xl p-4 inner well) */}
             <section
               className={cn(
-                'rounded-2xl border bg-gray-100 shadow-custom transition-all duration-300',
-                flashBox ? 'border-foreground ring-2 ring-foreground/20' : 'border-border',
+                'rounded-2xl border bg-gray-100 shadow-custom transition-all duration-200',
+                flashBox ? 'border-foreground ring-2 ring-ring/40' : 'border-border',
               )}
             >
-              {/* Bezel Header Bar: Multi-Function AI Mode Switcher */}
-              <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-xs">
-                <div role="tablist" aria-label="AI workspace capabilities" className="flex flex-wrap items-center gap-1 rounded-xl border border-border bg-background/60 p-0.5">
-                  <button
-                    role="tab"
-                    type="button"
-                    aria-selected={aiActionMode === 'find'}
-                    onClick={() => setAiActionMode('find')}
-                    className={cn(
-                      'inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs btn-type transition-all cursor-pointer',
-                      aiActionMode === 'find'
-                        ? 'border border-border bg-card text-foreground shadow-2xs'
-                        : 'border border-transparent text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    <Sparkles className={cn('size-3.5', aiActionMode === 'find' ? 'text-violet-400' : '')} />
-                    <span>Find candidates</span>
-                    <span className="rounded-xs border border-border bg-secondary px-1 py-0.2 font-mono text-[9.5px] text-muted-foreground tnum">
-                      {poolSize}
-                    </span>
-                  </button>
-                  <button
-                    role="tab"
-                    type="button"
-                    aria-selected={aiActionMode === 'create'}
-                    onClick={() => setAiActionMode('create')}
-                    className={cn(
-                      'inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs btn-type transition-all cursor-pointer',
-                      aiActionMode === 'create'
-                        ? 'border border-border bg-card text-foreground shadow-2xs'
-                        : 'border border-transparent text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    <UserPlus className={cn('size-3.5', aiActionMode === 'create' ? 'text-emerald-400' : '')} />
-                    <span>Create candidate</span>
-                    <span className="rounded-xs border border-border bg-secondary px-1 py-0.2 font-mono text-[9.5px] text-muted-foreground">
-                      + Fathom
-                    </span>
-                  </button>
-                  <button
-                    role="tab"
-                    type="button"
-                    aria-selected={aiActionMode === 'bulk'}
-                    onClick={() => setAiActionMode('bulk')}
-                    className={cn(
-                      'inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs btn-type transition-all cursor-pointer',
-                      aiActionMode === 'bulk'
-                        ? 'border border-border bg-card text-foreground shadow-2xs'
-                        : 'border border-transparent text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    <Upload className={cn('size-3.5', aiActionMode === 'bulk' ? 'text-sky-400' : '')} />
-                    <span>Bulk upload</span>
-                    <span className="rounded-xs border border-border bg-secondary px-1 py-0.2 font-mono text-[9.5px] text-muted-foreground">
-                      Sheet / PDF
-                    </span>
-                  </button>
-                  <button
-                    role="tab"
-                    type="button"
-                    aria-selected={aiActionMode === 'clients'}
-                    onClick={() => setAiActionMode('clients')}
-                    className={cn(
-                      'inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs btn-type transition-all cursor-pointer',
-                      aiActionMode === 'clients'
-                        ? 'border border-border bg-card text-foreground shadow-2xs'
-                        : 'border border-transparent text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    <Building2 className={cn('size-3.5', aiActionMode === 'clients' ? 'text-amber-400' : '')} />
-                    <span>Read / create clients</span>
-                    <span className="rounded-xs border border-border bg-secondary px-1 py-0.2 font-mono text-[9.5px] text-muted-foreground tnum">
-                      {app.roles.length}
-                    </span>
-                  </button>
+              {/* Header Bar: px-4 (16px H) | py-2.5 (10px V) | gap-2 (8px) + Variant 3 Pill Tab Bar (gap-0.5, px-3 py-1.5 rounded-lg text-xs font-medium) */}
+              <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+                <div
+                  role="tablist"
+                  aria-label="AI workspace capabilities"
+                  className="no-scrollbar flex min-w-0 items-center gap-0.5 overflow-x-auto"
+                >
+                  {([
+                    { id: 'find', label: 'Find candidates', icon: <Sparkles className="size-3.5" /> },
+                    { id: 'create', label: 'Create candidate', icon: <UserPlus className="size-3.5" /> },
+                    { id: 'bulk', label: 'Bulk upload', icon: <Upload className="size-3.5" /> },
+                    { id: 'clients', label: 'Read / create clients', icon: <Building2 className="size-3.5" /> },
+                  ] as const).map(tab => {
+                    const active = aiActionMode === tab.id
+                    return (
+                      <button
+                        key={tab.id}
+                        role="tab"
+                        type="button"
+                        aria-selected={active}
+                        onClick={() => setAiActionMode(tab.id)}
+                        className={cn(
+                          'relative inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors duration-200 cursor-pointer',
+                          active
+                            ? 'border-border bg-muted text-foreground'
+                            : 'border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                        )}
+                      >
+                        {tab.icon}
+                        <span>{tab.label}</span>
+                      </button>
+                    )
+                  })}
                 </div>
 
-                <div className="flex items-center gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => switchScreen('manual')}
-                    className="inline-flex items-center gap-1 font-medium text-foreground underline-offset-4 hover:underline cursor-pointer"
-                  >
-                    <span>Manual filters</span>
-                    <ArrowRight className="size-3" />
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => switchScreen('manual')}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
+                >
+                  <span>Manual filters</span>
+                  <ArrowRight className="size-3.5" />
+                </button>
               </div>
 
-              {/* Inner Well: mx-1.5 mb-1.5 (6px inset) | rounded-xl (16px radius) | p-5 (20px SaaS padding) */}
-              <div className="mx-1.5 mb-1.5 rounded-xl border border-border bg-card p-5 transition-colors focus-within:border-gray-900">
+              {/* Inner Well: mx-1 mb-1 (4px inset) | rounded-xl (16px concentric radius) | p-4 (16px padding) | space-y-4 (16px field stack) */}
+              <div className="mx-1 mb-1 space-y-4 rounded-xl border border-border bg-card p-4">
+                {/* Pattern 4: Auto-Growing Textarea (rounded-lg border border-input bg-background px-2.5 py-2 text-sm) */}
                 <div className="relative">
                   <textarea
                     ref={promptInputRef}
                     aria-label="AI workspace prompt"
-                    rows={4}
+                    rows={3}
                     value={aiPrompt}
                     onChange={e => setAiPrompt(e.target.value)}
                     onKeyDown={e => {
@@ -1863,159 +1818,50 @@ export function CandidatesList() {
                     }}
                     placeholder={
                       aiActionMode === 'create'
-                        ? 'Paste a single candidate’s resume text, LinkedIn URL, or recruiter intake notes — AI extracts their structured profile & ask list…'
+                        ? 'Paste a candidate’s resume text, LinkedIn URL, or intake notes to extract their profile…'
                         : aiActionMode === 'bulk'
                           ? aiBulkSubMode === 'sheet'
-                            ? 'Optional batch instructions for your outreach Google Sheet (e.g. “Tag all as Product · Outreach source · check pool duplicates”)…'
-                            : 'Optional batch instructions for uploaded resumes (e.g. “Match against Northwind Senior PM and flag duplicates”)…'
+                            ? 'Optional batch instructions for your outreach sheet (e.g. “Tag as Outreach · check duplicates”)…'
+                            : 'Optional batch instructions for uploaded resumes (e.g. “Check pool duplicates & rank for Northwind”)…'
                           : aiActionMode === 'clients'
                             ? aiClientSubMode === 'create'
-                              ? 'Paste the new client’s job description, hiring manager call notes, or requirements to create the client role & rank candidates…'
-                              : 'Ask AI to summarize client requirements, extract new asks from a call, or rank matching candidates in the pool…'
+                              ? 'Paste the client’s job description, call notes, or requirements to create the role & rank matches…'
+                              : 'Ask AI to summarize client requirements, extract call asks, or rank matching candidates…'
                             : 'Describe the candidates you want to find (e.g. “Senior Product Managers with 5+ yrs in B2B SaaS or payments, US citizen/GC, open to hybrid”)…'
                     }
-                    className="w-full resize-none bg-transparent pr-7 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none"
+                    className="flex min-h-[84px] w-full resize-none rounded-lg border border-input bg-background px-2.5 py-2 pr-8 text-base shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm"
                   />
                   {aiPrompt && (
                     <button
                       type="button"
                       aria-label="Clear prompt"
                       onClick={() => { setAiPrompt(''); setAiQuickTags([]); setSelectedStarterId(null); promptInputRef.current?.focus() }}
-                      className="absolute top-0 right-0 flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground cursor-pointer"
+                      className="absolute top-2 right-2 inline-flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
                     >
                       <X className="size-3.5" />
                     </button>
                   )}
                 </div>
 
-                {/* CONDITIONAL PANEL 0: When Find candidates is active, show Quick Filter & Context Chips */}
-                {aiActionMode === 'find' && (
-                  <div className="anim-slide-up mt-3 rounded-xl border border-border bg-gray-100 p-1">
-                    <div className="space-y-2.5 rounded-lg border border-border bg-card p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
-                          <span className="flex size-5 items-center justify-center rounded-md border border-border bg-secondary">
-                            <SlidersHorizontal className="size-3 text-violet-400" />
-                          </span>
-                          <span>Quick search constraints</span>
-                          <span className="rounded-xs border border-border bg-secondary px-1.5 py-0.5 font-mono text-[9.5px] text-muted-foreground">
-                            Click to toggle in prompt
-                          </span>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAiPrompt('Find Senior Product Managers with 5+ years in B2B SaaS or payments, open to hybrid or remote work, and include adjacent SQL skills.')
-                            setAiQuickTags(['5+ yrs experience', 'B2B SaaS & Payments', 'Remote or Hybrid'])
-                          }}
-                          className="font-mono text-[10.5px] text-foreground underline-offset-2 hover:underline cursor-pointer"
-                        >
-                          Paste example search
-                        </button>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {[
-                          { label: '5+ yrs experience', snippet: '5+ years of experience' },
-                          { label: 'US Citizen / Green Card', snippet: 'US Citizen or Green Card with no sponsorship' },
-                          { label: 'B2B SaaS & Payments', snippet: 'B2B SaaS and Payments/Fintech domain' },
-                          { label: 'Remote or Hybrid', snippet: 'open to Remote or Hybrid work' },
-                          { label: 'Active searchers', snippet: 'Active search status' },
-                          { label: 'Pay ≤ $185k', snippet: 'target compensation ≤ $185k' },
-                        ].map(chip => {
-                          const active = aiQuickTags.includes(chip.label) || aiPrompt.toLowerCase().includes(chip.snippet.toLowerCase())
-                          return (
-                            <button
-                              key={chip.label}
-                              type="button"
-                              onClick={() => {
-                                if (active) {
-                                  setAiQuickTags(prev => prev.filter(x => x !== chip.label))
-                                  setAiPrompt(prev => prev.replace(new RegExp(`,?\\s*${chip.snippet}`, 'i'), '').trim())
-                                } else {
-                                  setAiQuickTags(prev => [...prev, chip.label])
-                                  setAiPrompt(prev =>
-                                    prev.trim()
-                                      ? `${prev.trim().replace(/\.$/, '')}, ${chip.snippet}.`
-                                      : `Find candidates with ${chip.snippet}.`,
-                                  )
-                                }
-                              }}
-                              className={cn(
-                                'inline-flex h-6 items-center gap-1 rounded-full border px-2.5 font-mono text-[11px] transition-all cursor-pointer',
-                                active
-                                  ? 'border-violet-500/50 bg-violet-500/15 text-foreground shadow-2xs'
-                                  : 'border-border bg-secondary/50 text-muted-foreground hover:border-gray-800 hover:text-foreground',
-                              )}
-                            >
-                              {active ? <Check className="size-3 text-violet-400" /> : <Plus className="size-3" />}
-                              <span>{chip.label}</span>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* CONDITIONAL PANEL 1: Once Create candidate is selected/active, show the Resume Attachment + Optional Fathom Link */}
+                {/* MODE 1: CREATE CANDIDATE — Canonical 2-Column Form Field Grid (grid-cols-1 gap-4 md:grid-cols-2, space-y-2 per field) */}
                 {aiActionMode === 'create' && (
-                  <div className="anim-slide-up mt-3 rounded-xl border border-border bg-gray-100 p-1">
-                    <div className="space-y-3 rounded-lg border border-border bg-card p-3.5">
-                      {/* Row 1: Resume PDF/DOCX + Candidate Source */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 pb-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            icon={<Upload />}
-                            onClick={() => aiSingleFileRef.current?.click()}
-                          >
-                            {aiResumeFile ? 'Replace resume file' : 'Upload resume PDF / DOCX'}
-                          </Button>
-                          {aiResumeFile ? (
-                            <span className="anim-pop inline-flex h-7 items-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 font-mono text-xs text-foreground">
-                              <FileText className="size-3.5 text-emerald-400" />
-                              <span>{aiResumeFile}</span>
-                              <span className="rounded-xs border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.2 text-[9.5px] text-emerald-400">
-                                Ready
-                              </span>
-                              <button
-                                type="button"
-                                aria-label="Remove attached resume"
-                                onClick={() => setAiResumeFile(null)}
-                                className="text-muted-foreground hover:text-foreground cursor-pointer"
-                              >
-                                <X className="size-3" />
-                              </button>
-                            </span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">
-                              Or paste resume text / LinkedIn summary above
-                            </span>
-                          )}
-                          <input
-                            ref={aiSingleFileRef}
-                            type="file"
-                            accept=".pdf,.docx,application/pdf"
-                            className="hidden"
-                            onChange={e => {
-                              const f = e.target.files?.[0]
-                              if (f) setAiResumeFile(f.name)
-                            }}
-                          />
-                        </div>
-
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono text-[10px] text-muted-foreground">SOURCE:</span>
+                  <div className="anim-fade grid grid-cols-1 gap-4 border-t border-border pt-4 md:grid-cols-2">
+                    {/* Col 1: Resume File + Source */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-medium text-foreground select-none">
+                          Resume file
+                        </label>
+                        <div className="flex items-center gap-1">
                           {(['Outreach', 'Referral', 'Inbound'] as const).map(srcOpt => (
                             <button
                               key={srcOpt}
                               type="button"
                               onClick={() => setAiCandidateSource(srcOpt)}
                               className={cn(
-                                'inline-flex h-6 items-center rounded-md border px-2 font-mono text-[10.5px] transition-colors cursor-pointer',
+                                'rounded-sm border px-1.5 py-0.5 font-mono text-[10px] transition-colors cursor-pointer',
                                 aiCandidateSource === srcOpt
-                                  ? 'border-border bg-secondary text-foreground'
+                                  ? 'border-border bg-muted text-foreground'
                                   : 'border-transparent text-muted-foreground hover:text-foreground',
                               )}
                             >
@@ -2024,163 +1870,149 @@ export function CandidatesList() {
                           ))}
                         </div>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => aiSingleFileRef.current?.click()}
+                          className="flex h-9 flex-1 items-center justify-between gap-2 rounded-lg border border-input bg-background px-2.5 text-sm text-foreground shadow-xs transition-colors hover:bg-muted/50 cursor-pointer"
+                        >
+                          <span className="flex min-w-0 items-center gap-2 truncate">
+                            <Upload className="size-4 shrink-0 text-muted-foreground" />
+                            <span className="truncate">
+                              {aiResumeFile ? aiResumeFile : 'Upload PDF or DOCX…'}
+                            </span>
+                          </span>
+                          <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                            {aiResumeFile ? 'Ready' : 'Browse'}
+                          </span>
+                        </button>
+                        {aiResumeFile && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label="Remove attached resume"
+                            icon={<X />}
+                            onClick={() => setAiResumeFile(null)}
+                          />
+                        )}
+                        <input
+                          ref={aiSingleFileRef}
+                          type="file"
+                          accept=".pdf,.docx,application/pdf"
+                          className="hidden"
+                          onChange={e => {
+                            const f = e.target.files?.[0]
+                            if (f) setAiResumeFile(f.name)
+                          }}
+                        />
+                      </div>
+                    </div>
 
-                      {/* Row 2: Optional Fathom Call Link */}
-                      <div className="space-y-2">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <label htmlFor="ai-fathom-link-input" className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
-                            <span className="flex size-5 items-center justify-center rounded-md border border-border bg-secondary">
-                              <Video className="size-3 text-emerald-400" />
-                            </span>
-                            <span>Upload / paste Fathom link</span>
-                            <span className="rounded-xs border border-border bg-secondary px-1.5 py-0.5 font-mono text-[9.5px] text-muted-foreground">
-                              Optional · Extracts comp, visa &amp; availability
-                            </span>
-                            {aiFathomUrl.trim() && (
-                              <span className="anim-pop inline-flex items-center gap-1 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 font-mono text-[9.5px] text-success">
-                                <Check className="size-2.5" /> Ready to sync
-                              </span>
-                            )}
-                          </label>
-                          <div className="flex items-center gap-2.5">
-                            <button
-                              type="button"
-                              onClick={() => setAiFathomUrl('https://fathom.video/share/rohan-d-intake-call-2026')}
-                              className="font-mono text-[10.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline cursor-pointer"
-                            >
-                              Use sample Fathom link
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setAiPrompt('Rohan D. · Senior Product Manager (7 yrs, Remitly & Avalara) · Seattle, WA · Payments platform, API products, Roadmapping, B2B SaaS')
-                                setAiResumeFile('Rohan_D_Senior_PM_Resume.pdf')
-                                setAiFathomUrl('https://fathom.video/share/rohan-d-intake-call-2026')
-                              }}
-                              className="font-mono text-[10.5px] text-foreground underline-offset-2 hover:underline cursor-pointer"
-                            >
-                              Load example candidate
-                            </button>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="min-w-[240px] flex-1">
-                            <Input
-                              id="ai-fathom-link-input"
-                              aria-label="Upload Fathom link (optional)"
-                              value={aiFathomUrl}
-                              onChange={e => setAiFathomUrl(e.target.value)}
-                              placeholder="https://fathom.video/share/… (optional call recording or Granola transcript link)"
-                              className="h-8 text-xs"
-                            />
-                          </div>
-                          {aiFathomUrl.trim() && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              icon={<X />}
-                              onClick={() => setAiFathomUrl('')}
-                            >
-                              Clear link
-                            </Button>
-                          )}
+                    {/* Col 2: Upload / paste Fathom link (Optional) */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label htmlFor="ai-fathom-link-input" className="flex items-center gap-1.5 text-xs font-medium text-foreground select-none">
+                          <Video className="size-3.5 text-muted-foreground" />
+                          <span>Upload / paste Fathom link</span>
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[10px] text-muted-foreground">Optional</span>
+                          <button
+                            type="button"
+                            onClick={() => setAiFathomUrl('https://fathom.video/share/rohan-d-intake-call-2026')}
+                            className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline cursor-pointer"
+                          >
+                            Sample link
+                          </button>
                         </div>
                       </div>
+                      <Input
+                        id="ai-fathom-link-input"
+                        aria-label="Upload Fathom link (optional)"
+                        value={aiFathomUrl}
+                        onChange={e => setAiFathomUrl(e.target.value)}
+                        placeholder="https://fathom.video/share/…"
+                        className="bg-background"
+                      />
                     </div>
                   </div>
                 )}
 
-                {/* CONDITIONAL PANEL 2: When Bulk upload is active inside the AI box (Dual Mode: Multiple Resumes vs Add a Sheet) */}
+                {/* MODE 2: BULK UPLOAD — Canonical Field Stack (Multiple resumes vs Add a sheet) */}
                 {aiActionMode === 'bulk' && (
-                  <div className="anim-slide-up mt-3 rounded-xl border border-border bg-gray-100 p-1">
-                    <div className="space-y-3 rounded-lg border border-border bg-card p-3.5">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="flex size-5 items-center justify-center rounded-md border border-border bg-secondary">
-                            <Layers className="size-3 text-sky-400" />
-                          </span>
-                          <span className="text-xs font-medium text-foreground">Bulk candidate source</span>
-                          {/* Inner Pill Switcher: Multiple Resumes vs Add a Sheet */}
-                          <div className="inline-flex h-7 items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
-                            <button
-                              type="button"
-                              onClick={() => setAiBulkSubMode('resumes')}
-                              className={cn(
-                                'inline-flex h-6 items-center gap-1 rounded-md px-2.5 text-[11px] btn-type transition-all cursor-pointer',
-                                aiBulkSubMode === 'resumes'
-                                  ? 'border border-border bg-card text-foreground shadow-2xs'
-                                  : 'border border-transparent text-muted-foreground hover:text-foreground',
-                              )}
-                            >
-                              <FileText className="size-3" />
-                              <span>Multiple resumes ({aiBulkFiles.length})</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setAiBulkSubMode('sheet')}
-                              className={cn(
-                                'inline-flex h-6 items-center gap-1 rounded-md px-2.5 text-[11px] btn-type transition-all cursor-pointer',
-                                aiBulkSubMode === 'sheet'
-                                  ? 'border border-border bg-card text-foreground shadow-2xs'
-                                  : 'border border-transparent text-muted-foreground hover:text-foreground',
-                              )}
-                            >
-                              <Table2 className="size-3" />
-                              <span>Add a sheet (CSV / Google Sheet)</span>
-                            </button>
-                          </div>
-                        </div>
-
+                  <div className="anim-fade space-y-3 border-t border-border pt-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-0.5">
                         <button
                           type="button"
-                          onClick={() => navigate(`/candidates/new?mode=bulk${aiBulkSubMode === 'sheet' ? '&bulkType=sheet' : ''}`)}
-                          className="inline-flex items-center gap-1 font-mono text-[10.5px] text-foreground underline-offset-2 hover:underline cursor-pointer"
+                          onClick={() => setAiBulkSubMode('resumes')}
+                          className={cn(
+                            'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer',
+                            aiBulkSubMode === 'resumes'
+                              ? 'border-border bg-muted text-foreground'
+                              : 'border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                          )}
                         >
-                          <span>Open full split-pane batch review</span>
-                          <ArrowUpRight className="size-3" />
+                          <FileText className="size-3.5" />
+                          <span>Multiple resumes ({aiBulkFiles.length})</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAiBulkSubMode('sheet')}
+                          className={cn(
+                            'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer',
+                            aiBulkSubMode === 'sheet'
+                              ? 'border-border bg-muted text-foreground'
+                              : 'border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                          )}
+                        >
+                          <Table2 className="size-3.5" />
+                          <span>Add a sheet</span>
                         </button>
                       </div>
 
-                      {aiBulkSubMode === 'resumes' ? (
-                        <div className="space-y-2.5">
-                          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-gray-700 bg-background/60 px-3.5 py-2.5">
-                            <div className="flex items-center gap-2.5">
-                              <Upload className="size-4 text-muted-foreground" />
-                              <div>
-                                <p className="text-xs font-medium text-foreground">
-                                  Drop multiple PDF or DOCX resumes here, or browse files
-                                </p>
-                                <p className="text-[11px] text-muted-foreground">
-                                  Up to 25 resumes at once · AI extracts skills, tenure &amp; checks pool duplicates
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                icon={<Plus />}
-                                onClick={() => aiBulkFileRef.current?.click()}
-                              >
-                                Add resume files
-                              </Button>
-                              {aiBulkFiles.length < 4 && (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setAiBulkFiles([
-                                      'Rohan_D_Senior_PM_Resume.pdf',
-                                      'Karan_V_Backend_Eng_Resume.pdf',
-                                      'Nadia_S_Product_Billing_Resume.docx',
-                                      'Priya_S_Resume_2026_v3.pdf',
-                                    ])
-                                  }
-                                  className="font-mono text-[10.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline cursor-pointer"
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/candidates/new?mode=bulk${aiBulkSubMode === 'sheet' ? '&bulkType=sheet' : ''}`)}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer"
+                      >
+                        <span>Open batch editor</span>
+                        <ArrowUpRight className="size-3.5" />
+                      </button>
+                    </div>
+
+                    {aiBulkSubMode === 'resumes' ? (
+                      <div className="space-y-2.5">
+                        {/* Pattern 3 Command Combobox Tag Well */}
+                        <div className="min-h-9 rounded-lg border border-input bg-background px-2.5 py-2 shadow-xs">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {aiBulkFiles.map(fn => (
+                                <span
+                                  key={fn}
+                                  className="inline-flex h-6 items-center gap-1.5 rounded-md border border-border bg-muted px-2 text-xs font-medium text-foreground"
                                 >
-                                  Load 4 sample resumes
-                                </button>
-                              )}
+                                  <FileText className="size-3 text-muted-foreground" />
+                                  <span>{fn}</span>
+                                  <button
+                                    type="button"
+                                    aria-label={`Remove ${fn}`}
+                                    onClick={() => setAiBulkFiles(prev => prev.filter(x => x !== fn))}
+                                    className="text-muted-foreground hover:text-foreground cursor-pointer"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
                             </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              icon={<Upload />}
+                              onClick={() => aiBulkFileRef.current?.click()}
+                            >
+                              Add files
+                            </Button>
                             <input
                               ref={aiBulkFileRef}
                               type="file"
@@ -2195,316 +2027,249 @@ export function CandidatesList() {
                               }}
                             />
                           </div>
-
-                          <div className="flex flex-wrap gap-1.5">
-                            {aiBulkFiles.map((fn, idx) => (
-                              <span
-                                key={fn}
-                                style={{ animationDelay: `${idx * 40}ms` }}
-                                className="anim-pop inline-flex h-7 items-center gap-1.5 rounded-lg border border-border bg-secondary/70 px-2.5 font-mono text-[11px] text-foreground"
-                              >
-                                <FileText className="size-3 text-sky-400" />
-                                <span>{fn}</span>
-                                <span className="rounded-xs border border-border bg-card px-1 py-0.2 text-[9px] text-emerald-400">
-                                  Ready
-                                </span>
-                                <button
-                                  type="button"
-                                  aria-label={`Remove ${fn}`}
-                                  onClick={() => setAiBulkFiles(prev => prev.filter(x => x !== fn))}
-                                  className="text-muted-foreground hover:text-foreground cursor-pointer"
-                                >
-                                  <X className="size-3" />
-                                </button>
-                              </span>
-                            ))}
-                          </div>
                         </div>
-                      ) : (
-                        <div className="space-y-2.5">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <div className="min-w-[260px] flex-1">
-                              <Input
-                                aria-label="Outreach Google Sheet or CSV URL"
-                                value={aiSheetUrl}
-                                onChange={e => setAiSheetUrl(e.target.value)}
-                                placeholder="https://docs.google.com/spreadsheets/d/… (or paste CSV / Airtable URL)"
-                                className="h-8 text-xs"
-                              />
-                            </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                setAiSheetUrl('https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit#gid=0')
-                              }
-                            >
-                              Use sample sheet
-                            </Button>
-                          </div>
-                          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-background/60 px-3 py-2 text-[11px]">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="font-mono text-[10px] text-muted-foreground">DETECTED COLUMNS:</span>
-                              {['Candidate Name', 'Role / Title', 'Location', 'Drive Resume Link', 'Fathom Call Link'].map(col => (
-                                <span key={col} className="rounded-xs border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-foreground">
-                                  ✓ {col}
-                                </span>
-                              ))}
-                            </div>
-                            <span className="font-mono text-[10.5px] text-emerald-400">
-                              4 candidate rows ready
-                            </span>
-                          </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-medium text-foreground select-none">
+                            Google Sheet or CSV URL
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAiSheetUrl('https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit#gid=0')
+                            }
+                            className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline cursor-pointer"
+                          >
+                            Use sample sheet
+                          </button>
                         </div>
-                      )}
-                    </div>
+                        <Input
+                          aria-label="Outreach Google Sheet or CSV URL"
+                          value={aiSheetUrl}
+                          onChange={e => setAiSheetUrl(e.target.value)}
+                          placeholder="https://docs.google.com/spreadsheets/d/…"
+                          className="bg-background"
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* CONDITIONAL PANEL 3: When Read / Create Clients is active inside the AI box */}
+                {/* MODE 3: READ / CREATE CLIENTS — Canonical 2-Column Field Grid */}
                 {aiActionMode === 'clients' && (
-                  <div className="anim-slide-up mt-3 rounded-xl border border-border bg-gray-100 p-1">
-                    <div className="space-y-3 rounded-lg border border-border bg-card p-3.5">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="flex size-5 items-center justify-center rounded-md border border-border bg-secondary">
-                            <Building2 className="size-3 text-amber-400" />
-                          </span>
-                          <span className="text-xs font-medium text-foreground">Client workspace</span>
-                          <div className="inline-flex h-7 items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
-                            <button
-                              type="button"
-                              onClick={() => setAiClientSubMode('read')}
-                              className={cn(
-                                'inline-flex h-6 items-center gap-1 rounded-md px-2.5 text-[11px] btn-type transition-all cursor-pointer',
-                                aiClientSubMode === 'read'
-                                  ? 'border border-border bg-card text-foreground shadow-2xs'
-                                  : 'border border-transparent text-muted-foreground hover:text-foreground',
-                              )}
-                            >
-                              <span>Read client &amp; rank pool</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setAiClientSubMode('create')}
-                              className={cn(
-                                'inline-flex h-6 items-center gap-1 rounded-md px-2.5 text-[11px] btn-type transition-all cursor-pointer',
-                                aiClientSubMode === 'create'
-                                  ? 'border border-border bg-card text-foreground shadow-2xs'
-                                  : 'border border-transparent text-muted-foreground hover:text-foreground',
-                              )}
-                            >
-                              <Plus className="size-3" />
-                              <span>Create new client</span>
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2.5">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (aiClientSubMode === 'create') {
-                                setAiNewClientCompany('Veloce Pay')
-                                setAiNewClientType('Client')
-                                setAiFathomUrl('https://fathom.video/share/veloce-pay-client-intake')
-                                setAiPrompt('Client: Veloce Pay (Series B Fintech) · Role: Staff Product Manager, Core Ledger & Payouts · Must-haves: 6+ yrs PM, Payments/Fintech, API products, Hybrid NYC ($195k–$220k). Find matching candidates.')
-                              } else {
-                                const r = app.roles.find(x => x.id === aiClientTarget) ?? app.roles[0]
-                                setAiPrompt(`Read client ${r.company} (${r.title}): summarize open requirements (${r.mustSkills.join(', ')}) and rank matching candidates in the pool.`)
-                              }
-                            }}
-                            className="font-mono text-[10.5px] text-foreground underline-offset-2 hover:underline cursor-pointer"
-                          >
-                            {aiClientSubMode === 'create' ? 'Load sample new client JD' : 'Load client summary prompt'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => navigate('/roles/new')}
-                            className="font-mono text-[10.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline cursor-pointer"
-                          >
-                            Open full role setup →
-                          </button>
-                        </div>
+                  <div className="anim-fade space-y-3 border-t border-border pt-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setAiClientSubMode('read')}
+                          className={cn(
+                            'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer',
+                            aiClientSubMode === 'read'
+                              ? 'border-border bg-muted text-foreground'
+                              : 'border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                          )}
+                        >
+                          <span>Read existing client</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAiClientSubMode('create')}
+                          className={cn(
+                            'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer',
+                            aiClientSubMode === 'create'
+                              ? 'border-border bg-muted text-foreground'
+                              : 'border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                          )}
+                        >
+                          <Plus className="size-3.5" />
+                          <span>Create new client</span>
+                        </button>
                       </div>
 
-                      {aiClientSubMode === 'read' ? (
-                        <div className="space-y-2.5">
-                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                            <div className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border bg-background px-2.5 text-xs">
-                              <Briefcase className="size-3.5 text-muted-foreground" />
-                              <select
-                                aria-label="Select client role"
-                                value={aiClientTarget}
-                                onChange={e => setAiClientTarget(e.target.value)}
-                                className="w-full bg-transparent text-xs text-foreground focus:outline-none cursor-pointer"
-                              >
-                                {app.roles.map(r => (
-                                  <option key={r.id} value={r.id} className="bg-[#191919]">
-                                    {r.company} ({r.companyType}) · {r.title}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            <Input
-                              aria-label="Client Fathom call link (optional)"
-                              value={aiFathomUrl}
-                              onChange={e => setAiFathomUrl(e.target.value)}
-                              placeholder="Client Fathom intake call link (optional)…"
-                              className="h-8 text-xs"
-                            />
-                          </div>
-                          {(() => {
-                            const selectedClientRole = app.roles.find(r => r.id === aiClientTarget) ?? app.roles[0]
-                            if (!selectedClientRole) return null
-                            return (
-                              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-background/60 px-3 py-2 text-[11px]">
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  <span className="font-mono text-[10px] text-muted-foreground">CLIENT SNAPSHOT:</span>
-                                  <span className="rounded-xs border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-foreground">
-                                    {selectedClientRole.companyType} · {selectedClientRole.category}
-                                  </span>
-                                  <span className="rounded-xs border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-foreground">
-                                    {selectedClientRole.minYears ?? 5}+ yrs · {selectedClientRole.location} ({selectedClientRole.workMode})
-                                  </span>
-                                  {selectedClientRole.mustSkills.slice(0, 3).map(sk => (
-                                    <span key={sk} className="rounded-xs border border-border bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                                      {sk}
-                                    </span>
-                                  ))}
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => navigate(`/roles/${selectedClientRole.id}`)}
-                                  className="font-mono text-[10.5px] text-foreground underline-offset-2 hover:underline cursor-pointer"
-                                >
-                                  View role ({selectedClientRole.shortlisted} shortlisted) →
-                                </button>
-                              </div>
-                            )
-                          })()}
+                      <button
+                        type="button"
+                        onClick={() => navigate('/roles/new')}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer"
+                      >
+                        <span>Full role setup</span>
+                        <ArrowUpRight className="size-3.5" />
+                      </button>
+                    </div>
+
+                    {aiClientSubMode === 'read' ? (
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium text-foreground select-none">
+                            Client role
+                          </label>
+                          <Select
+                            aria-label="Select client role"
+                            size="lg"
+                            className="w-full"
+                            value={aiClientTarget}
+                            onChange={v => setAiClientTarget(v)}
+                            options={app.roles.map(r => ({
+                              value: r.id,
+                              label: `${r.company} (${r.companyType}) · ${r.title}`,
+                            }))}
+                          />
                         </div>
-                      ) : (
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_1fr]">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-medium text-foreground select-none">
+                              Client Fathom link
+                            </label>
+                            <span className="font-mono text-[10px] text-muted-foreground">Optional</span>
+                          </div>
+                          <Input
+                            aria-label="Client Fathom call link (optional)"
+                            value={aiFathomUrl}
+                            onChange={e => setAiFathomUrl(e.target.value)}
+                            placeholder="https://fathom.video/share/…"
+                            className="bg-background"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-medium text-foreground select-none">
+                              Company name
+                            </label>
+                            <div className="flex items-center gap-1">
+                              {(['Client', 'Prospect'] as const).map(t => (
+                                <button
+                                  key={t}
+                                  type="button"
+                                  onClick={() => setAiNewClientType(t)}
+                                  className={cn(
+                                    'rounded-sm border px-1.5 py-0.5 font-mono text-[10px] transition-colors cursor-pointer',
+                                    aiNewClientType === t
+                                      ? 'border-border bg-muted text-foreground'
+                                      : 'border-transparent text-muted-foreground hover:text-foreground',
+                                  )}
+                                >
+                                  {t}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
                           <Input
                             aria-label="New client company name"
                             value={aiNewClientCompany}
                             onChange={e => setAiNewClientCompany(e.target.value)}
-                            placeholder="Client company name (e.g. Veloce Pay)…"
-                            className="h-8 text-xs"
+                            placeholder="e.g. Veloce Pay"
+                            className="bg-background"
                           />
-                          <div className="inline-flex h-8 items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
-                            {(['Client', 'Prospect'] as const).map(t => (
-                              <button
-                                key={t}
-                                type="button"
-                                onClick={() => setAiNewClientType(t)}
-                                className={cn(
-                                  'inline-flex h-7 items-center rounded-md px-2.5 text-xs btn-type transition-colors cursor-pointer',
-                                  aiNewClientType === t
-                                    ? 'border border-border bg-card text-foreground shadow-2xs'
-                                    : 'border border-transparent text-muted-foreground hover:text-foreground',
-                                )}
-                              >
-                                {t}
-                              </button>
-                            ))}
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-medium text-foreground select-none">
+                              Client Fathom link
+                            </label>
+                            <span className="font-mono text-[10px] text-muted-foreground">Optional</span>
                           </div>
                           <Input
                             aria-label="New client Fathom call link (optional)"
                             value={aiFathomUrl}
                             onChange={e => setAiFathomUrl(e.target.value)}
-                            placeholder="Client Fathom call link (optional)…"
-                            className="h-8 text-xs"
+                            placeholder="https://fathom.video/share/…"
+                            className="bg-background"
                           />
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* Composer Bottom Control Row (mt-3.5 pt-3.5 border-t) */}
-                <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3.5">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {/* Role Context Selector (h-8 rounded-2xl px-2.5 gap-1.5) */}
-                    <div className="inline-flex h-8 items-center gap-1.5 rounded-2xl border border-border bg-secondary px-2.5 text-xs btn-type text-foreground">
-                      <Briefcase className="size-3.5 text-gray-1000" />
-                      <select
-                        aria-label="Scout role context"
-                        value={aiAttachedRole}
-                        onChange={e => setAiAttachedRole(e.target.value)}
-                        className="bg-transparent text-xs btn-type text-foreground focus:outline-none cursor-pointer"
-                      >
-                        <option value="none" className="bg-[#191919]">Pool search (412)</option>
-                        <option value="northwind-spm" className="bg-[#191919]">Role · Northwind Senior PM</option>
-                        <option value="lumen-fse" className="bg-[#191919]">Role · Lumen Founding Eng</option>
-                        <option value="brightdesk-gmm" className="bg-[#191919]">Role · BrightDesk Growth</option>
-                        <option value="cobalt-ds" className="bg-[#191919]">Role · Cobalt Data Scientist</option>
-                      </select>
-                    </div>
+                {/* Bottom Action Bar (HEROSCOUTERSPACING.txt §4: h-8 controls, gap-2) */}
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Pattern 6: Compact Select Trigger (h-8 rounded-lg px-2.5) */}
+                    <Select
+                      aria-label="Scout role context"
+                      value={aiAttachedRole}
+                      onChange={v => setAiAttachedRole(v)}
+                      options={[
+                        { value: 'none', label: `Pool search (${poolSize})` },
+                        { value: 'northwind-spm', label: 'Role · Northwind Senior PM' },
+                        { value: 'lumen-fse', label: 'Role · Lumen Founding Eng' },
+                        { value: 'brightdesk-gmm', label: 'Role · BrightDesk Growth' },
+                        { value: 'cobalt-ds', label: 'Role · Cobalt Data Scientist' },
+                      ]}
+                    />
 
-                    {/* Predicted Skills Toggle Pill */}
-                    <button
-                      type="button"
+                    {/* SaaS Button (h-8 rounded-2xl px-3 text-xs font-[510]) */}
+                    <Button
+                      variant="outline"
+                      icon={<Wand2 />}
                       title="Include AI-predicted adjacent skills (e.g. Payments → SQL)"
                       onClick={() => setMore(m => ({ ...m, includePredicted: !m.includePredicted }))}
-                      className={cn(
-                        'inline-flex h-8 items-center gap-1.5 rounded-2xl border px-2.5 text-xs btn-type transition-colors cursor-pointer',
-                        more.includePredicted
-                          ? 'border-border bg-secondary text-foreground'
-                          : 'border-border bg-background text-muted-foreground hover:text-foreground',
-                      )}
                     >
-                      <Wand2 className="size-3.5 text-violet-400" />
-                      <span>◇ Predicted: {more.includePredicted ? 'On' : 'Off'}</span>
-                    </button>
+                      ◇ Predicted: {more.includePredicted ? 'On' : 'Off'}
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        if (aiActionMode === 'create') {
+                          setAiPrompt('Rohan D. · Senior Product Manager (7 yrs, Remitly & Avalara) · Seattle, WA · Payments platform, API products, Roadmapping, B2B SaaS')
+                          setAiResumeFile('Rohan_D_Senior_PM_Resume.pdf')
+                          setAiFathomUrl('https://fathom.video/share/rohan-d-intake-call-2026')
+                        } else if (aiActionMode === 'clients') {
+                          if (aiClientSubMode === 'create') {
+                            setAiNewClientCompany('Veloce Pay')
+                            setAiPrompt('Client: Veloce Pay (Series B Fintech) · Staff Product Manager, Core Ledger · 6+ yrs PM, Payments/Fintech, Hybrid NYC ($195k–$220k).')
+                          } else {
+                            const r = app.roles.find(x => x.id === aiClientTarget) ?? app.roles[0]
+                            setAiPrompt(`Read client ${r.company} (${r.title}): summarize open requirements (${r.mustSkills.join(', ')}) and rank matching candidates in the pool.`)
+                          }
+                        } else {
+                          setAiPrompt('Find Senior Product Managers with 5+ years in B2B SaaS or payments, open to hybrid or remote work, and include adjacent SQL skills.')
+                        }
+                      }}
+                    >
+                      Use example
+                    </Button>
                   </div>
 
-                  {/* Right-hand side inside the text box: Create candidate action + Animated Chroma AI Submit Action */}
+                  {/* Right Action Slot: Create candidate + Rightfit Bidirectional .chroma-text-out CTA */}
                   <div className="flex flex-wrap items-center gap-2">
                     {aiActionMode !== 'create' && (
-                      <button
-                        type="button"
+                      <Button
+                        variant="outline"
+                        icon={<UserPlus />}
                         onClick={() => {
                           setAiActionMode('create')
                           setTimeout(() => document.getElementById('ai-fathom-link-input')?.focus(), 40)
                         }}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-2xl border border-border bg-secondary px-3 text-xs btn-type text-foreground transition-colors hover:bg-muted cursor-pointer"
                       >
-                        <UserPlus className="size-3.5 text-emerald-400" />
-                        <span>Create candidate</span>
-                      </button>
+                        Create candidate
+                      </Button>
                     )}
 
-                    <span className="hidden items-center gap-1 text-xs text-muted-foreground sm:inline-flex">
-                      <Kbd>↵</Kbd>
-                    </span>
                     <Button
                       variant="chroma"
                       icon={<Sparkles />}
-                      iconRight={<ArrowUp className="!size-3.5 text-violet-300" />}
-                      aria-label={
-                        aiActionMode === 'create'
-                          ? 'Create candidate with AI'
-                          : aiActionMode === 'bulk'
-                            ? 'Upload candidates in bulk with AI'
-                            : aiActionMode === 'clients'
-                              ? 'Read client and match with AI'
-                              : 'Find candidates with AI'
-                      }
+                      iconRight={<ArrowUp className="!size-3.5" />}
+                      kbd="↵"
                       onClick={() => startAiProcessing()}
                     >
                       {aiActionMode === 'create'
-                        ? 'Create candidate with AI'
+                        ? 'Create candidate'
                         : aiActionMode === 'bulk'
                           ? aiBulkSubMode === 'sheet'
-                            ? 'Import sheet with AI'
-                            : `Upload ${aiBulkFiles.length} in bulk with AI`
+                            ? 'Import sheet'
+                            : `Upload ${aiBulkFiles.length} in bulk`
                           : aiActionMode === 'clients'
                             ? aiClientSubMode === 'create'
-                              ? 'Create client & match with AI'
-                              : 'Read client & match with AI'
-                            : 'Find candidates with AI'}
+                              ? 'Create client & match'
+                              : 'Read client & match'
+                            : 'Find candidates'}
                     </Button>
                   </div>
                 </div>

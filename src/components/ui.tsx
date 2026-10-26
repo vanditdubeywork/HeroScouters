@@ -35,7 +35,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function 
     primary: 'bg-primary text-primary-foreground shadow-xs hover:bg-primary/85',
     outline: 'border border-border bg-background text-foreground shadow-xs hover:bg-accent',
     ghost: 'text-muted-foreground hover:bg-muted hover:text-foreground',
-    chroma: 'chroma-text-animate-parent border border-violet-500/45 bg-gradient-to-r from-violet-500/15 via-indigo-500/15 to-sky-500/15 text-foreground shadow-[0_0_16px_-4px_rgba(139,92,246,0.35)] hover:border-violet-400/75 hover:from-violet-500/25 hover:via-indigo-500/20 hover:to-sky-500/25 hover:shadow-[0_0_20px_-3px_rgba(139,92,246,0.5)] [&_svg]:text-violet-400',
+    chroma: 'chroma-text-animate-parent border border-border bg-card text-foreground shadow-custom hover:border-gray-700 hover:bg-secondary/80',
     destructive: 'border border-border bg-background text-destructive shadow-xs hover:bg-destructive/5 hover:border-destructive/30',
     link: 'h-auto px-0 text-foreground underline-offset-4 hover:underline rounded-md',
   }

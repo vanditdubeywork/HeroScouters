@@ -1035,20 +1035,32 @@ function RoleView({ role }: { role: Role }) {
           <Button variant="outline" icon={<Shield />} onClick={() => setBulkMaskCandIds(shortlisted.map(m => m.candidateId))}>
             Generate masked ({shortlisted.length || all.filter(m => m.status !== 'rejected' && m.status !== 'not-interested').length})
           </Button>
-          <Button variant="outline" icon={<Pencil />} onClick={() => navigate(`/roles/${id}/edit`)}>Edit role</Button>
+          <Button variant="outline" icon={<Pencil />} onClick={() => navigate(`/roles/${id}/edit?mode=manual`)}>Role setup</Button>
           <Menu width={240}
             trigger={({ toggle }) => <Button variant="ghost" size="icon" aria-label="More role actions" onClick={toggle} icon={<MoreHorizontal />} />}
             items={[
               { label: 'View masked role links', icon: <Eye />, onSelect: () => setTab('masked-links') },
               { label: `Generate masked for ${role.company}…`, icon: <Sparkles />, onSelect: () => setBulkMaskCandIds(shortlisted.map(m => m.candidateId)) },
               { separator: true, label: '' },
-              { label: 'Add requirement', icon: <MessageSquarePlus />, onSelect: () => setAddAskOpen(true) },
+              { label: 'Add / update requirements with AI', icon: <Sparkles />, onSelect: () => setAddAskOpen(true) },
               { label: 'Mark candidate not interested…', icon: <UserX />, onSelect: () => setNotInterestedCandId(focusedOrSelectedCandidateId) },
               { separator: true, label: '' },
               { label: 'Force rerun', icon: <RefreshCw />, onSelect: () => setRerunOpen('force') },
             ]} />
         </div>
       </header>
+
+      {params.get('from') === 'setup' && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-violet-500/35 bg-gradient-to-r from-violet-500/10 via-indigo-500/10 to-sky-500/10 px-4 py-2.5 text-xs">
+          <span className="flex items-center gap-2 font-medium text-foreground">
+            <Sparkles className="size-3.5 text-violet-400" />
+            <span>AI scanned the pool and ranked candidates for shortlisting. Need to tweak any requirement or role setting?</span>
+          </span>
+          <Button variant="outline" size="sm" onClick={() => navigate(`/roles/${id}/edit?mode=manual`)}>
+            ← Back to role setup
+          </Button>
+        </div>
+      )}
 
       <div className="border-b border-border pb-2">
         <PillTabs value={tab} onChange={setTab}

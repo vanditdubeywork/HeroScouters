@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
-import { AlertTriangle, Building2, FileAudio, FileText, Link2, ListChecks, Plus, Sparkles, Upload, Users } from 'lucide-react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import {
+  AlertTriangle, ArrowRight, ArrowUp, Building2, Check, FileAudio, FileText, Layers, Link2, ListChecks, Paperclip, Plus, SlidersHorizontal, Sparkles, Upload, Users, X,
+} from 'lucide-react'
 import { SplitPane, useTopBar } from '../shell/AppShell'
 import {
-  BezelCard, Button, EmptyState, ExampleMark, Field, Input, Segmented, Select, Switch, Textarea,
+  BezelCard, Button, EmptyState, ExampleMark, Field, Input, Kbd, Segmented, Select, Switch, Textarea, cn,
 } from '../components/ui'
 import { AIStepper, Banner, InfoNote, NotCaptured, SourceBadge, useStepper } from '../components/hs'
 import { RequirementRow } from '../components/v3'
@@ -226,26 +228,61 @@ function SuggestedBadge() {
 }
 
 const WF_NEW = [
-  { id: 'live', label: 'Live (interactive)' },
-  { id: 'empty', label: 'Empty source' },
+  { id: 'live', label: '✦ Find with AI (default)' },
+  { id: 'manual', label: 'Manual · Role setup' },
+  { id: 'empty', label: 'Manual · Empty source' },
   { id: 'extracting', label: 'Extracting' },
   { id: 'extracted', label: 'Extracted + live pass count' },
   { id: 'failed', label: 'Failed (file)' },
   { id: 'partial', label: 'Partial (Not captured)' },
 ]
 const WF_EDIT = [
-  { id: 'live', label: 'Edit mode (live)' },
+  { id: 'live', label: '✦ Find with AI (default)' },
+  { id: 'manual', label: 'Manual · Role setup' },
   { id: 'ai-req', label: 'Update requirements with AI → D-08' },
   { id: 'revised', label: 'Revised JD → D-03' },
 ]
 const STEPS = ['Reading the job description', 'Finding requirements', 'Suggesting category', 'Checking the pool']
 
+const AI_DEFAULT_PROMPT = `Company: Northwind Pay (Client · Contact: Dana K., dana@northwindpay.com)
+Fathom call: https://fathom.video/share/northwind-pay-intake
+
+Senior Product Manager — Merchant Payouts & Treasury
+• 6+ years in product management
+• Hands-on payments experience (payouts, ledgers or billing)
+• Comfortable writing SQL to answer your own questions
+• Hybrid in San Francisco, CA (3 days/wk) · Relocation supported
+• No visa sponsorship — H-1B transfer is fine (from intake call with Sean)
+• Pay: $170k–$190k base + equity`
+
 export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
   const app = useApp()
   const navigate = useNavigate()
   const { id } = useParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const role = mode === 'edit' && id ? app.role(id) : undefined
   const [wf, setWf] = useWireframeState('S-03', mode === 'new' ? 'New role' : 'Edit role', mode === 'new' ? WF_NEW : WF_EDIT)
+
+  const initialModeParam = searchParams.get('mode')
+  const hasDialogParam = typeof window !== 'undefined' && window.location.hash.includes('dialog=ai-req')
+  const [entryMode, setEntryMode] = useState<'ai' | 'manual'>(() =>
+    initialModeParam === 'manual' || hasDialogParam ? 'manual' : 'ai',
+  )
+  const [aiRawText, setAiRawText] = useState<string>(() => (role ? `${role.company} (${role.companyType})\n${role.jdText ?? EXAMPLE_JD}` : ''))
+  const [aiFileName, setAiFileName] = useState<string>('')
+  const [aiCallUrl, setAiCallUrl] = useState<string>(() => role ? 'https://fathom.video/share/northwind-pay-intake' : '')
+  const [showCallInput, setShowCallInput] = useState(false)
+  const [aiProcessing, setAiProcessing] = useState(false)
+  const [fromAiSetup, setFromAiSetup] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const switchEntryMode = (next: 'ai' | 'manual') => {
+    setEntryMode(next)
+    const nextParams = new URLSearchParams(searchParams)
+    if (next === 'manual') nextParams.set('mode', 'manual')
+    else nextParams.delete('mode')
+    setSearchParams(nextParams, { replace: true })
+  }
 
   const [src, setSrc] = useState<SourceState>(() => (role ? sourceFromRole(role) : EMPTY_SOURCE))
   const initial = useMemo(() => (role ? draftFromRole(role) : null), [role?.id]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -258,7 +295,7 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
   const [leaveOpen, setLeaveOpen] = useState(false)
   const [revisedOpen, setRevisedOpen] = useState(false)
   const [askDialog, setAskDialog] = useState<'type' | 'transcript' | null>(() =>
-    typeof window !== 'undefined' && window.location.hash.includes('dialog=ai-req') ? 'type' : null,
+    hasDialogParam ? 'type' : null,
   )
   const askRoleId = role?.id ?? 'northwind-spm'
   const reqs = app.requirementsFor(askRoleId)
@@ -276,12 +313,24 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
   /* Wireframe presets — each state is reachable from the bottom toolbar, then stays interactive */
   useEffect(() => {
     if (mode === 'edit') {
-      if (wf === 'revised') setRevisedOpen(true)
-      if (wf === 'ai-req') setAskDialog('type')
+      if (wf === 'live') {
+        if (searchParams.get('mode') === 'manual') setEntryMode('manual')
+      }
+      if (wf === 'manual') setEntryMode('manual')
+      if (wf === 'revised') { setEntryMode('manual'); setRevisedOpen(true) }
+      if (wf === 'ai-req') { setEntryMode('manual'); setAskDialog('type') }
       return
     }
-    if (wf === 'live') return
+    if (wf === 'live') {
+      if (searchParams.get('mode') === 'manual') setEntryMode('manual')
+      return
+    }
+    setEntryMode('manual')
     setFailed(false); setDirty(false)
+    if (wf === 'manual') {
+      const x = extractDraft(EXAMPLE_SOURCE)
+      setSrc(EXAMPLE_SOURCE); setDraft(x.draft); setSources(x.sources); setBaseline(x.draft); setPhase('extracted')
+    }
     if (wf === 'empty') { setSrc(EMPTY_SOURCE); setDraft(null); setPhase('empty') }
     if (wf === 'extracting') { setSrc(EXAMPLE_SOURCE); setDraft(null); setPhase('extracting') }
     if (wf === 'extracted' || wf === 'partial') {
@@ -292,6 +341,40 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
     }
     if (wf === 'failed') { setSrc({ ...EXAMPLE_SOURCE, tab: 'upload', jdText: '', fileName: 'Northwind-JD-scan.pdf' }); setDraft(null); setPhase('empty'); setFailed(true) }
   }, [wf, mode])
+
+  const aiStepper = useStepper(STEPS.length, aiProcessing, 450)
+  useEffect(() => {
+    if (!aiStepper.done || !aiProcessing) return
+    setAiProcessing(false)
+    const raw = aiRawText.trim() || AI_DEFAULT_PROMPT
+    const companyMatch = raw.match(/Company:\s*([^\n(]+)/i)
+    const callMatch = raw.match(/https?:\/\/[^\s)]+/i)
+    const nextSrc: SourceState = {
+      ...EXAMPLE_SOURCE,
+      company: companyMatch ? companyMatch[1].trim() : (src.company || 'Northwind Pay'),
+      jdText: raw,
+      fileName: aiFileName,
+      callLink: aiCallUrl || (callMatch ? callMatch[0] : EXAMPLE_SOURCE.callLink),
+    }
+    const x = extractDraft(nextSrc)
+    setSrc(nextSrc)
+    setDraft(x.draft)
+    setSources(x.sources)
+    setBaseline(x.draft)
+    setPhase('extracted')
+    setFromAiSetup(true)
+    setDirty(true)
+    switchEntryMode('manual')
+    app.toast('AI extracted role details — verify below & start shortlisting')
+  }, [aiStepper.done, aiProcessing]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const runAiRoleSetup = () => {
+    if (!aiRawText.trim() && !aiFileName) {
+      setAiRawText(AI_DEFAULT_PROMPT)
+      setAiCallUrl('https://fathom.video/share/northwind-pay-intake')
+    }
+    setAiProcessing(true)
+  }
 
   const stepper = useStepper(STEPS.length, phase === 'extracting' && wf !== 'extracting', 750)
   useEffect(() => {
@@ -383,8 +466,8 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
       app.log({ what: `Created role · ${reqs.length} requirements · ${f.minYears}+ yrs`, record: label, recordHref: `/roles/${newRole.id}`, kind: 'Roles' })
       if (scan) {
         app.log({ what: `Auto-scan · ${newRole.passCount} not eliminated · ${app.autoSuggestCount} suggested`, record: label, recordHref: `/roles/${newRole.id}`, kind: 'Reruns' })
-        app.toast(`Scanned pool: ${newRole.passCount} not eliminated · ${app.autoSuggestCount} suggested`)
-        navigate(`/roles/${newRole.id}?tab=matches`)
+        app.toast(`AI matched candidates: ${newRole.passCount} pass Stage 1 · ${app.autoSuggestCount} ready to shortlist`)
+        navigate(`/roles/${newRole.id}?tab=matches&from=setup`)
       } else {
         app.toast('Role saved')
         navigate(`/roles/${newRole.id}?tab=details`)
@@ -402,8 +485,8 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
       before: `Requirements: ${role.mustSkills.join(', ')} · ${role.minYears}+ yrs`, after: `Requirements: ${f.mustSkills.join(', ')} · ${f.minYears}+ yrs` })
     if (scan) {
       app.rerun(role.id)
-      app.toast(`Scanned pool: ${pass ?? role.passCount} not eliminated · ${app.autoSuggestCount} suggested`)
-      navigate(`/roles/${role.id}?tab=matches`)
+      app.toast(`AI matched candidates: ${pass ?? role.passCount} pass Stage 1 · ${app.autoSuggestCount} ready to shortlist`)
+      navigate(`/roles/${role.id}?tab=matches&from=setup`)
     } else {
       app.toast(changes.length ? 'Role saved · matches marked out of date' : 'Role saved')
       navigate(`/roles/${role.id}?tab=details`)
@@ -612,6 +695,22 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
     </div>
   ) : (
     <div className="space-y-6 p-2 sm:p-4">
+      {fromAiSetup && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-violet-500/35 bg-gradient-to-r from-violet-500/10 via-indigo-500/10 to-sky-500/10 px-3.5 py-2.5 text-xs">
+          <span className="flex items-center gap-2 font-medium text-foreground">
+            <Sparkles className="size-3.5 text-violet-400" />
+            <span>AI set up this role from your pasted context — verify details below, then start shortlisting candidates.</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => switchEntryMode('ai')}
+            className="font-mono text-[11px] text-violet-300 underline-offset-4 hover:underline"
+          >
+            ← Back to AI prompt
+          </button>
+        </div>
+      )}
+
       <Field label={<Lbl src={sources.title}>Role title</Lbl>}>
         <Input value={d.title} onChange={e => set('title', e.target.value)} className="h-10 text-base font-semibold" />
         {!d.title && <NotCaptured />}
@@ -757,25 +856,265 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
         </span>
         <Button variant="ghost" onClick={cancel}>Cancel</Button>
         <Button variant="outline" disabled={!draft} onClick={() => save(false)}>Save role</Button>
-        <Button variant="chroma" disabled={!draft} icon={<Sparkles />} onClick={() => save(true)}>Save and scan</Button>
+        <Button variant="chroma" disabled={!draft} icon={<Sparkles />} onClick={() => save(true)}>
+          Shortlist candidates with AI
+        </Button>
+      </div>
+    </div>
+  )
+
+  const topModeBar = (
+    <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-background px-4 py-2 sm:px-6">
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-semibold text-foreground">
+          {mode === 'new' ? 'New role' : (role?.title ?? 'Role setup')}
+        </span>
+        {role && (
+          <span className="font-mono text-xs text-muted-foreground">
+            {role.company}
+          </span>
+        )}
+        <ExampleMark />
+      </div>
+
+      {/* Top Pill Switcher: Find with AI (default) | Manual */}
+      <div role="tablist" aria-label="Role setup mode" className="inline-flex items-center gap-0.5 rounded-2xl border border-border bg-gray-100 p-0.5">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={entryMode === 'ai'}
+          onClick={() => switchEntryMode('ai')}
+          className={cn(
+            'inline-flex h-7 items-center gap-1.5 rounded-2xl px-3 text-xs btn-type transition-all cursor-pointer',
+            entryMode === 'ai'
+              ? 'border border-violet-500/40 bg-card text-foreground shadow-2xs'
+              : 'border border-transparent text-muted-foreground hover:text-foreground',
+          )}
+        >
+          <Sparkles className="size-3.5 text-violet-400" />
+          <span>Find with AI</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={entryMode === 'manual'}
+          onClick={() => {
+            if (!draft) {
+              const x = extractDraft(src.jdText ? src : EXAMPLE_SOURCE)
+              if (!src.jdText) setSrc(EXAMPLE_SOURCE)
+              setDraft(x.draft)
+              setSources(x.sources)
+              setBaseline(x.draft)
+              setPhase('extracted')
+            }
+            switchEntryMode('manual')
+          }}
+          className={cn(
+            'inline-flex h-7 items-center gap-1.5 rounded-2xl px-3 text-xs btn-type transition-all cursor-pointer',
+            entryMode === 'manual'
+              ? 'border border-border bg-card text-foreground shadow-2xs'
+              : 'border border-transparent text-muted-foreground hover:text-foreground',
+          )}
+        >
+          <SlidersHorizontal className="size-3.5" />
+          <span>Manual</span>
+        </button>
+      </div>
+
+      <div className="flex items-center gap-2">
+        {entryMode === 'ai' && draft && (
+          <Button variant="outline" size="sm" onClick={() => switchEntryMode('manual')}>
+            Review role setup →
+          </Button>
+        )}
+        {role && (
+          <Button variant="ghost" size="sm" onClick={() => navigate(`/roles/${role.id}?tab=matches`)}>
+            View matches
+          </Button>
+        )}
       </div>
     </div>
   )
 
   return (
-    <>
-      <SplitPane
-        leftTitle={<span className="flex items-center gap-2">Source <ExampleMark /></span>}
-        rightTitle={<span className="flex items-center gap-2">Role details{phase === 'extracted' && d && <span className="font-mono text-[10px] text-gray-1000">{elimCount} eliminator{elimCount === 1 ? '' : 's'} · {reqs.length - elimCount} signal{reqs.length - elimCount === 1 ? '' : 's'}</span>}</span>}
-        left={left}
-        right={right}
-        footer={footer}
-      />
+    <div className="flex h-full flex-col overflow-hidden">
+      {topModeBar}
+
+      {entryMode === 'ai' ? (
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6">
+          {aiProcessing ? (
+            <div className="mx-auto flex h-full max-w-[540px] flex-col items-center justify-center">
+              <AIStepper title="Setting up role & preparing candidate shortlist" steps={STEPS} current={aiStepper.step} />
+            </div>
+          ) : (
+            <div className="anim-fade mx-auto flex min-h-full w-full max-w-[680px] flex-col justify-center space-y-5 py-4">
+              {/* Calm Centered Emblem & Title */}
+              <header className="flex flex-col items-center space-y-2.5 text-center">
+                <div className="relative flex size-12 items-center justify-center rounded-2xl border border-violet-500/35 bg-gradient-to-b from-violet-500/15 to-transparent p-1 shadow-custom">
+                  <div className="flex size-full items-center justify-center rounded-xl border border-border bg-card">
+                    <Sparkles className="size-5 text-violet-400" />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <h2 className="title-type text-xl text-foreground">
+                    Paste all role data — AI sets up the rest
+                  </h2>
+                  <p className="max-w-lg text-xs leading-relaxed text-muted-foreground">
+                    Simply copy-paste the job description, company info, Fathom call link, or client notes in one place — or upload a file. You’ll verify the extracted setup before shortlisting candidates.
+                  </p>
+                </div>
+              </header>
+
+              {/* ChatGPT / Claude-Style Centered Double-Bezel Composer */}
+              <section className="rounded-2xl border border-border bg-gray-100 p-1 shadow-custom">
+                <div className="rounded-xl border border-border bg-card p-4 transition-colors focus-within:border-gray-800">
+                  <div className="relative">
+                    <textarea
+                      aria-label="Paste role JD, company info, and Fathom call notes"
+                      autoFocus
+                      rows={6}
+                      value={aiRawText}
+                      onChange={e => setAiRawText(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                          e.preventDefault()
+                          runAiRoleSetup()
+                        }
+                      }}
+                      placeholder="Paste the job description, company name, hiring contact, Fathom call link, or raw intake notes here…"
+                      className="w-full resize-none bg-transparent pr-7 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none"
+                    />
+                    {aiRawText && (
+                      <button
+                        type="button"
+                        aria-label="Clear text"
+                        onClick={() => setAiRawText('')}
+                        className="absolute top-0 right-0 flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground cursor-pointer"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Attached file / Fathom call pills */}
+                  {(aiFileName || aiCallUrl || showCallInput) && (
+                    <div className="mt-2.5 flex flex-wrap items-center gap-2 border-t border-border/60 pt-2.5">
+                      {aiFileName && (
+                        <span className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 text-xs text-foreground">
+                          <FileText className="size-3.5 text-violet-400" />
+                          <span>{aiFileName}</span>
+                          <button type="button" onClick={() => setAiFileName('')} className="text-muted-foreground hover:text-foreground">
+                            <X className="size-3" />
+                          </button>
+                        </span>
+                      )}
+                      {aiCallUrl && !showCallInput && (
+                        <span className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 text-xs text-foreground">
+                          <FileAudio className="size-3.5 text-emerald-400" />
+                          <span className="max-w-[260px] truncate">{aiCallUrl}</span>
+                          <span className="eyebrow text-[9px] text-muted-foreground">CALL</span>
+                          <button type="button" onClick={() => setAiCallUrl('')} className="text-muted-foreground hover:text-foreground">
+                            <X className="size-3" />
+                          </button>
+                        </span>
+                      )}
+                      {showCallInput && (
+                        <div className="flex flex-1 items-center gap-2">
+                          <FileAudio className="size-3.5 shrink-0 text-emerald-400" />
+                          <Input
+                            placeholder="Paste Fathom or Granola call link (optional continuous context)…"
+                            value={aiCallUrl}
+                            onChange={e => setAiCallUrl(e.target.value)}
+                            className="h-7 text-xs"
+                          />
+                          <Button size="sm" variant="ghost" onClick={() => setShowCallInput(false)}>Done</Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Hidden file input for native file upload feel */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.doc,.docx,.txt"
+                    className="hidden"
+                    onChange={e => {
+                      const f = e.target.files?.[0]
+                      setAiFileName(f ? f.name : 'Northwind-Pay-Senior-PM.pdf')
+                      if (!aiRawText.trim()) setAiRawText(AI_DEFAULT_PROMPT)
+                    }}
+                  />
+
+                  {/* Bottom Toolbar inside ChatGPT/Claude Composer */}
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAiFileName('Northwind-Pay-Senior-PM.pdf')
+                          if (!aiRawText.trim()) setAiRawText(AI_DEFAULT_PROMPT)
+                        }}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-2xl border border-border bg-secondary px-3 text-xs btn-type text-foreground transition-colors hover:bg-muted cursor-pointer"
+                      >
+                        <Upload className="size-3.5 text-muted-foreground" />
+                        <span>Upload JD file</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowCallInput(v => !v)}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-2xl border border-border bg-secondary px-3 text-xs btn-type text-foreground transition-colors hover:bg-muted cursor-pointer"
+                      >
+                        <FileAudio className="size-3.5 text-emerald-400" />
+                        <span>{aiCallUrl ? 'Edit Fathom link' : '+ Fathom call link'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAiRawText(AI_DEFAULT_PROMPT)
+                          setAiFileName('Northwind-Pay-Senior-PM.pdf')
+                          setAiCallUrl('https://fathom.video/share/northwind-pay-intake')
+                        }}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-2xl px-2.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground cursor-pointer"
+                      >
+                        <span>Paste example role</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="chroma"
+                        icon={<Sparkles />}
+                        onClick={runAiRoleSetup}
+                      >
+                        Set up role with AI
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <SplitPane
+            leftTitle={<span className="flex items-center gap-2">Source <ExampleMark /></span>}
+            rightTitle={<span className="flex items-center gap-2">Role details{phase === 'extracted' && d && <span className="font-mono text-[10px] text-gray-1000">{elimCount} eliminator{elimCount === 1 ? '' : 's'} · {reqs.length - elimCount} signal{reqs.length - elimCount === 1 ? '' : 's'}</span>}</span>}
+            left={left}
+            right={right}
+            footer={footer}
+          />
+        </div>
+      )}
+
       <LeaveDialog open={leaveOpen} onClose={() => setLeaveOpen(false)} onLeave={() => { setLeaveOpen(false); navigate(role ? `/roles/${role.id}` : '/roles') }} />
       <ProposedChangesDialog open={revisedOpen} onClose={() => { setRevisedOpen(false); if (wf === 'revised') setWf('live') }}
         changes={jdChangesNorthwind} onApply={applyRevised}
         subtitle={`From the revised JD you pasted (will become JD v${(role?.jdVersion ?? 1) + 1}). Accepted changes are logged and mark matches out of date.`} />
       <AddRequirementDialog open={!!askDialog} onClose={() => setAskDialog(null)} roleId={askRoleId} initialMode={askDialog ?? 'type'} />
-    </>
+    </div>
   )
 }

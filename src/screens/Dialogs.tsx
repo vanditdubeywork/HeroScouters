@@ -437,31 +437,424 @@ export function TranscriptImportFields({ imp }: { imp: ReturnType<typeof useTran
   )
 }
 
-/** D-08 · Add requirement (also exported as AddClientAskDialog for compatibility). */
+/** AI-powered quick context parser for adding & removing requirements in one go */
+interface AiProposedAdd {
+  id: string
+  text: string
+  column?: RequirementColumn
+  effect: RequirementEffect
+  source: AskSource
+  saidBy?: string
+  accepted: boolean
+}
+
+interface AiPreset {
+  id: string
+  label: string
+  prompt: string
+}
+
+const AI_REQUIREMENT_PRESETS: AiPreset[] = [
+  {
+    id: 'payout-no-sql',
+    label: 'Add payout APIs & remove SQL',
+    prompt: 'From our sync with Dana: drop the SQL fluency requirement (engineers help with queries). Add "Shipped high-volume payout or ledger APIs" and add "Experience working with banking or payment rails partners".',
+  },
+  {
+    id: 'relax-years-visa',
+    label: 'Relax years to 4+ & add H-1B transfer',
+    prompt: 'Remove 6+ years requirement and add "4+ years in B2B Product Management" as a hard filter, plus add "Experience scaling merchant onboarding flows".',
+  },
+  {
+    id: 'fathom-sync',
+    label: 'Fathom call: add squad lead & drop pricing',
+    prompt: 'Fathom call note: remove pricing and packaging requirement, and add "Has led a cross-functional squad of 6+ engineers and designers".',
+  },
+]
+
+function parseAiContextForRequirements(
+  prompt: string,
+  existingReqs: { id: string; text: string; column?: RequirementColumn }[],
+): { adds: AiProposedAdd[]; removeIds: string[] } {
+  const clean = prompt.trim()
+  if (!clean) return { adds: [], removeIds: [] }
+
+  const removeIds = new Set<string>()
+  const adds: AiProposedAdd[] = []
+
+  // Split into clauses on sentences, semicolons, newlines, or ", and "
+  const clauses = clean
+    .split(/(?:[.\n;]+|,\s+and\s+|\s+and\s+(?=(?:add|remove|drop|delete|include|plus)\b))/i)
+    .map(s => s.trim())
+    .filter(Boolean)
+
+  for (const rawClause of clauses) {
+    // Strip conversational prefixes like "From our sync with Dana:" or "Fathom call note:"
+    const clause = rawClause.replace(/^(?:from\s+[^:]+:|fathom\s+[^:]+:|on\s+the\s+call[^:]*:|sean\s+said[^:]*:|dana\s+said[^:]*:)\s*/i, '').trim()
+    if (!clause) continue
+
+    const isRemove = /\b(remove|drop|delete|no longer need|don't need|skip|take out|without)\b/i.test(clause)
+    const hasAddAfterRemove = /\b(?:add|include|replace with|instead add)\b/i.test(clause)
+
+    if (isRemove) {
+      const lower = clause.replace(/\([^)]*\)/g, '').toLowerCase()
+      for (const ex of existingReqs) {
+        const exLower = ex.text.toLowerCase()
+        const words = exLower.split(/[^a-z0-9+]+/).filter(w => w.length >= 4 && !['years', 'with', 'from', 'that', 'this', 'have', 'experience', 'for', 'and', 'the', 'questions', 'product'].includes(w))
+        const matched =
+          (lower.includes('sql') && exLower.includes('sql')) ||
+          (lower.includes('6+') && exLower.includes('6+')) ||
+          (lower.includes('years') && /\b(6\+|years|yrs)\b/.test(exLower) && ex.column === 'Minimum years') ||
+          (lower.includes('sponsorship') && exLower.includes('sponsorship')) ||
+          (lower.includes('san francisco') && exLower.includes('san francisco')) ||
+          (lower.includes('location') && ex.column === 'Location') ||
+          (lower.includes('payments') && exLower.includes('payments')) ||
+          (lower.includes('team') && exLower.includes('team')) ||
+          words.some(w => lower.includes(w))
+        if (matched) removeIds.add(ex.id)
+      }
+      if (!hasAddAfterRemove) continue
+    }
+
+    // Extract quoted strings first if present, otherwise clean the add clause
+    const quoted = Array.from(clause.matchAll(/[“"']([^”"']{4,})[”"']/g)).map(m => m[1].trim())
+    const candidatesToAdd = quoted.length > 0
+      ? quoted
+      : [
+          clause
+            .replace(/^(?:please\s+)?(?:also\s+)?(?:add|include|plus|must\s+have|need|require|we\s+need)\s+/i, '')
+            .replace(/\s*\([^)]*\)\s*$/g, '')
+            .replace(/\s+as\s+a\s+(?:hard\s+filter|stage\s*1\s+eliminator|signal|nice\s+to\s+have).*$/i, '')
+            .trim(),
+        ]
+
+    for (const itemText of candidatesToAdd) {
+      if (!itemText || itemText.length < 3) continue
+      if (/^(?:remove|drop|delete)\b/i.test(itemText)) continue
+      const formatted = itemText.charAt(0).toUpperCase() + itemText.slice(1)
+      const col = suggestAskColumn(formatted) ?? undefined
+      const canElim = !!col && ELIMINATOR_COLUMNS.includes(col)
+      const wantsElim = /\b(hard filter|eliminat\w*|must-have|stage 1)\b/i.test(clause)
+      adds.push({
+        id: `ai-add-${adds.length}-${formatted.slice(0, 12)}`,
+        text: formatted,
+        column: col,
+        effect: canElim && (wantsElim || col === 'Minimum years' || col === 'Work authorization' || col === 'Location') ? 'eliminates' : 'improves',
+        source: /fathom|call|sync|spoke/i.test(clean) ? 'Call' : 'Chat',
+        saidBy: /dana/i.test(clean) ? 'Dana K. (VP Product)' : /sean/i.test(clean) ? 'Sean (VP Product)' : 'AI context',
+        accepted: true,
+      })
+    }
+  }
+
+  return { adds, removeIds: Array.from(removeIds) }
+}
+
+/** D-08 · Update / add requirements with AI (also exported as AddClientAskDialog & AddRequirementDialog). */
 export function AddClientAskDialog({ open, onClose, roleId, initialMode = 'type' }: {
-  open: boolean; onClose: () => void; roleId: string; initialMode?: 'type' | 'transcript'
+  open: boolean; onClose: () => void; roleId: string; initialMode?: 'type' | 'transcript' | 'ai'
 }) {
-  const [mode, setMode] = useState<'type' | 'transcript'>(initialMode)
+  const app = useApp()
+  const existingReqs = app.requirementsFor(roleId)
+  const [mode, setMode] = useState<'ai' | 'type'>('ai')
+  const [prompt, setPrompt] = useState(AI_REQUIREMENT_PRESETS[0].prompt)
+  const [adds, setAdds] = useState<AiProposedAdd[]>([])
+  const [removeIds, setRemoveIds] = useState<string[]>([])
+
   const draft = useAskDraft(roleId)
-  const imp = useTranscriptImport(roleId)
-  useEffect(() => { if (open) { setMode(initialMode); draft.reset(); imp.reset() } }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const runAiParse = (textToParse: string) => {
+    const res = parseAiContextForRequirements(textToParse, existingReqs)
+    setAdds(res.adds)
+    setRemoveIds(res.removeIds)
+  }
+
+  useEffect(() => {
+    if (open) {
+      setMode('ai')
+      const defaultPrompt = AI_REQUIREMENT_PRESETS[0].prompt
+      setPrompt(defaultPrompt)
+      const res = parseAiContextForRequirements(defaultPrompt, app.requirementsFor(roleId))
+      setAdds(res.adds)
+      setRemoveIds(res.removeIds)
+      draft.reset()
+    }
+  }, [open, roleId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const acceptedAdds = adds.filter(a => a.accepted)
+  const totalChanges = acceptedAdds.length + removeIds.length
+
+  const toggleRemoveId = (id: string) => {
+    setRemoveIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]))
+  }
+
+  const applyAiChanges = () => {
+    if (totalChanges === 0) return
+    removeIds.forEach(id => {
+      app.removeRequirement(roleId, id)
+    })
+    acceptedAdds.forEach(a => {
+      app.addRequirement(roleId, {
+        text: a.text,
+        source: a.source,
+        saidBy: a.saidBy,
+        when: 'Just now',
+        effect: a.effect,
+        column: a.column,
+      })
+    })
+    const parts: string[] = []
+    if (acceptedAdds.length) parts.push(`+${acceptedAdds.length} added`)
+    if (removeIds.length) parts.push(`−${removeIds.length} removed`)
+    app.toast(`AI updated requirements (${parts.join(', ')})`)
+    onClose()
+  }
+
   return (
-    <Dialog open={open} onClose={onClose} width={600} title="Add requirement"
-      description="Add what the client said on a call or email to the role’s unified Requirements list. Eliminates rules re-run Stage 1 for free."
-      footer={mode === 'type' ? <>
-        <span className="mr-auto text-[11px] text-muted-foreground">
-          {draft.d.effect === 'eliminates' ? 'Eliminates (hard filter on column)' : 'Improves score (checked by AI)'}
-        </span>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button variant="primary" disabled={!draft.valid} onClick={() => { if (draft.save()) onClose() }}>Save requirement</Button>
-      </> : <>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button variant="primary" disabled={!imp.read || !imp.accepted.length} onClick={() => { imp.apply(); onClose() }}>Add {imp.accepted.length} requirement{imp.accepted.length === 1 ? '' : 's'}</Button>
-      </>}>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      width={620}
+      title="Update requirements with AI"
+      description="Give AI quick context from a call, Slack, or email — tell it what to add and what to remove, and it updates the role’s requirements for you."
+      footer={
+        mode === 'ai' ? (
+          <>
+            <span className="mr-auto font-mono text-[11px] text-muted-foreground tnum">
+              {totalChanges === 0
+                ? 'No changes selected'
+                : `${acceptedAdds.length ? `+${acceptedAdds.length} to add` : ''}${acceptedAdds.length && removeIds.length ? ' · ' : ''}${removeIds.length ? `−${removeIds.length} to remove` : ''}`}
+            </span>
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button
+              variant="chroma"
+              icon={<Sparkles />}
+              disabled={totalChanges === 0}
+              onClick={applyAiChanges}
+            >
+              Apply with AI ({totalChanges})
+            </Button>
+          </>
+        ) : (
+          <>
+            <span className="mr-auto text-[11px] text-muted-foreground">
+              {draft.d.effect === 'eliminates' ? 'Eliminates (hard filter on column)' : 'Improves score (checked by AI)'}
+            </span>
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button variant="primary" disabled={!draft.valid} onClick={() => { if (draft.save()) onClose() }}>Save requirement</Button>
+          </>
+        )
+      }
+    >
       <div className="space-y-4">
-        <Segmented aria-label="How to add" size="sm" value={mode} onChange={setMode}
-          options={[{ value: 'type', label: 'Type requirement' }, { value: 'transcript', label: 'Import from call transcript' }]} />
-        {mode === 'type' ? <AskFields draft={draft} /> : <TranscriptImportFields imp={imp} />}
+        <div className="flex items-center justify-between gap-2">
+          <Segmented
+            aria-label="How to update requirements"
+            size="sm"
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: 'ai', label: 'Ask AI (add & remove)' },
+              { value: 'type', label: 'Manual field entry' },
+            ]}
+          />
+          {mode === 'ai' && (
+            <span className="eyebrow text-[9px] text-violet-400">AI context assistant</span>
+          )}
+        </div>
+
+        {mode === 'ai' ? (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-medium text-foreground" htmlFor="ai-req-context">
+                  Tell AI what to add or remove (or paste call / Slack notes)
+                </label>
+                <Button
+                  variant="chroma"
+                  size="sm"
+                  icon={<Sparkles />}
+                  onClick={() => runAiParse(prompt)}
+                >
+                  Draft changes
+                </Button>
+              </div>
+              <Textarea
+                id="ai-req-context"
+                autoFocus
+                data-autofocus
+                placeholder='e.g. "Drop the SQL requirement, and add Shipped high-volume payout APIs + Experience with banking partners"'
+                value={prompt}
+                onChange={e => {
+                  setPrompt(e.target.value)
+                  runAiParse(e.target.value)
+                }}
+                className="min-h-[68px] text-[13px] leading-relaxed"
+              />
+              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                <span className="eyebrow mr-1 text-[9px] text-muted-foreground">Try example:</span>
+                {AI_REQUIREMENT_PRESETS.map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      setPrompt(p.prompt)
+                      runAiParse(p.prompt)
+                    }}
+                    className={cn(
+                      'inline-flex h-6 items-center gap-1 rounded-lg border px-2 text-[11px] transition-colors',
+                      prompt === p.prompt
+                        ? 'border-violet-500/50 bg-violet-500/15 text-foreground'
+                        : 'border-border bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground',
+                    )}
+                  >
+                    <Sparkles className="size-3 text-violet-400" />
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* AI Proposed Additions & Removals */}
+            <div className="space-y-2.5 rounded-xl border border-border bg-secondary/30 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="eyebrow text-[10px] text-gray-1000">
+                  AI proposed changes ({totalChanges})
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  Click any item to toggle or switch Stage 1 / Stage 2
+                </span>
+              </div>
+
+              {adds.length === 0 && removeIds.length === 0 ? (
+                <p className="py-3 text-center text-xs text-muted-foreground">
+                  Type what to add or remove above, or click an existing requirement below to remove it.
+                </p>
+              ) : (
+                <ul className="divide-y divide-border rounded-lg border border-border bg-card">
+                  {adds.map(item => {
+                    const canElim = !!item.column && ELIMINATOR_COLUMNS.includes(item.column)
+                    return (
+                      <li
+                        key={item.id}
+                        className={cn(
+                          'flex flex-wrap items-center justify-between gap-2 px-3 py-2 transition-opacity',
+                          !item.accepted && 'opacity-45',
+                        )}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex h-5 items-center rounded border border-emerald-500/30 bg-emerald-500/15 px-1.5 font-mono text-[10px] font-medium text-emerald-400">
+                              + ADD
+                            </span>
+                            <span className="text-sm font-medium text-foreground">{item.text}</span>
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                            <span>{item.column ? `Column: ${item.column}` : 'Signal (checked by AI)'}</span>
+                            <span>·</span>
+                            <span>{item.source}{item.saidBy ? ` · ${item.saidBy}` : ''}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAdds(prev =>
+                                prev.map(x =>
+                                  x.id === item.id
+                                    ? { ...x, effect: x.effect === 'eliminates' ? 'improves' : canElim ? 'eliminates' : 'improves' }
+                                    : x,
+                                ),
+                              )
+                            }
+                            title={canElim ? 'Click to switch between Stage 1 Eliminates and Stage 2 Improves score' : 'Free-text signals are checked in Stage 2 AI scoring'}
+                            className={cn(
+                              'inline-flex h-6 items-center rounded-md border px-2 font-mono text-[10px]',
+                              item.effect === 'eliminates'
+                                ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                                : 'border-border bg-secondary text-muted-foreground',
+                            )}
+                          >
+                            {item.effect === 'eliminates' ? 'Eliminates (Stage 1)' : 'Improves score'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAdds(prev => prev.map(x => (x.id === item.id ? { ...x, accepted: !x.accepted } : x)))
+                            }
+                            className={cn(
+                              'inline-flex h-6 items-center rounded-md border px-2 text-xs font-medium',
+                              item.accepted
+                                ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                                : 'border-border bg-background text-muted-foreground',
+                            )}
+                          >
+                            {item.accepted ? 'Adding ✓' : 'Skipped'}
+                          </button>
+                        </div>
+                      </li>
+                    )
+                  })}
+
+                  {existingReqs
+                    .filter(r => removeIds.includes(r.id))
+                    .map(r => (
+                      <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex h-5 items-center rounded border border-rose-500/30 bg-rose-500/15 px-1.5 font-mono text-[10px] font-medium text-rose-400">
+                              − REMOVE
+                            </span>
+                            <span className="text-sm text-muted-foreground line-through">{r.text}</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleRemoveId(r.id)}
+                          className="inline-flex h-6 items-center rounded-md border border-rose-500/40 bg-rose-500/15 px-2 text-xs font-medium text-rose-300 hover:bg-rose-500/25"
+                        >
+                          Removing ✓ (undo)
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              )}
+
+              {/* Quick tap on current role requirements to mark/unmark for removal */}
+              {existingReqs.length > 0 && (
+                <div className="space-y-1.5 border-t border-border pt-2.5">
+                  <div className="eyebrow text-[9px] text-muted-foreground">
+                    Current requirements on this role — click any to mark for removal:
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {existingReqs.map(r => {
+                      const marked = removeIds.includes(r.id)
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => toggleRemoveId(r.id)}
+                          className={cn(
+                            'inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-left text-[11px] transition-colors',
+                            marked
+                              ? 'border-rose-500/45 bg-rose-500/15 text-rose-300 line-through'
+                              : 'border-border bg-card text-muted-foreground hover:border-gray-600 hover:text-foreground',
+                          )}
+                        >
+                          <span>{r.text}</span>
+                          <span className="font-mono text-[10px] opacity-75">{marked ? '× Remove' : 'Keep'}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <AskFields draft={draft} />
+        )}
       </div>
     </Dialog>
   )

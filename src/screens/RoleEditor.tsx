@@ -235,6 +235,7 @@ const WF_NEW = [
 ]
 const WF_EDIT = [
   { id: 'live', label: 'Edit mode (live)' },
+  { id: 'ai-req', label: 'Update requirements with AI → D-08' },
   { id: 'revised', label: 'Revised JD → D-03' },
 ]
 const STEPS = ['Reading the job description', 'Finding requirements', 'Suggesting category', 'Checking the pool']
@@ -256,7 +257,9 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
   const [dirty, setDirty] = useState(false)
   const [leaveOpen, setLeaveOpen] = useState(false)
   const [revisedOpen, setRevisedOpen] = useState(false)
-  const [askDialog, setAskDialog] = useState<'type' | 'transcript' | null>(null)
+  const [askDialog, setAskDialog] = useState<'type' | 'transcript' | null>(() =>
+    typeof window !== 'undefined' && window.location.hash.includes('dialog=ai-req') ? 'type' : null,
+  )
   const askRoleId = role?.id ?? 'northwind-spm'
   const reqs = app.requirementsFor(askRoleId)
   const elimCount = reqs.filter(r => r.effect === 'eliminates').length
@@ -272,7 +275,11 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
 
   /* Wireframe presets — each state is reachable from the bottom toolbar, then stays interactive */
   useEffect(() => {
-    if (mode === 'edit') { if (wf === 'revised') setRevisedOpen(true); return }
+    if (mode === 'edit') {
+      if (wf === 'revised') setRevisedOpen(true)
+      if (wf === 'ai-req') setAskDialog('type')
+      return
+    }
     if (wf === 'live') return
     setFailed(false); setDirty(false)
     if (wf === 'empty') { setSrc(EMPTY_SOURCE); setDraft(null); setPhase('empty') }
@@ -618,14 +625,9 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
         title={`Requirements (${reqs.length})`}
         description="Each requirement is marked Eliminates (Stage 1 hard filter on years, visa, location, or category) or Improves score (AI checks and cites evidence)."
         action={
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button variant="ghost" size="sm" icon={<FileAudio />} onClick={() => setAskDialog('transcript')}>
-              Import from call transcript
-            </Button>
-            <Button variant="outline" size="sm" icon={<Plus />} onClick={() => setAskDialog('type')}>
-              + Add requirement
-            </Button>
-          </div>
+          <Button variant="chroma" size="sm" icon={<Sparkles />} onClick={() => setAskDialog('type')}>
+            + Add / update with AI
+          </Button>
         }
       >
         <div className="space-y-4">

@@ -1727,7 +1727,7 @@ function DetailsTab({ role, versions, onCompare, onAddAsk }: { role: Role; versi
 
           <BezelCard
             title={<span className="flex items-center gap-2">Requirements <span className="font-mono text-xs font-normal text-muted-foreground tnum">({reqs.length})</span></span>}
-            action={<Button variant="ghost" size="sm" icon={<Plus />} onClick={onAddAsk}>+ Add requirement</Button>}
+            action={<Button variant="chroma" size="sm" icon={<Sparkles />} onClick={onAddAsk}>+ Add / update with AI</Button>}
             description="Unified requirements from the JD, calls, emails, and manual edits. Toggle Eliminator (Stage 1) vs Nice to have (Stage 2)."
           >
             {reqs.length > 0 ? (

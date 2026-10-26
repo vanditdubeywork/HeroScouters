@@ -443,14 +443,16 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
   const left = (
     <>
       <BezelCard icon={<Building2 />} title="Company">
-        <div className="space-y-4">
-          <Field label="Company name" hint={isNewCompany ? `“${src.company.trim()}” is new. It'll be created when you save.` : undefined}>
-            <Input list="hs-companies" placeholder="Search or create a company" value={src.company} onChange={e => editSrc({ company: e.target.value })} />
-            <datalist id="hs-companies">{companies.map(c => <option key={c} value={c} />)}</datalist>
-          </Field>
-          <Field label="Company type">
-            <Segmented aria-label="Company type" value={src.companyType} onChange={v => editSrc({ companyType: v })} options={['Client', 'Prospect']} />
-          </Field>
+        <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-start">
+            <Field label="Company name" hint={isNewCompany ? `“${src.company.trim()}” is new. It'll be created when you save.` : undefined}>
+              <Input list="hs-companies" placeholder="Search or create a company" value={src.company} onChange={e => editSrc({ company: e.target.value })} />
+              <datalist id="hs-companies">{companies.map(c => <option key={c} value={c} />)}</datalist>
+            </Field>
+            <Field label="Company type">
+              <Segmented aria-label="Company type" value={src.companyType} onChange={v => editSrc({ companyType: v })} options={['Client', 'Prospect']} />
+            </Field>
+          </div>
           <div className="grid gap-3 border-t border-border pt-3 sm:grid-cols-2">
             <Field label="Contact name (optional)">
               <Input placeholder="e.g. Sean Ellis" value={src.contactName} onChange={e => editSrc({ contactName: e.target.value })} />
@@ -472,7 +474,7 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
             options={[{ value: 'paste', label: 'Paste text' }, { value: 'upload', label: 'Upload file' }, { value: 'url', label: 'Public posting URL' }, { value: 'none', label: 'No JD — describe the role' }]} />
           {src.tab === 'paste' && (
             <Textarea aria-label="Job description text" placeholder="Paste the full job description here…" value={src.jdText}
-              onChange={e => editSrc({ jdText: e.target.value })} className="min-h-[220px] text-[13px] leading-relaxed" />
+              onChange={e => editSrc({ jdText: e.target.value })} className="min-h-[160px] text-[13px] leading-relaxed" />
           )}
           {src.tab === 'upload' && (
             <div className="space-y-3">
@@ -511,23 +513,38 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
               </Field>
             </div>
           )}
-          <div className="flex items-center justify-between gap-2 border-t border-border pt-4">
-            <span className="text-xs text-muted-foreground">{hasJd ? 'Ready to extract.' : 'Add a JD to extract role details.'}</span>
-            {phase === 'extracted'
-              ? <Button variant="ghost" disabled={!hasJd} onClick={extract}>Re-extract</Button>
-              : <Button variant="primary" disabled={!hasJd || phase === 'extracting'} icon={<Sparkles />} onClick={extract}>Extract role details</Button>}
+          <div className="border-t border-border pt-3.5">
+            <Field
+              label={
+                <span className="inline-flex flex-wrap items-center gap-2">
+                  <span>Client intake call (Fathom / Granola)</span>
+                  <span className="eyebrow rounded border border-border bg-secondary/60 px-1.5 py-0.5 text-[9px] text-muted-foreground">Optional · Continuously fed context</span>
+                  {src.callLink && <SourceBadge kind="CALL" />}
+                </span>
+              }
+            >
+              <div className="relative">
+                <FileAudio className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="pl-8"
+                  placeholder="https://fathom.video/share/… or Granola link / ongoing sync notes"
+                  value={src.callLink}
+                  onChange={e => editSrc({ callLink: e.target.value })}
+                />
+              </div>
+            </Field>
           </div>
-        </div>
-      </BezelCard>
-
-      <BezelCard icon={<Users />} title={<span className="flex items-center gap-2">Optional context</span>} description="Adds “what good looks like” and research to the role. Never required.">
-        <div className="space-y-4">
-          <Field label={<Lbl src={src.callLink ? 'CALL' : undefined}>Client intake call</Lbl>}>
-            <Input placeholder="Fathom or Granola link, or paste notes" value={src.callLink} onChange={e => editSrc({ callLink: e.target.value })} />
-          </Field>
-          <Field label={<Lbl src={src.research ? 'RESEARCH' : undefined}>Research on the hiring team or founders</Lbl>}>
-            <Textarea placeholder="Hiring manager, founders, funding, links…" value={src.research} onChange={e => editSrc({ research: e.target.value })} />
-          </Field>
+          <div className="flex items-center justify-between gap-2 border-t border-border pt-3.5">
+            <span className="text-xs text-muted-foreground">{hasJd ? 'Ready to extract from JD & call context.' : 'Add a JD to extract role details.'}</span>
+            <Button
+              variant="chroma"
+              disabled={!hasJd || phase === 'extracting'}
+              icon={<Sparkles />}
+              onClick={extract}
+            >
+              {phase === 'extracted' ? 'Re-extract' : 'Extract role details'}
+            </Button>
+          </div>
         </div>
       </BezelCard>
     </>
@@ -553,7 +570,7 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
           </div>
           <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:justify-center">
             <Button
-              variant="primary"
+              variant="chroma"
               icon={<Sparkles />}
               onClick={() => {
                 setSrc(EXAMPLE_SOURCE)
@@ -708,9 +725,6 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
           <Field label={<Lbl src={sources.whatGood}>What good looks like · past good and bad hires</Lbl>}>
             <Textarea placeholder="From the client call…" value={d.whatGood} onChange={e => set('whatGood', e.target.value)} />
             {!d.whatGood && <NotCaptured />}
-          </Field>
-          <Field label={<Lbl src={sources.research}>Hiring team / founder research</Lbl>}>
-            <Textarea placeholder="Hiring manager, founders, links…" value={d.research} onChange={e => set('research', e.target.value)} />
           </Field>
           <Field label={<Lbl src={sources.interview}>Interview process</Lbl>}>
             <Textarea placeholder="Recruiter screen → HM → …" value={d.interview} onChange={e => set('interview', e.target.value)} />

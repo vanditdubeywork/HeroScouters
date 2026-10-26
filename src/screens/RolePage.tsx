@@ -1790,7 +1790,6 @@ function DetailsTab({ role, versions, onCompare, onAddAsk }: { role: Role; versi
           <BezelCard title="Context">
             <div className="space-y-4">
               <Fact label="What good looks like · past hires"><Text v={role.whatGood} /></Fact>
-              <Fact label="Hiring team / founder research"><Text v={role.research} /></Fact>
               <Fact label="Interview process"><Text v={role.interview} /></Fact>
             </div>
           </BezelCard>

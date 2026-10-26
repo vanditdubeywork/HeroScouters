@@ -1718,7 +1718,7 @@ export function CandidatesList() {
            ====================================================================== */
         aiStage === 'home' ? (
           /* -------------------- STAGE 1: RIGHTFIT DOUBLE-BEZEL AI WORKSPACE -------------------- */
-          <div className="anim-fade mx-auto flex min-h-[calc(100vh-11.5rem)] w-full max-w-3xl flex-col justify-center space-y-6 py-6">
+          <div className="anim-fade mx-auto flex min-h-[calc(100vh-11.5rem)] w-full max-w-[820px] flex-col justify-center space-y-6 py-6">
             {/* Page Header (HEROSCOUTERSPACING.txt §3.3: header.space-y-1) */}
             <header className="flex flex-col items-center space-y-2 text-center">
               <div className="relative flex size-10 items-center justify-center rounded-2xl border border-border bg-gray-100 p-1 shadow-custom">
@@ -2188,18 +2188,19 @@ export function CandidatesList() {
 
                 {/* Bottom Action Bar (HEROSCOUTERSPACING.txt §4: h-8 controls, gap-2) */}
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     {/* Pattern 6: Compact Select Trigger (h-8 rounded-lg px-2.5) */}
                     <Select
                       aria-label="Scout role context"
+                      className="w-[136px]"
                       value={aiAttachedRole}
                       onChange={v => setAiAttachedRole(v)}
                       options={[
-                        { value: 'none', label: `Pool search (${poolSize})` },
-                        { value: 'northwind-spm', label: 'Role · Northwind Senior PM' },
-                        { value: 'lumen-fse', label: 'Role · Lumen Founding Eng' },
-                        { value: 'brightdesk-gmm', label: 'Role · BrightDesk Growth' },
-                        { value: 'cobalt-ds', label: 'Role · Cobalt Data Scientist' },
+                        { value: 'none', label: `Pool (${poolSize})` },
+                        { value: 'northwind-spm', label: 'Northwind · Senior PM' },
+                        { value: 'lumen-fse', label: 'Lumen · Founding Eng' },
+                        { value: 'brightdesk-gmm', label: 'BrightDesk · Growth' },
+                        { value: 'cobalt-ds', label: 'Cobalt · Data Scientist' },
                       ]}
                     />
 
@@ -2210,7 +2211,7 @@ export function CandidatesList() {
                       title="Include AI-predicted adjacent skills (e.g. Payments → SQL)"
                       onClick={() => setMore(m => ({ ...m, includePredicted: !m.includePredicted }))}
                     >
-                      ◇ Predicted: {more.includePredicted ? 'On' : 'Off'}
+                      Predicted: {more.includePredicted ? 'On' : 'Off'}
                     </Button>
 
                     <Button
@@ -2237,8 +2238,8 @@ export function CandidatesList() {
                     </Button>
                   </div>
 
-                  {/* Right Action Slot: Create candidate + Rightfit Bidirectional .chroma-text-out CTA */}
-                  <div className="flex flex-wrap items-center gap-2">
+                  {/* Right Action Slot: Pushed to the right (ml-auto justify-end) */}
+                  <div className="ml-auto flex shrink-0 items-center justify-end gap-2">
                     {aiActionMode !== 'create' && (
                       <Button
                         variant="outline"

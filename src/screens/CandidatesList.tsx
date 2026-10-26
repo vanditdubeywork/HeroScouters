@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import { ScrollPage, useTopBar } from '../shell/AppShell'
 import { Avatar, Button, Checkbox, EmptyState, ExampleMark, Input, Kbd, Menu, Segmented, Select, Switch, Tag, cn } from '../components/ui'
-import { CompletenessMeter, DataTable, Dialog, FilterChip, MatchChipView, NotCaptured, OverviewGrid, workAuthShort, type Column } from '../components/hs'
+import { AIStepper, CompletenessMeter, DataTable, Dialog, FilterChip, MatchChipView, NotCaptured, OverviewGrid, useRandomDemoStepper, workAuthShort, type Column } from '../components/hs'
 import {
   ColumnsMenu, FilterBar, FilterPicker, GatedButton, SelectionBar, TakeMarker, applyFilters, useColumnPrefs,
   type ColumnOption, type FilterField, type FilterState, type FilterValue,
@@ -484,9 +484,8 @@ export function CandidatesList() {
   const aiSingleFileRef = useRef<HTMLInputElement>(null)
   const aiBulkFileRef = useRef<HTMLInputElement>(null)
 
-  // Stage 2 animation progress state
-  const [procStep, setProcStep] = useState<number>(0)
-  const [procPercent, setProcPercent] = useState<number>(18)
+  // Stage 2 animation progress state (3.2s – 5.6s randomized demo stepper)
+  const demoProgress = useRandomDemoStepper(4, aiStage === 'processing', 3200, 5600)
   const [extractedPreviewLabels, setExtractedPreviewLabels] = useState<string[]>([])
 
   // Stage 3 (1/4 AI Chatbot) state
@@ -648,8 +647,6 @@ export function CandidatesList() {
         aiResumeFile ? `Resume: ${aiResumeFile}` : 'Source: Pasted candidate summary',
         ...(aiFathomUrl.trim() ? ['Fathom call synced (Comp, Work Auth & Availability)'] : ['Fathom call link: Optional (not attached)']),
       ])
-      setProcStep(0)
-      setProcPercent(24)
       setAiStage('processing')
       return
     }
@@ -664,8 +661,6 @@ export function CandidatesList() {
         'Auto-extract skills, tenure & work auth',
         'Duplicate check against 412 pool profiles',
       ])
-      setProcStep(0)
-      setProcPercent(24)
       setAiStage('processing')
       return
     }
@@ -687,8 +682,6 @@ export function CandidatesList() {
           ...(aiFathomUrl.trim() ? ['Client Fathom call synced'] : []),
         ])
       }
-      setProcStep(0)
-      setProcPercent(24)
       setAiStage('processing')
       return
     }
@@ -696,103 +689,97 @@ export function CandidatesList() {
     const text = (customPrompt ?? aiPrompt).trim() || STARTER_BLOCKS[0].prompt
     setAiPrompt(text)
     applyParsedPromptImmediately(text)
-    setProcStep(0)
-    setProcPercent(24)
     setAiStage('processing')
   }
 
-  // Handle Stage 2 animation timer unless locked by wireframe state 'ai-processing'
+  const completeAiProcessing = () => {
+    if (aiActionMode === 'create') {
+      const newId = app.candidate('rohand') ? `rohand-${app.candidates.length}` : 'rohand'
+      const hasFathom = aiFathomUrl.trim().length > 0
+      app.addCandidate({
+        id: newId,
+        name: 'Rohan D.',
+        initials: 'RD',
+        example: true,
+        headline: 'Senior Product Manager · payments platform & APIs',
+        category: 'Product',
+        subcategory: 'Product Manager',
+        years: 7,
+        domains: ['Payments/Fintech', 'B2B SaaS'],
+        city: 'Seattle, WA',
+        metro: 'Seattle',
+        workModes: hasFathom ? ['Hybrid', 'Remote'] : null,
+        relocate: hasFathom ? 'Yes' : null,
+        locationsOpen: hasFathom ? ['Seattle', 'SF'] : [],
+        companyPrefs: [],
+        workAuth: { status: hasFathom ? 'US citizen' : null },
+        pay: hasFathom ? '$185k–$205k' : null,
+        availability: hasFathom ? '2 weeks' : null,
+        searchStatus: 'Active',
+        skills: ['Payments', 'API products', 'Roadmapping', 'Pricing', 'B2B SaaS'],
+        predicted: [{ name: 'SQL', basis: 'from Mode + Snowflake reporting work, 3 yrs', strength: 'Medium' }],
+        tools: ['Jira', 'Mode', 'Figma'],
+        companies: [
+          { name: 'Remitly', descriptor: 'Public US fintech, 2,500+ people', title: 'Senior Product Manager, Payouts', start: '2021', end: 'Present' },
+          { name: 'Avalara', descriptor: 'Tax-compliance SaaS, 4,000+ people', title: 'Product Manager, APIs', start: '2018', end: '2021' },
+        ],
+        achievements: ['Launched real-time payouts in 9 corridors; failed transfers down 27%', 'Rebuilt partner API onboarding from 6 weeks to 9 days'],
+        education: { degree: 'BS', field: 'Computer Engineering', school: 'University of Washington' },
+        completeness: hasFathom ? 82 : 48,
+        askList: hasFathom
+          ? ['Which companies are you currently interviewing with?']
+          : ['Are you open to relocating? Where to?', 'Are you on a visa? Which one, and when does it expire?', 'What pay range are you looking for?'],
+        updated: 'Just now',
+        source: 'Outreach',
+        resumeVersion: 1,
+        lastContacted: 'Today',
+        email: 'rohan.d@example.com',
+        phone: '+1 206 555 0187',
+        linkedin: 'linkedin.com/in/rohan-d-example',
+        sourceLinks: [
+          ...(aiResumeFile ? [{ label: aiResumeFile, url: `https://drive.google.com/file/d/${aiResumeFile}`, addedAt: 'Just now' }] : []),
+          ...(hasFathom ? [{ label: 'Fathom call recording', url: aiFathomUrl.trim(), addedAt: 'Just now' }] : []),
+        ],
+        calls: hasFathom
+          ? [{ id: `call-${Date.now()}`, label: 'Fathom intake call', when: 'Just now', by: app.currentUser.displayName }]
+          : undefined,
+        fieldSources: {
+          headline: 'RESUME',
+          years: 'RESUME',
+          city: 'RESUME',
+          category: 'RESUME',
+          domains: 'RESUME',
+          ...(hasFathom ? { pay: 'CALL', availability: 'CALL', relocate: 'CALL', workModes: 'CALL' } : {}),
+        },
+      })
+      app.log({
+        what: hasFathom ? 'Created candidate with AI + Fathom call link' : 'Created candidate with AI',
+        record: 'Rohan D.',
+        recordHref: `/candidates/${newId}`,
+        kind: 'Candidates',
+      })
+      app.toast(hasFathom ? 'Created Rohan D. (synced Fathom call link)' : 'Created candidate Rohan D.')
+      navigate(`/candidates/${newId}`)
+      return
+    }
+
+    if (aiActionMode === 'bulk') {
+      navigate('/candidates/new?mode=bulk')
+      return
+    }
+
+    setAiStage('results')
+  }
+
+  // Handle Stage 2 completion after randomized 3.2s – 5.6s demo stepper finishes
   useEffect(() => {
     if (aiStage !== 'processing') return
-    const t1 = setTimeout(() => { setProcStep(1); setProcPercent(66) }, 550)
-    const t2 = setTimeout(() => { setProcStep(2); setProcPercent(96) }, 1150)
     const isLockedProcessing = wf === 'ai-processing' || searchParams.get('stage') === 'processing'
-    const t3 = !isLockedProcessing
-      ? setTimeout(() => {
-          if (aiActionMode === 'create') {
-            const newId = app.candidate('rohand') ? `rohand-${app.candidates.length}` : 'rohand'
-            const hasFathom = aiFathomUrl.trim().length > 0
-            app.addCandidate({
-              id: newId,
-              name: 'Rohan D.',
-              initials: 'RD',
-              example: true,
-              headline: 'Senior Product Manager · payments platform & APIs',
-              category: 'Product',
-              subcategory: 'Product Manager',
-              years: 7,
-              domains: ['Payments/Fintech', 'B2B SaaS'],
-              city: 'Seattle, WA',
-              metro: 'Seattle',
-              workModes: hasFathom ? ['Hybrid', 'Remote'] : null,
-              relocate: hasFathom ? 'Yes' : null,
-              locationsOpen: hasFathom ? ['Seattle', 'SF'] : [],
-              companyPrefs: [],
-              workAuth: { status: hasFathom ? 'US citizen' : null },
-              pay: hasFathom ? '$185k–$205k' : null,
-              availability: hasFathom ? '2 weeks' : null,
-              searchStatus: 'Active',
-              skills: ['Payments', 'API products', 'Roadmapping', 'Pricing', 'B2B SaaS'],
-              predicted: [{ name: 'SQL', basis: 'from Mode + Snowflake reporting work, 3 yrs', strength: 'Medium' }],
-              tools: ['Jira', 'Mode', 'Figma'],
-              companies: [
-                { name: 'Remitly', descriptor: 'Public US fintech, 2,500+ people', title: 'Senior Product Manager, Payouts', start: '2021', end: 'Present' },
-                { name: 'Avalara', descriptor: 'Tax-compliance SaaS, 4,000+ people', title: 'Product Manager, APIs', start: '2018', end: '2021' },
-              ],
-              achievements: ['Launched real-time payouts in 9 corridors; failed transfers down 27%', 'Rebuilt partner API onboarding from 6 weeks to 9 days'],
-              education: { degree: 'BS', field: 'Computer Engineering', school: 'University of Washington' },
-              completeness: hasFathom ? 82 : 48,
-              askList: hasFathom
-                ? ['Which companies are you currently interviewing with?']
-                : ['Are you open to relocating? Where to?', 'Are you on a visa? Which one, and when does it expire?', 'What pay range are you looking for?'],
-              updated: 'Just now',
-              source: 'Outreach',
-              resumeVersion: 1,
-              lastContacted: 'Today',
-              email: 'rohan.d@example.com',
-              phone: '+1 206 555 0187',
-              linkedin: 'linkedin.com/in/rohan-d-example',
-              sourceLinks: [
-                ...(aiResumeFile ? [{ label: aiResumeFile, url: `https://drive.google.com/file/d/${aiResumeFile}`, addedAt: 'Just now' }] : []),
-                ...(hasFathom ? [{ label: 'Fathom call recording', url: aiFathomUrl.trim(), addedAt: 'Just now' }] : []),
-              ],
-              calls: hasFathom
-                ? [{ id: `call-${Date.now()}`, label: 'Fathom intake call', when: 'Just now', by: app.currentUser.displayName }]
-                : undefined,
-              fieldSources: {
-                headline: 'RESUME',
-                years: 'RESUME',
-                city: 'RESUME',
-                category: 'RESUME',
-                domains: 'RESUME',
-                ...(hasFathom ? { pay: 'CALL', availability: 'CALL', relocate: 'CALL', workModes: 'CALL' } : {}),
-              },
-            })
-            app.log({
-              what: hasFathom ? 'Created candidate with AI + Fathom call link' : 'Created candidate with AI',
-              record: 'Rohan D.',
-              recordHref: `/candidates/${newId}`,
-              kind: 'Candidates',
-            })
-            app.toast(hasFathom ? 'Created Rohan D. (synced Fathom call link)' : 'Created candidate Rohan D.')
-            navigate(`/candidates/${newId}`)
-            return
-          }
-
-          if (aiActionMode === 'bulk') {
-            navigate('/candidates/new?mode=bulk')
-            return
-          }
-
-          setAiStage('results')
-        }, 1750)
-      : undefined
-    return () => {
-      clearTimeout(t1)
-      clearTimeout(t2)
-      if (t3) clearTimeout(t3)
+    if (!isLockedProcessing && demoProgress.done) {
+      completeAiProcessing()
     }
-  }, [aiStage, wf, searchParams, aiActionMode, aiFathomUrl, aiResumeFile, app, navigate])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiStage, demoProgress.done, wf, searchParams])
 
   // Stage 3: Send a follow-up message in the 1/4 AI Chatbot
   const handleSendChatMessage = (customText?: string) => {
@@ -1694,7 +1681,7 @@ export function CandidatesList() {
            ====================================================================== */
         aiStage === 'home' ? (
           /* -------------------- STAGE 1: MINIMAL CENTERED AI HOME -------------------- */
-          <div className="anim-fade mx-auto flex min-h-[calc(100vh-11.5rem)] w-full max-w-[780px] flex-col justify-center space-y-6 py-4">
+          <div className="anim-fade mx-auto flex min-h-[calc(100vh-11.5rem)] w-full max-w-[920px] flex-col justify-center space-y-6 py-4">
             {/* Centered Monochrome Emblem & Calm Heading (Zero Cognitive Bias) */}
             <header className="flex flex-col items-center space-y-3 text-center">
               <div className="relative flex size-12 items-center justify-center rounded-2xl border border-border bg-gray-100 p-1 shadow-custom">
@@ -1733,15 +1720,15 @@ export function CandidatesList() {
               )}
             >
               {/* Bezel Header Bar: Multi-Function AI Mode Switcher */}
-              <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 text-xs">
-                <div role="tablist" aria-label="AI workspace capabilities" className="flex flex-wrap items-center gap-1">
+              <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-xs">
+                <div role="tablist" aria-label="AI workspace capabilities" className="flex flex-wrap items-center gap-1 rounded-xl border border-border bg-background/60 p-0.5">
                   <button
                     role="tab"
                     type="button"
                     aria-selected={aiActionMode === 'find'}
                     onClick={() => setAiActionMode('find')}
                     className={cn(
-                      'inline-flex h-7 items-center gap-1.5 rounded-xl px-2.5 text-xs btn-type transition-all cursor-pointer',
+                      'inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs btn-type transition-all cursor-pointer',
                       aiActionMode === 'find'
                         ? 'border border-border bg-card text-foreground shadow-2xs'
                         : 'border border-transparent text-muted-foreground hover:text-foreground',
@@ -1756,7 +1743,7 @@ export function CandidatesList() {
                     aria-selected={aiActionMode === 'create'}
                     onClick={() => setAiActionMode('create')}
                     className={cn(
-                      'inline-flex h-7 items-center gap-1.5 rounded-xl px-2.5 text-xs btn-type transition-all cursor-pointer',
+                      'inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs btn-type transition-all cursor-pointer',
                       aiActionMode === 'create'
                         ? 'border border-border bg-card text-foreground shadow-2xs'
                         : 'border border-transparent text-muted-foreground hover:text-foreground',
@@ -1771,7 +1758,7 @@ export function CandidatesList() {
                     aria-selected={aiActionMode === 'bulk'}
                     onClick={() => setAiActionMode('bulk')}
                     className={cn(
-                      'inline-flex h-7 items-center gap-1.5 rounded-xl px-2.5 text-xs btn-type transition-all cursor-pointer',
+                      'inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs btn-type transition-all cursor-pointer',
                       aiActionMode === 'bulk'
                         ? 'border border-border bg-card text-foreground shadow-2xs'
                         : 'border border-transparent text-muted-foreground hover:text-foreground',
@@ -1786,7 +1773,7 @@ export function CandidatesList() {
                     aria-selected={aiActionMode === 'clients'}
                     onClick={() => setAiActionMode('clients')}
                     className={cn(
-                      'inline-flex h-7 items-center gap-1.5 rounded-xl px-2.5 text-xs btn-type transition-all cursor-pointer',
+                      'inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs btn-type transition-all cursor-pointer',
                       aiActionMode === 'clients'
                         ? 'border border-border bg-card text-foreground shadow-2xs'
                         : 'border border-transparent text-muted-foreground hover:text-foreground',
@@ -1849,190 +1836,211 @@ export function CandidatesList() {
 
                 {/* CONDITIONAL PANEL 1: Once Create candidate is selected/active, show the Optional Fathom Link & Resume Attachment */}
                 {aiActionMode === 'create' && (
-                  <div className="anim-fade mt-3 space-y-2.5 rounded-xl border border-border bg-secondary/35 p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <label htmlFor="ai-fathom-link-input" className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
-                        <Video className="size-3.5 text-gray-1000" />
-                        <span>Upload / paste Fathom link</span>
-                        <span className="rounded-xs border border-border bg-card px-1.5 py-0.5 font-mono text-[9.5px] text-muted-foreground">
-                          Optional
-                        </span>
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setAiFathomUrl('https://fathom.video/share/rohan-d-intake-call-2026')}
-                          className="font-mono text-[10.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline cursor-pointer"
-                        >
-                          Use sample Fathom link
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAiPrompt('Rohan D. · Senior Product Manager (7 yrs, Remitly & Avalara) · Seattle, WA · Payments platform, API products, Roadmapping, B2B SaaS')
-                            setAiResumeFile('Rohan_D_Senior_PM_Resume.pdf')
-                          }}
-                          className="font-mono text-[10.5px] text-foreground underline-offset-2 hover:underline cursor-pointer"
-                        >
-                          Load example candidate
-                        </button>
+                  <div className="anim-slide-up mt-3 rounded-xl border border-border bg-gray-100 p-1">
+                    <div className="space-y-2.5 rounded-lg border border-border bg-card p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <label htmlFor="ai-fathom-link-input" className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
+                          <span className="flex size-5 items-center justify-center rounded-md border border-border bg-secondary">
+                            <Video className="size-3 text-gray-1000" />
+                          </span>
+                          <span>Upload / paste Fathom link</span>
+                          <span className="rounded-xs border border-border bg-secondary px-1.5 py-0.5 font-mono text-[9.5px] text-muted-foreground">
+                            Optional
+                          </span>
+                          {aiFathomUrl.trim() && (
+                            <span className="anim-pop inline-flex items-center gap-1 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 font-mono text-[9.5px] text-success">
+                              <Check className="size-2.5" /> Ready to sync
+                            </span>
+                          )}
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setAiFathomUrl('https://fathom.video/share/rohan-d-intake-call-2026')}
+                            className="font-mono text-[10.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline cursor-pointer"
+                          >
+                            Use sample Fathom link
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAiPrompt('Rohan D. · Senior Product Manager (7 yrs, Remitly & Avalara) · Seattle, WA · Payments platform, API products, Roadmapping, B2B SaaS')
+                              setAiResumeFile('Rohan_D_Senior_PM_Resume.pdf')
+                            }}
+                            className="font-mono text-[10.5px] text-foreground underline-offset-2 hover:underline cursor-pointer"
+                          >
+                            Load example candidate
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="min-w-[220px] flex-1">
-                        <Input
-                          id="ai-fathom-link-input"
-                          aria-label="Upload Fathom link (optional)"
-                          value={aiFathomUrl}
-                          onChange={e => setAiFathomUrl(e.target.value)}
-                          placeholder="https://fathom.video/share/… (optional call recording or transcript link)"
-                          className="h-8 text-xs"
-                        />
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        icon={<Upload />}
-                        onClick={() => aiSingleFileRef.current?.click()}
-                      >
-                        {aiResumeFile ? aiResumeFile : 'Attach resume PDF'}
-                      </Button>
-                      {aiResumeFile && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="min-w-[220px] flex-1">
+                          <Input
+                            id="ai-fathom-link-input"
+                            aria-label="Upload Fathom link (optional)"
+                            value={aiFathomUrl}
+                            onChange={e => setAiFathomUrl(e.target.value)}
+                            placeholder="https://fathom.video/share/… (optional call recording or transcript link)"
+                            className="h-8 text-xs"
+                          />
+                        </div>
                         <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label="Remove attached resume"
-                          icon={<X />}
-                          onClick={() => setAiResumeFile(null)}
+                          variant="outline"
+                          size="sm"
+                          icon={<Upload />}
+                          onClick={() => aiSingleFileRef.current?.click()}
+                        >
+                          {aiResumeFile ? aiResumeFile : 'Attach resume PDF'}
+                        </Button>
+                        {aiResumeFile && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label="Remove attached resume"
+                            icon={<X />}
+                            onClick={() => setAiResumeFile(null)}
+                          />
+                        )}
+                        <input
+                          ref={aiSingleFileRef}
+                          type="file"
+                          accept=".pdf,.docx,application/pdf"
+                          className="hidden"
+                          onChange={e => {
+                            const f = e.target.files?.[0]
+                            if (f) setAiResumeFile(f.name)
+                          }}
                         />
-                      )}
-                      <input
-                        ref={aiSingleFileRef}
-                        type="file"
-                        accept=".pdf,.docx,application/pdf"
-                        className="hidden"
-                        onChange={e => {
-                          const f = e.target.files?.[0]
-                          if (f) setAiResumeFile(f.name)
-                        }}
-                      />
+                      </div>
                     </div>
                   </div>
                 )}
 
                 {/* CONDITIONAL PANEL 2: When Bulk upload is active inside the AI box */}
                 {aiActionMode === 'bulk' && (
-                  <div className="anim-fade mt-3 space-y-2.5 rounded-xl border border-border bg-secondary/35 p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
-                        <Layers className="size-3.5 text-gray-1000" />
-                        <span>Add a sheet or multiple resumes ({aiBulkFiles.length} queued)</span>
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          icon={<Upload />}
-                          onClick={() => aiBulkFileRef.current?.click()}
-                        >
-                          Select multiple resumes
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          icon={<Table2 />}
-                          onClick={() => navigate('/candidates/new?mode=bulk&bulkType=sheet')}
-                        >
-                          Add Google Sheet / CSV
-                        </Button>
-                        <input
-                          ref={aiBulkFileRef}
-                          type="file"
-                          multiple
-                          accept=".pdf,.docx,.csv,.xlsx"
-                          className="hidden"
-                          onChange={e => {
-                            const files = e.target.files
-                            if (files && files.length > 0) {
-                              setAiBulkFiles(Array.from(files).map(f => f.name))
-                            }
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {aiBulkFiles.map(fn => (
-                        <span
-                          key={fn}
-                          className="inline-flex h-6 items-center gap-1.5 rounded-md border border-border bg-card px-2 font-mono text-[11px] text-foreground"
-                        >
-                          <FileText className="size-3 text-muted-foreground" />
-                          <span>{fn}</span>
-                          <button
-                            type="button"
-                            aria-label={`Remove ${fn}`}
-                            onClick={() => setAiBulkFiles(prev => prev.filter(x => x !== fn))}
-                            className="text-muted-foreground hover:text-foreground cursor-pointer"
-                          >
-                            <X className="size-3" />
-                          </button>
+                  <div className="anim-slide-up mt-3 rounded-xl border border-border bg-gray-100 p-1">
+                    <div className="space-y-2.5 rounded-lg border border-border bg-card p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
+                          <span className="flex size-5 items-center justify-center rounded-md border border-border bg-secondary">
+                            <Layers className="size-3 text-gray-1000" />
+                          </span>
+                          <span>Add a sheet or multiple resumes</span>
+                          <span className="rounded-full border border-border bg-secondary px-2 py-0.5 font-mono text-[10px] text-foreground tnum">
+                            {aiBulkFiles.length} queued
+                          </span>
                         </span>
-                      ))}
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            icon={<Upload />}
+                            onClick={() => aiBulkFileRef.current?.click()}
+                          >
+                            Select multiple resumes
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            icon={<Table2 />}
+                            onClick={() => navigate('/candidates/new?mode=bulk&bulkType=sheet')}
+                          >
+                            Add Google Sheet / CSV
+                          </Button>
+                          <input
+                            ref={aiBulkFileRef}
+                            type="file"
+                            multiple
+                            accept=".pdf,.docx,.csv,.xlsx"
+                            className="hidden"
+                            onChange={e => {
+                              const files = e.target.files
+                              if (files && files.length > 0) {
+                                setAiBulkFiles(Array.from(files).map(f => f.name))
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {aiBulkFiles.map((fn, idx) => (
+                          <span
+                            key={fn}
+                            style={{ animationDelay: `${idx * 40}ms` }}
+                            className="anim-pop inline-flex h-6 items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-2 font-mono text-[11px] text-foreground"
+                          >
+                            <FileText className="size-3 text-muted-foreground" />
+                            <span>{fn}</span>
+                            <button
+                              type="button"
+                              aria-label={`Remove ${fn}`}
+                              onClick={() => setAiBulkFiles(prev => prev.filter(x => x !== fn))}
+                              className="text-muted-foreground hover:text-foreground cursor-pointer"
+                            >
+                              <X className="size-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}
 
                 {/* CONDITIONAL PANEL 3: When Read / Create Clients is active inside the AI box */}
                 {aiActionMode === 'clients' && (
-                  <div className="anim-fade mt-3 space-y-2.5 rounded-xl border border-border bg-secondary/35 p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
-                        <Building2 className="size-3.5 text-gray-1000" />
-                        <span>Client &amp; role context</span>
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const r = app.roles.find(x => x.id === aiClientTarget) ?? app.roles[0]
-                            setAiPrompt(`Read client ${r.company} (${r.title}): summarize open requirements (${r.mustSkills.join(', ')}) and rank matching candidates in the pool.`)
-                          }}
-                          className="font-mono text-[10.5px] text-foreground underline-offset-2 hover:underline cursor-pointer"
-                        >
-                          Load client summary prompt
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => navigate('/roles/new')}
-                          className="font-mono text-[10.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline cursor-pointer"
-                        >
-                          + Create new client role →
-                        </button>
+                  <div className="anim-slide-up mt-3 rounded-xl border border-border bg-gray-100 p-1">
+                    <div className="space-y-2.5 rounded-lg border border-border bg-card p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
+                          <span className="flex size-5 items-center justify-center rounded-md border border-border bg-secondary">
+                            <Building2 className="size-3 text-gray-1000" />
+                          </span>
+                          <span>Client &amp; role context</span>
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const r = app.roles.find(x => x.id === aiClientTarget) ?? app.roles[0]
+                              setAiPrompt(`Read client ${r.company} (${r.title}): summarize open requirements (${r.mustSkills.join(', ')}) and rank matching candidates in the pool.`)
+                            }}
+                            className="font-mono text-[10.5px] text-foreground underline-offset-2 hover:underline cursor-pointer"
+                          >
+                            Load client summary prompt
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => navigate('/roles/new')}
+                            className="font-mono text-[10.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline cursor-pointer"
+                          >
+                            + Create new client role →
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <div className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border bg-card px-2.5 text-xs">
-                        <Briefcase className="size-3.5 text-muted-foreground" />
-                        <select
-                          aria-label="Select client role"
-                          value={aiClientTarget}
-                          onChange={e => setAiClientTarget(e.target.value)}
-                          className="w-full bg-transparent text-xs text-foreground focus:outline-none cursor-pointer"
-                        >
-                          {app.roles.map(r => (
-                            <option key={r.id} value={r.id} className="bg-[#191919]">
-                              {r.company} ({r.companyType}) · {r.title}
-                            </option>
-                          ))}
-                        </select>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <div className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border bg-background px-2.5 text-xs">
+                          <Briefcase className="size-3.5 text-muted-foreground" />
+                          <select
+                            aria-label="Select client role"
+                            value={aiClientTarget}
+                            onChange={e => setAiClientTarget(e.target.value)}
+                            className="w-full bg-transparent text-xs text-foreground focus:outline-none cursor-pointer"
+                          >
+                            {app.roles.map(r => (
+                              <option key={r.id} value={r.id} className="bg-[#191919]">
+                                {r.company} ({r.companyType}) · {r.title}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <Input
+                          aria-label="Client Fathom call link (optional)"
+                          value={aiFathomUrl}
+                          onChange={e => setAiFathomUrl(e.target.value)}
+                          placeholder="Client Fathom call link (optional)…"
+                          className="h-8 text-xs"
+                        />
                       </div>
-                      <Input
-                        aria-label="Client Fathom call link (optional)"
-                        value={aiFathomUrl}
-                        onChange={e => setAiFathomUrl(e.target.value)}
-                        placeholder="Client Fathom call link (optional)…"
-                        className="h-8 text-xs"
-                      />
                     </div>
                   </div>
                 )}
@@ -2202,117 +2210,97 @@ export function CandidatesList() {
             </div>
           </div>
         ) : aiStage === 'processing' ? (
-          /* -------------------- STAGE 2: N15 ANIMATED AI PROGRESS STEPPER -------------------- */
-          <div className="anim-fade mx-auto flex min-h-[calc(100vh-11.5rem)] w-full max-w-[620px] flex-col justify-center py-8">
-            <section className="rounded-2xl border border-border bg-gray-100 shadow-custom">
-              {/* Bezel Header */}
-              <div className="flex items-center justify-between gap-2 px-4 py-2.5">
-                <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
-                  <Loader2 className="size-3.5 animate-spin text-gray-1000" />
-                  <span>
-                    {aiActionMode === 'create'
-                      ? 'AI · Creating candidate profile'
-                      : aiActionMode === 'bulk'
-                        ? 'AI · Processing bulk candidate upload'
-                        : aiActionMode === 'clients'
-                          ? 'AI · Reading client requirements & matching pool'
-                          : 'AI Scout · Evaluating candidate pool'}
-                  </span>
+          /* -------------------- STAGE 2: N15 ANIMATED AI PROGRESS STEPPER (3.2s – 5.6s RANDOMIZED DEMO) -------------------- */
+          <div className="anim-fade mx-auto flex min-h-[calc(100vh-11.5rem)] w-full max-w-[680px] flex-col items-center justify-center space-y-5 py-8">
+            <div className="flex flex-col items-center space-y-2 text-center">
+              <div className="relative flex size-11 items-center justify-center rounded-2xl border border-border bg-gray-100 p-1 shadow-custom">
+                <div className="flex size-full items-center justify-center rounded-xl border border-border bg-card">
+                  <Sparkles className="size-4 text-foreground" />
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => setAiStage('results')}>
-                  Skip animation →
-                </Button>
+                <span className="anim-glow absolute -top-0.5 -right-0.5 size-2.5 rounded-full border-2 border-background bg-foreground" />
               </div>
-
-              {/* Inner Well (mx-1 mb-1 rounded-xl p-4 space-y-4) */}
-              <div className="mx-1 mb-1 space-y-4 overflow-hidden rounded-xl border border-border bg-card p-4">
-                <div className="rainbow-line -mx-4 -mt-4 h-0.5" />
-
-                {/* Quoted Prompt */}
-                <div className="rounded-lg border border-border bg-background/70 p-3 font-mono text-xs leading-relaxed text-gray-1100">
-                  “{aiPrompt}”
-                </div>
-
-                {/* Progress Bar & Live Counter */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between font-mono text-[11px] text-muted-foreground tnum">
-                    <span>
-                      {aiActionMode === 'create'
-                        ? 'Extracting resume facts & optional Fathom call notes…'
-                        : aiActionMode === 'bulk'
-                          ? 'Parsing resumes & outreach sheet links…'
-                          : aiActionMode === 'clients'
-                            ? 'Reading client context & scoring 412 candidates…'
-                            : 'Scanning 412 resumes & call notes…'}
-                    </span>
-                    <span className="text-foreground">{procPercent}%</span>
-                  </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-                    <div
-                      className="h-full rounded-full bg-foreground transition-all duration-500 ease-out"
-                      style={{ width: `${procPercent}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* N15 3-Step AI Progress Stepper */}
-                <ol className="space-y-2 text-xs">
-                  {(aiActionMode === 'create'
-                    ? [
-                        { icon: <FileText className="size-3.5" />, label: 'Reading candidate resume & experience history' },
-                        { icon: <Video className="size-3.5" />, label: aiFathomUrl.trim() ? 'Syncing Fathom call recording & extracting comp/auth' : 'Checking optional Fathom call link & building ask list' },
-                        { icon: <UserPlus className="size-3.5" />, label: 'Saving structured candidate profile to pool' },
-                      ]
+              <h2 className="title-type text-xl text-foreground">
+                {aiActionMode === 'create'
+                  ? 'Building candidate profile with AI…'
+                  : aiActionMode === 'bulk'
+                    ? `Parsing ${aiBulkFiles.length} bulk candidate resumes…`
                     : aiActionMode === 'clients'
-                      ? [
-                          { icon: <Building2 className="size-3.5" />, label: 'Reading client role context & intake requirements' },
-                          { icon: <Sparkles className="size-3.5" />, label: 'Checking candidate pool + ◇ adjacent skill graph' },
-                          { icon: <ShieldCheck className="size-3.5" />, label: 'Ranking matching candidates for client review' },
-                        ]
-                      : [
-                          { icon: <Filter className="size-3.5" />, label: 'Extracting must-have criteria & role constraints' },
-                          { icon: <Sparkles className="size-3.5" />, label: 'Checking explicit resume skills + ◇ adjacent skill graph' },
-                          { icon: <ShieldCheck className="size-3.5" />, label: 'Preserving uncaptured fields as Assumed & ranking evidence' },
-                        ]
-                  ).map((st, idx) => {
-                    const done = procStep > idx
-                    const active = procStep === idx
-                    return (
-                      <li
-                        key={st.label}
-                        className={cn(
-                          'flex items-center gap-2.5 rounded-lg border px-3 py-2.5 transition-all',
-                          done
-                            ? 'border-border bg-secondary/40 text-foreground'
-                            : active
-                              ? 'border-gray-800 bg-secondary/80 font-medium text-foreground'
-                              : 'border-transparent text-muted-foreground',
-                        )}
-                      >
-                        {done ? (
-                          <CheckCircle2 className="size-4 shrink-0 text-foreground" />
-                        ) : active ? (
-                          <Loader2 className="size-4 shrink-0 animate-spin text-foreground" />
-                        ) : (
-                          <span className="text-muted-foreground">{st.icon}</span>
-                        )}
-                        <span className="flex-1">{st.label}</span>
-                        <span className="font-mono text-[10px] text-muted-foreground">
-                          {done ? 'Done' : active ? 'Running' : 'Queued'}
-                        </span>
-                      </li>
-                    )
-                  })}
-                </ol>
+                      ? 'Reading client context & ranking pool…'
+                      : 'Evaluating 412 candidates in pool…'}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                {aiActionMode === 'create'
+                  ? 'Extracting resume facts, syncing optional Fathom call notes, and checking duplicates.'
+                  : aiActionMode === 'bulk'
+                    ? 'Extracting structured candidate profiles and checking for pool duplicates.'
+                    : aiActionMode === 'clients'
+                      ? 'Parsing client intake requirements and scoring matching candidates.'
+                      : 'Checking must-have criteria, adjacent skill graph, and preserving uncaptured fields as Assumed.'}
+              </p>
+            </div>
 
-                {/* Extracted Filter Pills */}
-                {extractedPreviewLabels.length > 0 && (
-                  <div className="space-y-2 border-t border-border pt-3">
-                    <span className="eyebrow block text-[10px] text-gray-1000">PARSED CONTEXT</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {extractedPreviewLabels.map(lbl => (
+            <div className="w-full space-y-3">
+              <AIStepper
+                title={
+                  aiActionMode === 'create'
+                    ? 'AI · Candidate Profile Builder'
+                    : aiActionMode === 'bulk'
+                      ? `AI · Bulk Resume & Sheet Parser (${aiBulkFiles.length} queued)`
+                      : aiActionMode === 'clients'
+                        ? 'AI · Client Context & Pool Matcher'
+                        : 'AI Scout · Pool Evaluation (412 in pool)'
+                }
+                steps={
+                  aiActionMode === 'create'
+                    ? [
+                        'Reading candidate resume & experience history',
+                        aiFathomUrl.trim()
+                          ? 'Syncing Fathom call recording & extracting comp/work auth'
+                          : 'Checking optional Fathom call link & building ask-on-next-call list',
+                        'Inferring adjacent skills (◇ predicted) & checking pool duplicates',
+                        'Saving structured candidate profile to HeroScouter pool',
+                      ]
+                    : aiActionMode === 'bulk'
+                      ? [
+                          `Reading ${aiBulkFiles.length} uploaded resume files`,
+                          'Extracting work history, tenure, skills, and location',
+                          'Checking for duplicate emails & existing pool profiles',
+                          'Preparing batch review workspace',
+                        ]
+                      : aiActionMode === 'clients'
+                        ? [
+                            'Reading client role context & intake requirements',
+                            'Extracting Stage 1 must-have eliminators & score boosters',
+                            'Checking candidate pool + ◇ adjacent skill graph',
+                            'Ranking matching candidates for client review',
+                          ]
+                        : [
+                            'Extracting must-have criteria & role constraints from prompt',
+                            'Scanning 412 resumes, intake call transcripts & notes',
+                            'Checking explicit skills + ◇ adjacent skill graph',
+                            'Preserving uncaptured fields as Assumed & ranking evidence',
+                          ]
+                }
+                current={demoProgress.step}
+                onSkip={completeAiProcessing}
+              />
+
+              {/* Quoted Prompt & Parsed Context Pills */}
+              <div className="rounded-2xl border border-border bg-gray-100 p-1 shadow-custom">
+                <div className="space-y-2.5 rounded-xl border border-border bg-card p-3.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="eyebrow text-[10px] text-muted-foreground">ACTIVE PROMPT</span>
+                    <span className="font-mono text-[10.5px] text-muted-foreground">Press Skip to jump ahead</span>
+                  </div>
+                  <p className="font-mono text-xs leading-relaxed text-gray-1100">
+                    “{aiPrompt}”
+                  </p>
+                  {extractedPreviewLabels.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 border-t border-border pt-2.5">
+                      {extractedPreviewLabels.map((lbl, idx) => (
                         <span
                           key={lbl}
+                          style={{ animationDelay: `${idx * 60}ms` }}
                           className="anim-pop inline-flex h-6 items-center gap-1 rounded-full border border-border bg-secondary px-2.5 font-mono text-[11px] text-foreground"
                         >
                           <Check className="size-3" />
@@ -2320,10 +2308,10 @@ export function CandidatesList() {
                         </span>
                       ))}
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            </section>
+            </div>
           </div>
         ) : (
           /* -------------------- STAGE 3: 3/4 TABLE & DATA + 1/4 SAAS AI CHATBOT SPLIT SCREEN -------------------- */

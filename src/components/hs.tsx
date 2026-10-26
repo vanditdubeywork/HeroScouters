@@ -1107,22 +1107,49 @@ export function VersionChip({ label, versions, onCompare }: { label: string; ver
 }
 
 /* ---------- N15 · AI progress stepper ---------- */
-export function AIStepper({ steps, current, title }: { steps: string[]; current: number; title?: string }) {
+export function AIStepper({ steps, current, title, onSkip }: { steps: string[]; current: number; title?: string; onSkip?: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-5 px-6 py-16">
-      <div className="h-0.5 w-40 overflow-hidden rounded-full bg-muted"><div className="rainbow-line h-full w-full" /></div>
-      {title && <p className="text-sm font-medium">{title}</p>}
+    <div className="anim-fade flex flex-col items-center justify-center gap-5 px-6 py-16">
+      <div className="h-0.5 w-44 overflow-hidden rounded-full bg-muted"><div className="rainbow-line h-full w-full" /></div>
+      {title && <p className="text-sm font-medium text-foreground">{title}</p>}
       <ol className="space-y-2.5" aria-live="polite">
         {steps.map((s, i) => (
-          <li key={s} className={cn('flex items-center gap-2.5 text-sm', i > current ? 'text-gray-900' : 'text-foreground')}>
-            <span className={cn('flex size-5 items-center justify-center rounded-md border', i < current ? 'border-primary bg-primary text-primary-foreground' : i === current ? 'border-gray-1100' : 'border-border')}>
+          <li
+            key={s}
+            style={{ animationDelay: `${i * 45}ms` }}
+            className={cn(
+              'anim-slide-up flex items-center gap-2.5 text-sm transition-colors duration-200',
+              i > current ? 'text-gray-900' : 'text-foreground',
+            )}
+          >
+            <span
+              className={cn(
+                'flex size-5 items-center justify-center rounded-md border transition-all duration-200',
+                i < current
+                  ? 'anim-pop border-primary bg-primary text-primary-foreground'
+                  : i === current
+                    ? 'border-gray-1100 bg-secondary/60'
+                    : 'border-border',
+              )}
+            >
               {i < current ? <Check className="size-3" strokeWidth={3} /> : i === current ? <Loader2 className="size-3 animate-spin" /> : null}
             </span>
-            {s}
+            <span>{s}</span>
           </li>
         ))}
       </ol>
-      <p className="text-xs text-muted-foreground">You can keep working. We'll let you know when it's ready.</p>
+      <div className="flex flex-col items-center gap-2">
+        <p className="text-xs text-muted-foreground">You can keep working. We'll let you know when it's ready.</p>
+        {onSkip && (
+          <button
+            type="button"
+            onClick={onSkip}
+            className="font-mono text-[11px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline cursor-pointer"
+          >
+            Skip animation →
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -1136,6 +1163,32 @@ export function useStepper(total: number, running: boolean, msPerStep = 900) {
     const t = window.setTimeout(() => setStep(s => s + 1), msPerStep)
     return () => window.clearTimeout(t)
   }, [running, step, total, msPerStep])
+  return { step, done: running && step >= total }
+}
+
+/** Runs a multi-step demo animation with a randomized total duration between 3.2s and 5.8s (3–6s) */
+export function useRandomDemoStepper(total: number, running: boolean, minTotalMs = 3200, maxTotalMs = 5800) {
+  const [step, setStep] = useState(0)
+  const delaysRef = useRef<number[]>([])
+
+  useEffect(() => {
+    if (!running) {
+      setStep(0)
+      delaysRef.current = []
+      return
+    }
+    if (delaysRef.current.length !== total) {
+      const targetTotal = minTotalMs + Math.random() * (maxTotalMs - minTotalMs)
+      const weights = Array.from({ length: total }, () => 0.65 + Math.random() * 0.7)
+      const weightSum = weights.reduce((a, b) => a + b, 0)
+      delaysRef.current = weights.map(w => Math.round((w / weightSum) * targetTotal))
+    }
+    if (step >= total) return
+    const ms = delaysRef.current[step] ?? 1000
+    const t = window.setTimeout(() => setStep(s => s + 1), ms)
+    return () => window.clearTimeout(t)
+  }, [running, step, total, minTotalMs, maxTotalMs])
+
   return { step, done: running && step >= total }
 }
 

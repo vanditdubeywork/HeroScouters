@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { SplitPane, useTopBar } from '../shell/AppShell'
 import { BezelCard, Button, ExampleMark, Field, Input, Segmented, Select, Tag, Textarea, cn } from '../components/ui'
-import { AIStepper, Banner, CompletenessMeter, InfoNote, useStepper } from '../components/hs'
+import { AIStepper, Banner, CompletenessMeter, InfoNote, useRandomDemoStepper } from '../components/hs'
 import { AskCard, ReadOnlyProfile, UpdateOrAnotherResumeDialog, orderedAsk } from './CandidateProfile'
 import { useApp, useWireframeState } from '../store/AppStore'
 import { outreachSheetCandidates } from '../data/mock'
@@ -26,8 +26,27 @@ const WF_STATES = [
   { id: 'duplicate', label: 'Duplicate found' },
   { id: 'failed', label: 'Failed to read' },
 ]
-const STEPS = ['Opening resume & call context', 'Pulling out details', 'Checking for duplicates']
-const BULK_STEPS = ['Reading uploaded resume files in batch', 'Extracting skills, tenure & work authorization', 'Checking pool for duplicates & building profiles']
+
+const SINGLE_STEPS = [
+  'Reading candidate resume & experience history',
+  'Syncing optional Fathom call recording & transcript',
+  'Extracting explicit skills + ◇ adjacent skill graph',
+  'Checking pool for duplicates & building profile',
+]
+
+const BULK_RESUME_STEPS = [
+  'Reading uploaded resume files in batch',
+  'Extracting skills, tenure & work authorization',
+  'Cross-checking 412 pool profiles for duplicates',
+  'Building structured candidate profiles',
+]
+
+const BULK_SHEET_STEPS = [
+  'Connecting to outreach sheet & parsing rows',
+  'Fetching Google Drive, Dropbox & LinkedIn resume links',
+  'Checking pool for existing emails & duplicates',
+  'Creating candidate profiles from sheet',
+]
 
 type Phase = 'idle' | 'extracting' | 'done' | 'failed'
 type PageMode = 'single' | 'bulk'
@@ -236,6 +255,7 @@ export function NewCandidate() {
   // Bulk upload state (Multiple resumes + Sheet)
   const [bulkResumes, setBulkResumes] = useState<BulkResumeItem[]>(SAMPLE_BULK_RESUMES)
   const [bulkPhase, setBulkPhase] = useState<'idle' | 'extracting' | 'done'>('idle')
+  const [sheetPhase, setSheetPhase] = useState<'idle' | 'extracting'>('idle')
   const [sheetUrl, setSheetUrl] = useState('')
   const [sheetFile, setSheetFile] = useState<string | null>(null)
   const [sheetPaste, setSheetPaste] = useState('')
@@ -258,7 +278,7 @@ export function NewCandidate() {
   }
 
   const frozen = wf === 'extracting'
-  const { step, done } = useStepper(STEPS.length, phase === 'extracting', frozen ? 1e9 : 850)
+  const { step, done } = useRandomDemoStepper(SINGLE_STEPS.length, phase === 'extracting' && !frozen, 3200, 5600)
   useEffect(() => {
     if (done) {
       setPhase('done')
@@ -267,7 +287,7 @@ export function NewCandidate() {
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [done])
 
-  const { step: bulkStep, done: bulkDone } = useStepper(BULK_STEPS.length, bulkPhase === 'extracting', 900)
+  const { step: bulkStep, done: bulkDone } = useRandomDemoStepper(BULK_RESUME_STEPS.length, bulkPhase === 'extracting', 3200, 5600)
   useEffect(() => {
     if (bulkDone) {
       setBulkPhase('done')
@@ -275,6 +295,15 @@ export function NewCandidate() {
     }
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [bulkDone])
+
+  const { step: sheetStep, done: sheetDone } = useRandomDemoStepper(BULK_SHEET_STEPS.length, sheetPhase === 'extracting', 3200, 5600)
+  useEffect(() => {
+    if (sheetDone) {
+      setSheetPhase('idle')
+      finalizeSheetImport()
+    }
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [sheetDone])
 
   // Apply wireframe presets when the reviewer picks a state
   useEffect(() => {
@@ -301,7 +330,7 @@ export function NewCandidate() {
     if (wf === 'failed') {
       setPageMode('single'); setSingleMode('upload'); setFile('scan_0412.pdf'); setShowPasteText(false); setPhase('failed'); setDup(false)
     }
-  }, [wf])
+  }, [wf, searchParams])
 
   const hasSingleSource =
     singleMode === 'ai-box'
@@ -321,7 +350,6 @@ export function NewCandidate() {
 
   const createSingle = () => {
     if (!hasSingleSource) {
-      // Load sample candidate details automatically so 1-click demo works smoothly
       setAiSingleText('Rohan D. · Senior Product Manager (7 yrs, Remitly & Avalara) · Seattle, WA · Payments platform, API products, Roadmapping, B2B SaaS')
       setLinkUrl(EXAMPLE_DRIVE_URL)
     }
@@ -462,7 +490,7 @@ export function NewCandidate() {
     navigate('/candidates')
   }
 
-  const importSheetRows = () => {
+  const finalizeSheetImport = () => {
     outreachSheetCandidates.forEach((row, idx) => {
       if (row.status === 'Duplicate in pool') {
         const existing = app.candidate('priya')
@@ -528,19 +556,31 @@ export function NewCandidate() {
     navigate('/candidates')
   }
 
+  const importSheetRows = () => {
+    setSheetPhase('extracting')
+  }
+
   const roleOptions = [{ value: '', label: 'No specific role' }, ...app.roles.filter(r => r.status === 'Open').map(r => ({ value: r.id, label: `${r.title} — ${r.company}` }))]
 
-  /* ---------- Mode switcher bar at the top of Left pane ---------- */
-  const modeHeaderBar = (
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-gray-100 p-1.5">
-      <div role="tablist" aria-label="Candidate intake mode" className="inline-flex items-center gap-1">
+  /* ---------- Top SaaS Mode Bar (matches RoleEditor topModeBar geometry) ---------- */
+  const topModeBar = (
+    <div className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-4 border-b border-border bg-background px-6 py-2.5">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="truncate text-sm font-semibold text-foreground">
+          {pageMode === 'bulk' ? 'Upload candidates in bulk' : 'Add new candidate'}
+        </span>
+        <ExampleMark />
+      </div>
+
+      {/* Centered Double-Bezel Pill Switcher */}
+      <div role="tablist" aria-label="Candidate intake mode" className="inline-flex items-center gap-1 rounded-2xl border border-border bg-gray-100 p-1 shadow-custom">
         <button
           role="tab"
           type="button"
           aria-selected={pageMode === 'single'}
           onClick={() => switchPageMode('single')}
           className={cn(
-            'inline-flex h-8 items-center gap-1.5 rounded-xl px-3 text-xs btn-type transition-all cursor-pointer',
+            'inline-flex h-7 items-center gap-1.5 rounded-xl px-3.5 text-xs btn-type transition-all cursor-pointer',
             pageMode === 'single'
               ? 'border border-border bg-card text-foreground shadow-2xs'
               : 'border border-transparent text-muted-foreground hover:text-foreground',
@@ -555,7 +595,7 @@ export function NewCandidate() {
           aria-selected={pageMode === 'bulk'}
           onClick={() => switchPageMode('bulk')}
           className={cn(
-            'inline-flex h-8 items-center gap-1.5 rounded-xl px-3 text-xs btn-type transition-all cursor-pointer',
+            'inline-flex h-7 items-center gap-1.5 rounded-xl px-3.5 text-xs btn-type transition-all cursor-pointer',
             pageMode === 'bulk'
               ? 'border border-border bg-card text-foreground shadow-2xs'
               : 'border border-transparent text-muted-foreground hover:text-foreground',
@@ -563,19 +603,23 @@ export function NewCandidate() {
         >
           <Layers className="size-3.5" />
           <span>Upload candidates in bulk</span>
-          <span className="rounded-xs bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+          <span className="rounded-xs border border-border bg-secondary px-1.5 py-0.5 font-mono text-[9.5px] text-muted-foreground">
             Sheet / Resumes
           </span>
         </button>
+      </div>
+
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={() => navigate('/candidates')}>
+          Back to pool
+        </Button>
       </div>
     </div>
   )
 
   /* ---------- Left pane ---------- */
   const left = pageMode === 'bulk' ? (
-    <>
-      {modeHeaderBar}
-
+    <div className="anim-fade space-y-6">
       <BezelCard
         icon={bulkMode === 'resumes' ? <FolderUp /> : <Table2 />}
         title={
@@ -598,7 +642,7 @@ export function NewCandidate() {
         }
       >
         {bulkMode === 'resumes' ? (
-          <div className="space-y-4">
+          <div className="anim-fade space-y-4">
             {/* Multi-resume dropzone */}
             <div
               role="button"
@@ -618,12 +662,14 @@ export function NewCandidate() {
                 handleAddBulkFiles(e.dataTransfer.files)
               }}
               className={cn(
-                'flex cursor-pointer flex-col items-center justify-center gap-2.5 rounded-xl border border-dashed px-6 py-7 text-center transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40',
-                dragOver ? 'border-gray-1100 bg-muted' : 'border-gray-700 bg-background hover:bg-muted/50',
+                'group flex cursor-pointer flex-col items-center justify-center gap-2.5 rounded-xl border border-dashed px-6 py-7 text-center transition-all duration-200 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40',
+                dragOver ? 'border-gray-1100 bg-muted scale-[0.995]' : 'border-gray-700 bg-background hover:border-gray-800 hover:bg-muted/40',
               )}
             >
-              <span className="flex size-10 items-center justify-center rounded-xl border border-border bg-muted">
-                <Upload className="size-4 text-foreground" />
+              <span className="flex size-10 items-center justify-center rounded-xl border border-border bg-gray-100 p-1 shadow-custom transition-transform duration-200 group-hover:-translate-y-0.5">
+                <span className="flex size-full items-center justify-center rounded-lg border border-border bg-card">
+                  <Upload className="size-4 text-foreground" />
+                </span>
               </span>
               <div className="space-y-1">
                 <p className="text-sm font-medium text-foreground">Drop multiple resumes here, or click to browse</p>
@@ -672,9 +718,13 @@ export function NewCandidate() {
               </div>
 
               {bulkResumes.length > 0 ? (
-                <ul className="divide-y divide-border rounded-xl border border-border bg-background">
-                  {bulkResumes.map(item => (
-                    <li key={item.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5 text-xs">
+                <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-background">
+                  {bulkResumes.map((item, idx) => (
+                    <li
+                      key={item.id}
+                      style={{ animationDelay: `${idx * 45}ms` }}
+                      className="anim-slide-up flex items-center justify-between gap-3 px-3.5 py-2.5 text-xs transition-colors hover:bg-secondary/30"
+                    >
                       <div className="flex min-w-0 items-center gap-2.5">
                         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted">
                           <FileText className="size-4 text-muted-foreground" />
@@ -731,7 +781,7 @@ export function NewCandidate() {
           </div>
         ) : (
           /* Bulk Mode 2: Add a sheet (Google Sheet link, CSV/XLSX upload, or paste rows) */
-          <div className="space-y-4">
+          <div className="anim-fade space-y-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
               <Field label="Google Sheet URL or upload CSV / XLSX" hint="Connect a live outreach sheet or upload a spreadsheet of candidates.">
                 <Input
@@ -793,14 +843,14 @@ export function NewCandidate() {
                 Load 3 outreach sheet rows
               </Button>
               {sheetLoaded && (
-                <Button variant="chroma" icon={<Sparkles />} onClick={importSheetRows}>
+                <Button variant="chroma" icon={<Sparkles />} disabled={sheetPhase === 'extracting'} onClick={importSheetRows}>
                   Create 3 profiles from sheet
                 </Button>
               )}
             </div>
 
             {sheetLoaded && (
-              <div className="overflow-hidden rounded-xl border border-border bg-background">
+              <div className="anim-slide-up overflow-hidden rounded-xl border border-border bg-background">
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse text-left text-xs">
                     <thead>
@@ -812,11 +862,11 @@ export function NewCandidate() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                      {outreachSheetCandidates.map(r => {
+                      {outreachSheetCandidates.map((r, idx) => {
                         const meta = SHEET_DEFAULTS[r.id]
                         const isDup = r.status === 'Duplicate in pool'
                         return (
-                          <tr key={r.id} className="align-top">
+                          <tr key={r.id} style={{ animationDelay: `${idx * 45}ms` }} className="anim-slide-up align-top">
                             <td className="px-2.5 py-2 font-medium whitespace-nowrap">
                               <div>{r.nameLabel ?? r.name}</div>
                               <Tag tone={isDup ? 'outline' : 'neutral'} className="mt-1">{r.status}</Tag>
@@ -851,12 +901,10 @@ export function NewCandidate() {
           </Field>
         </div>
       </BezelCard>
-    </>
+    </div>
   ) : (
     /* ==================== SINGLE CANDIDATE LEFT PANE ==================== */
-    <>
-      {modeHeaderBar}
-
+    <div className="anim-fade space-y-6">
       <BezelCard
         icon={singleMode === 'ai-box' ? <Sparkles /> : singleMode === 'link' ? <Link2 /> : <FileText />}
         title={<span className="flex items-center gap-2">Single candidate source <span className="eyebrow text-[9px] text-gray-1000">Required</span></span>}
@@ -883,94 +931,104 @@ export function NewCandidate() {
         )}
 
         {singleMode === 'ai-box' && (
-          <div className="space-y-3">
+          <div className="anim-fade space-y-3">
             {/* Double-bezel AI Text Box with right-hand Create candidate action + conditional Optional Fathom Link */}
-            <div className="rounded-xl border border-border bg-background p-3.5 focus-within:border-gray-900">
-              <textarea
-                aria-label="Candidate resume text, LinkedIn, or notes"
-                rows={4}
-                value={aiSingleText}
-                onChange={e => {
-                  setAiSingleText(e.target.value)
-                  if (e.target.value.trim().length > 0) setCreateActionReady(true)
-                }}
-                placeholder="Paste a candidate's resume text, Drive/LinkedIn link, or recruiter notes here…"
-                className="w-full resize-none bg-transparent text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none"
-              />
+            <div className="rounded-2xl border border-border bg-gray-100 p-1 shadow-custom transition-all">
+              <div className="rounded-xl border border-border bg-card p-3.5 transition-colors focus-within:border-gray-900">
+                <textarea
+                  aria-label="Candidate resume text, LinkedIn, or notes"
+                  rows={4}
+                  value={aiSingleText}
+                  onChange={e => {
+                    setAiSingleText(e.target.value)
+                    if (e.target.value.trim().length > 0) setCreateActionReady(true)
+                  }}
+                  placeholder="Paste a candidate's resume text, Drive/LinkedIn link, or recruiter notes here…"
+                  className="w-full resize-none bg-transparent text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none"
+                />
 
-              {/* Once Create candidate is available/active, show the Optional Fathom Call Link right inside the box */}
-              {createActionReady && (
-                <div className="mt-3 rounded-lg border border-border bg-secondary/40 p-2.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <label htmlFor="single-fathom-url" className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
-                      <Video className="size-3.5 text-gray-1000" />
-                      <span>Upload / paste Fathom call link</span>
-                      <span className="rounded-xs border border-border bg-card px-1.5 py-0.5 font-mono text-[9.5px] text-muted-foreground">
-                        Optional
-                      </span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setFathomUrl(EXAMPLE_FATHOM_URL)}
-                      className="font-mono text-[10.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline cursor-pointer"
+                {/* Once Create candidate is available/active, show the Double-Bezel Optional Fathom Call Link right inside the box */}
+                {createActionReady && (
+                  <div className="anim-slide-up mt-3 rounded-xl border border-border bg-gray-100 p-1">
+                    <div className="rounded-lg border border-border bg-card p-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <label htmlFor="single-fathom-url" className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
+                          <Video className="size-3.5 text-gray-1000" />
+                          <span>Upload / paste Fathom call link</span>
+                          <span className="rounded-xs border border-border bg-secondary px-1.5 py-0.5 font-mono text-[9.5px] text-muted-foreground">
+                            Optional
+                          </span>
+                          {fathomUrl.trim() && (
+                            <span className="anim-pop inline-flex items-center gap-1 rounded-xs border border-border bg-secondary px-1.5 py-0.5 font-mono text-[9.5px] text-foreground">
+                              <Check className="size-2.5 text-success" />
+                              <span>Ready to sync</span>
+                            </span>
+                          )}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setFathomUrl(EXAMPLE_FATHOM_URL)}
+                          className="font-mono text-[10.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline cursor-pointer"
+                        >
+                          Use sample Fathom link
+                        </button>
+                      </div>
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <Input
+                          id="single-fathom-url"
+                          aria-label="Fathom call link (optional)"
+                          value={fathomUrl}
+                          onChange={e => setFathomUrl(e.target.value)}
+                          placeholder="https://fathom.video/share/… (syncs call notes, comp & work auth automatically)"
+                          className="h-8 text-xs"
+                        />
+                        {fathomUrl && (
+                          <Button variant="ghost" size="icon-sm" aria-label="Clear Fathom link" icon={<X />} onClick={() => setFathomUrl('')} />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Bottom action bar inside the text box: left attachments, right-hand Create candidate action */}
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      icon={<Upload />}
+                      onClick={() => fileInput.current?.click()}
                     >
-                      Use sample Fathom link
-                    </button>
+                      {file ? file : 'Attach resume PDF'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setAiSingleText('Rohan D. · Senior Product Manager (7 yrs, Remitly & Avalara) · Seattle, WA · Payments platform, API products, Roadmapping, B2B SaaS')
+                        setLinkUrl(EXAMPLE_DRIVE_URL)
+                        setCreateActionReady(true)
+                      }}
+                    >
+                      Load example candidate
+                    </Button>
                   </div>
-                  <div className="mt-1.5 flex items-center gap-2">
-                    <Input
-                      id="single-fathom-url"
-                      aria-label="Fathom call link (optional)"
-                      value={fathomUrl}
-                      onChange={e => setFathomUrl(e.target.value)}
-                      placeholder="https://fathom.video/share/… (syncs call notes, comp & work auth automatically)"
-                      className="h-8 text-xs"
-                    />
-                    {fathomUrl && (
-                      <Button variant="ghost" size="icon-sm" aria-label="Clear Fathom link" icon={<X />} onClick={() => setFathomUrl('')} />
-                    )}
+
+                  {/* Right-hand side inside the text box: Create candidate action */}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      icon={<Sparkles />}
+                      disabled={phase === 'extracting'}
+                      onClick={() => {
+                        setCreateActionReady(true)
+                        createSingle()
+                      }}
+                    >
+                      {phase === 'done' ? 'Re-run Create candidate' : 'Create candidate'}
+                    </Button>
                   </div>
-                </div>
-              )}
-
-              {/* Bottom action bar inside the text box: left attachments, right-hand Create candidate action */}
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2.5">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    icon={<Upload />}
-                    onClick={() => fileInput.current?.click()}
-                  >
-                    {file ? file : 'Attach resume PDF'}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setAiSingleText('Rohan D. · Senior Product Manager (7 yrs, Remitly & Avalara) · Seattle, WA · Payments platform, API products, Roadmapping, B2B SaaS')
-                      setLinkUrl(EXAMPLE_DRIVE_URL)
-                      setCreateActionReady(true)
-                    }}
-                  >
-                    Load example candidate
-                  </Button>
-                </div>
-
-                {/* Right-hand side inside the text box: Create candidate action */}
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    icon={<Sparkles />}
-                    disabled={phase === 'extracting'}
-                    onClick={() => {
-                      setCreateActionReady(true)
-                      createSingle()
-                    }}
-                  >
-                    {phase === 'done' ? 'Re-run Create candidate' : 'Create candidate'}
-                  </Button>
                 </div>
               </div>
             </div>
@@ -978,7 +1036,7 @@ export function NewCandidate() {
         )}
 
         {singleMode === 'link' && (
-          <div className="space-y-4">
+          <div className="anim-fade space-y-4">
             <Field label="Resume link (Google Drive, Dropbox, or LinkedIn PDF)" hint="Most resumes arrive as shared links in outreach replies or sheets.">
               <Input
                 aria-label="Resume link"
@@ -1015,7 +1073,7 @@ export function NewCandidate() {
         )}
 
         {singleMode === 'upload' && (
-          <div className="space-y-3">
+          <div className="anim-fade space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">Upload a local PDF/DOCX or paste raw resume text</span>
               <Button variant="ghost" size="sm" onClick={() => setShowPasteText(v => !v)}>
@@ -1024,7 +1082,7 @@ export function NewCandidate() {
             </div>
             {!showPasteText ? (
               file ? (
-                <div className="flex items-center gap-3 rounded-xl border border-border bg-background px-3 py-2.5">
+                <div className="anim-pop flex items-center gap-3 rounded-xl border border-border bg-background px-3 py-2.5">
                   <span className="flex size-9 items-center justify-center rounded-lg bg-muted"><FileText className="size-4 text-muted-foreground" /></span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium">{file}</div>
@@ -1085,7 +1143,7 @@ export function NewCandidate() {
           </Field>
         </div>
       </BezelCard>
-    </>
+    </div>
   )
 
   /* ---------- Right pane ---------- */
@@ -1103,36 +1161,96 @@ export function NewCandidate() {
       {pageMode === 'bulk' ? (
         bulkMode === 'resumes' ? (
           bulkPhase === 'extracting' ? (
-            <AIStepper steps={BULK_STEPS} current={bulkStep} title={`Extracting ${bulkResumes.length} candidate profiles`} />
+            <AIStepper
+              steps={BULK_RESUME_STEPS}
+              current={bulkStep}
+              title={`Extracting ${bulkResumes.length} candidate profiles with AI`}
+              onSkip={() => {
+                setBulkPhase('done')
+                app.toast(`Extracted ${bulkResumes.length} candidate profiles from resumes`)
+              }}
+            />
           ) : (
-            <BezelCard
-              icon={<FolderUp />}
-              title={`Batch resume preview · ${bulkResumes.length} files`}
-              description="AI extracts structured skills, work history, and flags any existing duplicates in the pool."
-            >
+            <div className="anim-fade">
+              <BezelCard
+                icon={<FolderUp />}
+                title={`Batch resume preview · ${bulkResumes.length} files`}
+                description="AI extracts structured skills, work history, and flags any existing duplicates in the pool."
+              >
+                <div className="space-y-3">
+                  <InfoNote>
+                    {bulkResumes.filter(x => x.status === 'Ready to create').length} new candidate profiles will be created and{' '}
+                    {bulkResumes.filter(x => x.status === 'Duplicate in pool').length} existing profile (Priya S.) will have her new resume version attached.
+                  </InfoNote>
+                  <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-background">
+                    {bulkResumes.map((r, idx) => (
+                      <li
+                        key={r.id}
+                        style={{ animationDelay: `${idx * 55}ms` }}
+                        className="anim-slide-up flex flex-wrap items-center justify-between gap-2 px-3.5 py-3 text-sm transition-colors hover:bg-secondary/25"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 font-medium">
+                            <span>{r.name}</span>
+                            <span className="font-mono text-[11px] text-muted-foreground">({r.fileName})</span>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {r.headline} · {r.years} yrs · {r.metro}
+                          </div>
+                          <div className="flex flex-wrap gap-1 pt-0.5">
+                            {r.skills.map(sk => (
+                              <span key={sk} className="inline-flex h-5 items-center rounded-xs border border-border bg-secondary px-1.5 text-[10px] text-gray-1100">
+                                {sk}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Check className="size-3.5 text-success" />
+                          {r.status}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex justify-end gap-2 pt-1">
+                    {bulkPhase !== 'done' && (
+                      <Button variant="outline" icon={<Sparkles />} onClick={() => setBulkPhase('extracting')}>
+                        Run AI extraction preview
+                      </Button>
+                    )}
+                    <Button variant="chroma" icon={<Sparkles />} disabled={bulkResumes.length === 0} onClick={commitBulkResumes}>
+                      Save {bulkResumes.length} candidates to pool
+                    </Button>
+                  </div>
+                </div>
+              </BezelCard>
+            </div>
+          )
+        ) : sheetPhase === 'extracting' ? (
+          <AIStepper
+            steps={BULK_SHEET_STEPS}
+            current={sheetStep}
+            title="Importing candidates from outreach sheet"
+            onSkip={() => {
+              setSheetPhase('idle')
+              finalizeSheetImport()
+            }}
+          />
+        ) : (
+          <div className="anim-fade">
+            <BezelCard icon={<Table2 />} title="Batch sheet preview · 3 outreach sheet rows" description="Each row’s Drive/Dropbox/LinkedIn link is stored on the candidate’s Sources card.">
               <div className="space-y-3">
-                <InfoNote>
-                  {bulkResumes.filter(x => x.status === 'Ready to create').length} new candidate profiles will be created and{' '}
-                  {bulkResumes.filter(x => x.status === 'Duplicate in pool').length} existing profile (Priya S.) will have her new resume version attached.
-                </InfoNote>
-                <ul className="divide-y divide-border rounded-xl border border-border bg-background">
-                  {bulkResumes.map(r => (
-                    <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-3 text-sm">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 font-medium">
-                          <span>{r.name}</span>
-                          <span className="font-mono text-[11px] text-muted-foreground">({r.fileName})</span>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {r.headline} · {r.years} yrs · {r.metro}
-                        </div>
-                        <div className="flex flex-wrap gap-1 pt-0.5">
-                          {r.skills.map(sk => (
-                            <span key={sk} className="inline-flex h-5 items-center rounded-xs border border-border bg-secondary px-1.5 text-[10px] text-gray-1100">
-                              {sk}
-                            </span>
-                          ))}
-                        </div>
+                <InfoNote>2 new profiles will be created and 1 existing candidate (Priya S.) will have her latest Drive resume link attached.</InfoNote>
+                <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-background">
+                  {outreachSheetCandidates.map((r, idx) => (
+                    <li
+                      key={r.id}
+                      style={{ animationDelay: `${idx * 55}ms` }}
+                      className="anim-slide-up flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 text-sm transition-colors hover:bg-secondary/25"
+                    >
+                      <div>
+                        <div className="font-medium">{r.nameLabel ?? r.name}</div>
+                        <div className="text-xs text-muted-foreground">{r.headline} · {r.years} yrs · {r.metro}</div>
                       </div>
                       <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                         <Check className="size-3.5 text-success" />
@@ -1141,55 +1259,33 @@ export function NewCandidate() {
                     </li>
                   ))}
                 </ul>
-                <div className="flex justify-end gap-2 pt-1">
-                  {bulkPhase !== 'done' && (
-                    <Button variant="outline" icon={<Sparkles />} onClick={() => setBulkPhase('extracting')}>
-                      Run AI extraction preview
-                    </Button>
-                  )}
-                  <Button variant="chroma" icon={<Sparkles />} disabled={bulkResumes.length === 0} onClick={commitBulkResumes}>
-                    Save {bulkResumes.length} candidates to pool
+                <div className="flex justify-end pt-1">
+                  <Button variant="chroma" icon={<Sparkles />} onClick={importSheetRows}>
+                    Create 3 profiles from sheet
                   </Button>
                 </div>
               </div>
             </BezelCard>
-          )
-        ) : (
-          <BezelCard icon={<Table2 />} title="Batch sheet preview · 3 outreach sheet rows" description="Each row’s Drive/Dropbox/LinkedIn link is stored on the candidate’s Sources card.">
-            <div className="space-y-3">
-              <InfoNote>2 new profiles will be created and 1 existing candidate (Priya S.) will have her latest Drive resume link attached.</InfoNote>
-              <ul className="divide-y divide-border rounded-xl border border-border bg-background">
-                {outreachSheetCandidates.map(r => (
-                  <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 text-sm">
-                    <div>
-                      <div className="font-medium">{r.nameLabel ?? r.name}</div>
-                      <div className="text-xs text-muted-foreground">{r.headline} · {r.years} yrs · {r.metro}</div>
-                    </div>
-                    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Check className="size-3.5 text-success" />
-                      {r.status}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <div className="flex justify-end pt-1">
-                <Button variant="chroma" icon={<Sparkles />} onClick={importSheetRows}>
-                  Create 3 profiles from sheet
-                </Button>
-              </div>
-            </div>
-          </BezelCard>
+          </div>
         )
       ) : phase === 'extracting' ? (
-        <AIStepper steps={STEPS} current={frozen ? 1 : step} title="Building the candidate profile" />
+        <AIStepper
+          steps={SINGLE_STEPS}
+          current={frozen ? 1 : step}
+          title="Building the candidate profile with AI"
+          onSkip={() => {
+            setPhase('done')
+            app.toast(fathomUrl.trim() ? 'Profile extracted from resume + Fathom call link' : 'Profile extracted from resume')
+          }}
+        />
       ) : phase === 'done' ? (
-        <>
+        <div className="anim-fade space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
             <div className="flex items-center gap-2 text-sm"><span className="font-medium">Draft profile</span><span className="text-muted-foreground">· {draft.name}</span>{draft.example && <ExampleMark />}</div>
             <CompletenessMeter value={draft.completeness} onClick={() => document.getElementById('draft-ask')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} />
           </div>
           {draft.sourceLinks && draft.sourceLinks.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-secondary/50 px-3.5 py-2 text-xs">
+            <div className="anim-slide-up flex flex-wrap items-center gap-2 rounded-xl border border-border bg-secondary/50 px-3.5 py-2 text-xs">
               <Link2 className="size-3.5 text-muted-foreground" />
               <span className="font-medium">Sources captured:</span>
               {draft.sourceLinks.map(l => (
@@ -1202,13 +1298,16 @@ export function NewCandidate() {
           <AskCard id="draft-ask" questions={askQs} prominent={draft.completeness < 50}
             onCopy={() => { navigator.clipboard?.writeText(askQs.map((q, i) => `${i + 1}. ${q}`).join('\n')).catch(() => {}); app.toast(`Copied ${askQs.length} questions`) }} />
           <ReadOnlyProfile c={draft} />
-        </>
+        </div>
       ) : (
-        <div className="flex min-h-[380px] flex-col items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl border border-border bg-gray-100 p-1">
+        <div className="anim-fade flex min-h-[380px] flex-col items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-gray-100 p-1 shadow-custom">
             <div className="space-y-4 rounded-xl border border-border bg-card p-5 text-center">
-              <div className="mx-auto flex size-10 items-center justify-center rounded-xl border border-border bg-secondary">
-                <UserPlus className="size-4 text-muted-foreground" />
+              <div className="relative mx-auto flex size-11 items-center justify-center rounded-2xl border border-border bg-gray-100 p-1">
+                <div className="flex size-full items-center justify-center rounded-xl border border-border bg-card">
+                  <UserPlus className="size-4 text-foreground" />
+                </div>
+                <span className="anim-glow absolute -top-0.5 -right-0.5 size-2.5 rounded-full border-2 border-background bg-foreground" />
               </div>
               <div className="space-y-1">
                 <h3 className="text-sm font-semibold text-foreground">Extracted profile will appear here</h3>
@@ -1239,46 +1338,49 @@ export function NewCandidate() {
   )
 
   return (
-    <>
-      <SplitPane
-        leftTitle={<span className="flex items-center gap-2">{pageMode === 'bulk' ? 'Bulk upload source' : 'Source'} <ExampleMark /></span>}
-        rightTitle={pageMode === 'bulk' ? 'Batch preview' : 'Profile'}
-        rightActions={phase === 'done' && pageMode === 'single' ? <span className="font-mono text-[10px] text-muted-foreground">Every field shows where it came from</span> : undefined}
-        left={left}
-        right={right}
-        footer={
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs text-muted-foreground">
-              {pageMode === 'bulk'
-                ? bulkMode === 'resumes'
-                  ? `${bulkResumes.length} resume files ready for batch profile creation.`
-                  : 'Sheet rows are matched by email/link to avoid duplicate profiles.'
-                : phase === 'done'
-                  ? 'Missing fields read “Not captured” and go on the ask list.'
-                  : 'Paste candidate details or a resume link; optional Fathom call link enriches comp & work auth.'}
-            </span>
-            <div className="flex gap-2">
-              <Button variant="ghost" onClick={() => navigate('/candidates')}>Cancel</Button>
-              {pageMode === 'bulk' ? (
-                bulkMode === 'resumes' ? (
-                  <Button variant="chroma" icon={<Sparkles />} disabled={bulkResumes.length === 0} onClick={commitBulkResumes}>
-                    Save {bulkResumes.length} candidates to pool
-                  </Button>
+    <div className="flex h-full flex-col overflow-hidden">
+      {topModeBar}
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <SplitPane
+          leftTitle={<span className="flex items-center gap-2">{pageMode === 'bulk' ? 'Bulk upload source' : 'Source'} <ExampleMark /></span>}
+          rightTitle={pageMode === 'bulk' ? 'Batch preview' : 'Profile'}
+          rightActions={phase === 'done' && pageMode === 'single' ? <span className="font-mono text-[10px] text-muted-foreground">Every field shows where it came from</span> : undefined}
+          left={left}
+          right={right}
+          footer={
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground">
+                {pageMode === 'bulk'
+                  ? bulkMode === 'resumes'
+                    ? `${bulkResumes.length} resume files ready for batch profile creation.`
+                    : 'Sheet rows are matched by email/link to avoid duplicate profiles.'
+                  : phase === 'done'
+                    ? 'Missing fields read “Not captured” and go on the ask list.'
+                    : 'Paste candidate details or a resume link; optional Fathom call link enriches comp & work auth.'}
+              </span>
+              <div className="flex gap-2">
+                <Button variant="ghost" onClick={() => navigate('/candidates')}>Cancel</Button>
+                {pageMode === 'bulk' ? (
+                  bulkMode === 'resumes' ? (
+                    <Button variant="chroma" icon={<Sparkles />} disabled={bulkResumes.length === 0 || bulkPhase === 'extracting'} onClick={commitBulkResumes}>
+                      Save {bulkResumes.length} candidates to pool
+                    </Button>
+                  ) : (
+                    <Button variant="chroma" icon={<Sparkles />} disabled={sheetPhase === 'extracting'} onClick={importSheetRows}>
+                      Create 3 profiles from sheet
+                    </Button>
+                  )
                 ) : (
-                  <Button variant="chroma" icon={<Sparkles />} onClick={importSheetRows}>
-                    Create 3 profiles from sheet
-                  </Button>
-                )
-              ) : (
-                <>
-                  <Button variant="outline" disabled={phase !== 'done' || showDup} onClick={() => saveSingle(false)}>Save</Button>
-                  <Button variant="chroma" icon={<Sparkles />} disabled={phase !== 'done' || showDup} onClick={() => saveSingle(true)}>Save and find roles</Button>
-                </>
-              )}
+                  <>
+                    <Button variant="outline" disabled={phase !== 'done' || showDup} onClick={() => saveSingle(false)}>Save</Button>
+                    <Button variant="chroma" icon={<Sparkles />} disabled={phase !== 'done' || showDup} onClick={() => saveSingle(true)}>Save and find roles</Button>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        }
-      />
+          }
+        />
+      </div>
       <UpdateOrAnotherResumeDialog
         open={dlg}
         onClose={() => setDlg(false)}
@@ -1286,6 +1388,6 @@ export function NewCandidate() {
         defaultFileName={file ?? 'Priya_S_resume_2026.pdf'}
         onDone={() => navigate('/candidates/priya?tab=resumes')}
       />
-    </>
+    </div>
   )
 }

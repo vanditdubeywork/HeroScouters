@@ -367,76 +367,6 @@ export function AskFields({ draft, compact }: { draft: ReturnType<typeof useAskD
   )
 }
 
-/** US-42 · Turn a transcript into proposed requirements */
-export function useTranscriptImport(roleId: string) {
-  const app = useApp()
-  const [link, setLink] = useState('')
-  const [read, setRead] = useState(false)
-  const [decisions, setDecisions] = useState<Record<number, 'accept' | 'skip'>>({})
-  const accepted = proposedAsksFromTranscript.filter((_, i) => (decisions[i] ?? 'accept') === 'accept')
-  const apply = () => {
-    accepted.forEach(a => {
-      const col = a.column as RequirementColumn | undefined
-      const canElim = !!col && ELIMINATOR_COLUMNS.includes(col)
-      app.addRequirement(roleId, {
-        text: a.text,
-        source: a.source,
-        saidBy: a.saidBy,
-        when: a.when,
-        effect: a.type === 'must-column' && canElim ? 'eliminates' : 'improves',
-        column: col,
-      })
-    })
-    return accepted.length
-  }
-  return { link, setLink, read, setRead, decisions, setDecisions, accepted, apply, reset: () => { setLink(''); setRead(false); setDecisions({}) } }
-}
-
-export function TranscriptImportFields({ imp }: { imp: ReturnType<typeof useTranscriptImport> }) {
-  const typeLabel = (t: ClientAskType) => CLIENT_ASK_TYPES.find(x => x.value === t)?.label ?? t
-  return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <label className="text-sm font-medium" htmlFor="ask-link">Intake call transcript</label>
-        <div className="flex items-center gap-2">
-          <Input id="ask-link" placeholder="Fathom or Granola link (e.g. fathom.video/share/nw-sean)" value={imp.link} onChange={e => { imp.setLink(e.target.value); imp.setRead(false) }} />
-          <Button variant="outline" icon={<FileAudio />} disabled={!/\w+\.\w+/.test(imp.link)} onClick={() => imp.setRead(true)}>Read</Button>
-          {!imp.link && (
-            <Button variant="ghost" size="sm" onClick={() => { imp.setLink('https://fathom.video/share/northwind-sean-intake'); imp.setRead(true) }}>
-              Use example call
-            </Button>
-          )}
-        </div>
-        {!imp.read && <InfoNote>We propose requirements from the call. Nothing is added until you accept it.</InfoNote>}
-      </div>
-      {imp.read && (
-        <div className="space-y-2">
-          <div className="eyebrow text-[10px] text-gray-1000">{proposedAsksFromTranscript.length} proposed requirements from the call</div>
-          <ul className="divide-y divide-border rounded-xl border border-border">
-            {proposedAsksFromTranscript.map((a, i) => {
-              const d = imp.decisions[i] ?? 'accept'
-              return (
-                <li key={a.text} className={cn('flex items-center gap-3 px-3 py-2.5', d === 'skip' && 'opacity-50')}>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium">{a.text}</div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">{typeLabel(a.type)}{a.column ? ` · Column: ${a.column}` : ' · No column'} · {a.source}{a.saidBy ? ` · ${a.saidBy}` : ''}</div>
-                  </div>
-                  <div className="flex items-center gap-0.5 rounded-lg border border-border p-0.5">
-                    <button type="button" aria-pressed={d === 'accept'} onClick={() => imp.setDecisions(x => ({ ...x, [i]: 'accept' }))}
-                      className={cn('h-6 rounded-md px-2 text-xs font-medium', d === 'accept' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted')}>Accept</button>
-                    <button type="button" aria-pressed={d === 'skip'} onClick={() => imp.setDecisions(x => ({ ...x, [i]: 'skip' }))}
-                      className={cn('h-6 rounded-md px-2 text-xs font-medium', d === 'skip' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted')}>Skip</button>
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      )}
-    </div>
-  )
-}
-
 /** AI-powered quick context parser for adding & removing requirements in one go */
 interface AiProposedAdd {
   id: string
@@ -551,17 +481,14 @@ function parseAiContextForRequirements(
 }
 
 /** D-08 · Update / add requirements with AI (also exported as AddClientAskDialog & AddRequirementDialog). */
-export function AddClientAskDialog({ open, onClose, roleId, initialMode = 'type' }: {
+export function AddClientAskDialog({ open, onClose, roleId }: {
   open: boolean; onClose: () => void; roleId: string; initialMode?: 'type' | 'transcript' | 'ai'
 }) {
   const app = useApp()
   const existingReqs = app.requirementsFor(roleId)
-  const [mode, setMode] = useState<'ai' | 'type'>('ai')
   const [prompt, setPrompt] = useState(AI_REQUIREMENT_PRESETS[0].prompt)
   const [adds, setAdds] = useState<AiProposedAdd[]>([])
   const [removeIds, setRemoveIds] = useState<string[]>([])
-
-  const draft = useAskDraft(roleId)
 
   const runAiParse = (textToParse: string) => {
     const res = parseAiContextForRequirements(textToParse, existingReqs)
@@ -571,13 +498,11 @@ export function AddClientAskDialog({ open, onClose, roleId, initialMode = 'type'
 
   useEffect(() => {
     if (open) {
-      setMode('ai')
       const defaultPrompt = AI_REQUIREMENT_PRESETS[0].prompt
       setPrompt(defaultPrompt)
       const res = parseAiContextForRequirements(defaultPrompt, app.requirementsFor(roleId))
       setAdds(res.adds)
       setRemoveIds(res.removeIds)
-      draft.reset()
     }
   }, [open, roleId]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -618,243 +543,211 @@ export function AddClientAskDialog({ open, onClose, roleId, initialMode = 'type'
       title="Update requirements with AI"
       description="Give AI quick context from a call, Slack, or email — tell it what to add and what to remove, and it updates the role’s requirements for you."
       footer={
-        mode === 'ai' ? (
-          <>
-            <span className="mr-auto font-mono text-[11px] text-muted-foreground tnum">
-              {totalChanges === 0
-                ? 'No changes selected'
-                : `${acceptedAdds.length ? `+${acceptedAdds.length} to add` : ''}${acceptedAdds.length && removeIds.length ? ' · ' : ''}${removeIds.length ? `−${removeIds.length} to remove` : ''}`}
-            </span>
-            <Button variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button
-              variant="chroma"
-              icon={<Sparkles />}
-              disabled={totalChanges === 0}
-              onClick={applyAiChanges}
-            >
-              Apply with AI ({totalChanges})
-            </Button>
-          </>
-        ) : (
-          <>
-            <span className="mr-auto text-[11px] text-muted-foreground">
-              {draft.d.effect === 'eliminates' ? 'Eliminates (hard filter on column)' : 'Improves score (checked by AI)'}
-            </span>
-            <Button variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button variant="primary" disabled={!draft.valid} onClick={() => { if (draft.save()) onClose() }}>Save requirement</Button>
-          </>
-        )
+        <>
+          <span className="mr-auto font-mono text-[11px] text-muted-foreground tnum">
+            {totalChanges === 0
+              ? 'No changes selected'
+              : `${acceptedAdds.length ? `+${acceptedAdds.length} to add` : ''}${acceptedAdds.length && removeIds.length ? ' · ' : ''}${removeIds.length ? `−${removeIds.length} to remove` : ''}`}
+          </span>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button
+            variant="chroma"
+            icon={<Sparkles />}
+            disabled={totalChanges === 0}
+            onClick={applyAiChanges}
+          >
+            Apply with AI ({totalChanges})
+          </Button>
+        </>
       }
     >
       <div className="space-y-4">
-        <div className="flex items-center justify-between gap-2">
-          <Segmented
-            aria-label="How to update requirements"
-            size="sm"
-            value={mode}
-            onChange={setMode}
-            options={[
-              { value: 'ai', label: 'Ask AI (add & remove)' },
-              { value: 'type', label: 'Manual field entry' },
-            ]}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs font-medium text-foreground" htmlFor="ai-req-context">
+              Tell AI what to add or remove (or paste call / Slack notes)
+            </label>
+            <Button
+              variant="chroma"
+              size="sm"
+              icon={<Sparkles />}
+              onClick={() => runAiParse(prompt)}
+            >
+              Draft changes
+            </Button>
+          </div>
+          <Textarea
+            id="ai-req-context"
+            autoFocus
+            data-autofocus
+            placeholder='e.g. "Drop the SQL requirement, and add Shipped high-volume payout APIs + Experience with banking partners"'
+            value={prompt}
+            onChange={e => {
+              setPrompt(e.target.value)
+              runAiParse(e.target.value)
+            }}
+            className="min-h-[68px] text-[13px] leading-relaxed"
           />
-          {mode === 'ai' && (
-            <span className="eyebrow text-[9px] text-violet-400">AI context assistant</span>
-          )}
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            <span className="eyebrow mr-1 text-[9px] text-muted-foreground">Try example:</span>
+            {AI_REQUIREMENT_PRESETS.map(p => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => {
+                  setPrompt(p.prompt)
+                  runAiParse(p.prompt)
+                }}
+                className={cn(
+                  'inline-flex h-6 items-center gap-1 rounded-lg border px-2 text-[11px] transition-colors',
+                  prompt === p.prompt
+                    ? 'border-violet-500/50 bg-violet-500/15 text-foreground'
+                    : 'border-border bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground',
+                )}
+              >
+                <Sparkles className="size-3 text-violet-400" />
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {mode === 'ai' ? (
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <label className="text-xs font-medium text-foreground" htmlFor="ai-req-context">
-                  Tell AI what to add or remove (or paste call / Slack notes)
-                </label>
-                <Button
-                  variant="chroma"
-                  size="sm"
-                  icon={<Sparkles />}
-                  onClick={() => runAiParse(prompt)}
-                >
-                  Draft changes
-                </Button>
-              </div>
-              <Textarea
-                id="ai-req-context"
-                autoFocus
-                data-autofocus
-                placeholder='e.g. "Drop the SQL requirement, and add Shipped high-volume payout APIs + Experience with banking partners"'
-                value={prompt}
-                onChange={e => {
-                  setPrompt(e.target.value)
-                  runAiParse(e.target.value)
-                }}
-                className="min-h-[68px] text-[13px] leading-relaxed"
-              />
-              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                <span className="eyebrow mr-1 text-[9px] text-muted-foreground">Try example:</span>
-                {AI_REQUIREMENT_PRESETS.map(p => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => {
-                      setPrompt(p.prompt)
-                      runAiParse(p.prompt)
-                    }}
+        {/* AI Proposed Additions & Removals */}
+        <div className="space-y-2.5 rounded-xl border border-border bg-secondary/30 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="eyebrow text-[10px] text-gray-1000">
+              AI proposed changes ({totalChanges})
+            </span>
+            <span className="text-[11px] text-muted-foreground">
+              Click any item to toggle or switch Stage 1 / Stage 2
+            </span>
+          </div>
+
+          {adds.length === 0 && removeIds.length === 0 ? (
+            <p className="py-3 text-center text-xs text-muted-foreground">
+              Type what to add or remove above, or click an existing requirement below to remove it.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border rounded-lg border border-border bg-card">
+              {adds.map(item => {
+                const canElim = !!item.column && ELIMINATOR_COLUMNS.includes(item.column)
+                return (
+                  <li
+                    key={item.id}
                     className={cn(
-                      'inline-flex h-6 items-center gap-1 rounded-lg border px-2 text-[11px] transition-colors',
-                      prompt === p.prompt
-                        ? 'border-violet-500/50 bg-violet-500/15 text-foreground'
-                        : 'border-border bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground',
+                      'flex flex-wrap items-center justify-between gap-2 px-3 py-2 transition-opacity',
+                      !item.accepted && 'opacity-45',
                     )}
                   >
-                    <Sparkles className="size-3 text-violet-400" />
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex h-5 items-center rounded border border-emerald-500/30 bg-emerald-500/15 px-1.5 font-mono text-[10px] font-medium text-emerald-400">
+                          + ADD
+                        </span>
+                        <span className="text-sm font-medium text-foreground">{item.text}</span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                        <span>{item.column ? `Column: ${item.column}` : 'Signal (checked by AI)'}</span>
+                        <span>·</span>
+                        <span>{item.source}{item.saidBy ? ` · ${item.saidBy}` : ''}</span>
+                      </div>
+                    </div>
 
-            {/* AI Proposed Additions & Removals */}
-            <div className="space-y-2.5 rounded-xl border border-border bg-secondary/30 p-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="eyebrow text-[10px] text-gray-1000">
-                  AI proposed changes ({totalChanges})
-                </span>
-                <span className="text-[11px] text-muted-foreground">
-                  Click any item to toggle or switch Stage 1 / Stage 2
-                </span>
-              </div>
-
-              {adds.length === 0 && removeIds.length === 0 ? (
-                <p className="py-3 text-center text-xs text-muted-foreground">
-                  Type what to add or remove above, or click an existing requirement below to remove it.
-                </p>
-              ) : (
-                <ul className="divide-y divide-border rounded-lg border border-border bg-card">
-                  {adds.map(item => {
-                    const canElim = !!item.column && ELIMINATOR_COLUMNS.includes(item.column)
-                    return (
-                      <li
-                        key={item.id}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setAdds(prev =>
+                            prev.map(x =>
+                              x.id === item.id
+                                ? { ...x, effect: x.effect === 'eliminates' ? 'improves' : canElim ? 'eliminates' : 'improves' }
+                                : x,
+                            ),
+                          )
+                        }
+                        title={canElim ? 'Click to switch between Stage 1 Eliminates and Stage 2 Improves score' : 'Free-text signals are checked in Stage 2 AI scoring'}
                         className={cn(
-                          'flex flex-wrap items-center justify-between gap-2 px-3 py-2 transition-opacity',
-                          !item.accepted && 'opacity-45',
+                          'inline-flex h-6 items-center rounded-md border px-2 font-mono text-[10px]',
+                          item.effect === 'eliminates'
+                            ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                            : 'border-border bg-secondary text-muted-foreground',
                         )}
                       >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="inline-flex h-5 items-center rounded border border-emerald-500/30 bg-emerald-500/15 px-1.5 font-mono text-[10px] font-medium text-emerald-400">
-                              + ADD
-                            </span>
-                            <span className="text-sm font-medium text-foreground">{item.text}</span>
-                          </div>
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-                            <span>{item.column ? `Column: ${item.column}` : 'Signal (checked by AI)'}</span>
-                            <span>·</span>
-                            <span>{item.source}{item.saidBy ? ` · ${item.saidBy}` : ''}</span>
-                          </div>
-                        </div>
+                        {item.effect === 'eliminates' ? 'Eliminates (Stage 1)' : 'Improves score'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setAdds(prev => prev.map(x => (x.id === item.id ? { ...x, accepted: !x.accepted } : x)))
+                        }
+                        className={cn(
+                          'inline-flex h-6 items-center rounded-md border px-2 text-xs font-medium',
+                          item.accepted
+                            ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                            : 'border-border bg-background text-muted-foreground',
+                        )}
+                      >
+                        {item.accepted ? 'Adding ✓' : 'Skipped'}
+                      </button>
+                    </div>
+                  </li>
+                )
+              })}
 
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setAdds(prev =>
-                                prev.map(x =>
-                                  x.id === item.id
-                                    ? { ...x, effect: x.effect === 'eliminates' ? 'improves' : canElim ? 'eliminates' : 'improves' }
-                                    : x,
-                                ),
-                              )
-                            }
-                            title={canElim ? 'Click to switch between Stage 1 Eliminates and Stage 2 Improves score' : 'Free-text signals are checked in Stage 2 AI scoring'}
-                            className={cn(
-                              'inline-flex h-6 items-center rounded-md border px-2 font-mono text-[10px]',
-                              item.effect === 'eliminates'
-                                ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
-                                : 'border-border bg-secondary text-muted-foreground',
-                            )}
-                          >
-                            {item.effect === 'eliminates' ? 'Eliminates (Stage 1)' : 'Improves score'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setAdds(prev => prev.map(x => (x.id === item.id ? { ...x, accepted: !x.accepted } : x)))
-                            }
-                            className={cn(
-                              'inline-flex h-6 items-center rounded-md border px-2 text-xs font-medium',
-                              item.accepted
-                                ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-                                : 'border-border bg-background text-muted-foreground',
-                            )}
-                          >
-                            {item.accepted ? 'Adding ✓' : 'Skipped'}
-                          </button>
-                        </div>
-                      </li>
-                    )
-                  })}
+              {existingReqs
+                .filter(r => removeIds.includes(r.id))
+                .map(r => (
+                  <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex h-5 items-center rounded border border-rose-500/30 bg-rose-500/15 px-1.5 font-mono text-[10px] font-medium text-rose-400">
+                          − REMOVE
+                        </span>
+                        <span className="text-sm text-muted-foreground line-through">{r.text}</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => toggleRemoveId(r.id)}
+                      className="inline-flex h-6 items-center rounded-md border border-rose-500/40 bg-rose-500/15 px-2 text-xs font-medium text-rose-300 hover:bg-rose-500/25"
+                    >
+                      Removing ✓ (undo)
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          )}
 
-                  {existingReqs
-                    .filter(r => removeIds.includes(r.id))
-                    .map(r => (
-                      <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="inline-flex h-5 items-center rounded border border-rose-500/30 bg-rose-500/15 px-1.5 font-mono text-[10px] font-medium text-rose-400">
-                              − REMOVE
-                            </span>
-                            <span className="text-sm text-muted-foreground line-through">{r.text}</span>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => toggleRemoveId(r.id)}
-                          className="inline-flex h-6 items-center rounded-md border border-rose-500/40 bg-rose-500/15 px-2 text-xs font-medium text-rose-300 hover:bg-rose-500/25"
-                        >
-                          Removing ✓ (undo)
-                        </button>
-                      </li>
-                    ))}
-                </ul>
-              )}
-
-              {/* Quick tap on current role requirements to mark/unmark for removal */}
-              {existingReqs.length > 0 && (
-                <div className="space-y-1.5 border-t border-border pt-2.5">
-                  <div className="eyebrow text-[9px] text-muted-foreground">
-                    Current requirements on this role — click any to mark for removal:
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {existingReqs.map(r => {
-                      const marked = removeIds.includes(r.id)
-                      return (
-                        <button
-                          key={r.id}
-                          type="button"
-                          onClick={() => toggleRemoveId(r.id)}
-                          className={cn(
-                            'inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-left text-[11px] transition-colors',
-                            marked
-                              ? 'border-rose-500/45 bg-rose-500/15 text-rose-300 line-through'
-                              : 'border-border bg-card text-muted-foreground hover:border-gray-600 hover:text-foreground',
-                          )}
-                        >
-                          <span>{r.text}</span>
-                          <span className="font-mono text-[10px] opacity-75">{marked ? '× Remove' : 'Keep'}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
+          {/* Quick tap on current role requirements to mark/unmark for removal */}
+          {existingReqs.length > 0 && (
+            <div className="space-y-1.5 border-t border-border pt-2.5">
+              <div className="eyebrow text-[9px] text-muted-foreground">
+                Current requirements on this role — click any to mark for removal:
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {existingReqs.map(r => {
+                  const marked = removeIds.includes(r.id)
+                  return (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => toggleRemoveId(r.id)}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-left text-[11px] transition-colors',
+                        marked
+                          ? 'border-rose-500/45 bg-rose-500/15 text-rose-300 line-through'
+                          : 'border-border bg-card text-muted-foreground hover:border-gray-600 hover:text-foreground',
+                      )}
+                    >
+                      <span>{r.text}</span>
+                      <span className="font-mono text-[10px] opacity-75">{marked ? '× Remove' : 'Keep'}</span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          </div>
-        ) : (
-          <AskFields draft={draft} />
-        )}
+          )}
+        </div>
       </div>
     </Dialog>
   )

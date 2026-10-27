@@ -140,7 +140,7 @@ function RoleView({ role }: { role: Role }) {
   const [rejectTarget, setRejectTarget] = useState<Match | null>(null)
   const [batchRejectOpen, setBatchRejectOpen] = useState(false)
   const [confirmAssumedOpen, setConfirmAssumedOpen] = useState(false)
-  const [addAskOpen, setAddAskOpen] = useState(false)
+  const [addAskOpen, setAddAskOpen] = useState<null | 'type' | 'ai'>(null)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [includeTarget, setIncludeTarget] = useState<Eliminated | null>(null)
   const [rerunOpen, setRerunOpen] = useState<null | 'normal' | 'force'>(null)
@@ -262,7 +262,7 @@ function RoleView({ role }: { role: Role }) {
     },
     {
       key: 'assumed',
-      label: 'Has assumed must-haves',
+      label: 'Unconfirmed on resume (confirm on call)',
       kind: 'values',
       options: ['Yes', 'No'],
       get: m => {
@@ -298,6 +298,20 @@ function RoleView({ role }: { role: Role }) {
       kind: 'number',
       unit: 'yrs',
       num: m => app.candidate(m.candidateId)?.years ?? null,
+    },
+    {
+      key: 'fixedPay',
+      label: 'Fixed pay ($k)',
+      kind: 'number',
+      unit: 'k',
+      num: m => app.candidate(m.candidateId)?.fixedPayMin ?? null,
+    },
+    {
+      key: 'variablePay',
+      label: 'Variable pay ($k)',
+      kind: 'number',
+      unit: 'k',
+      num: m => app.candidate(m.candidateId)?.variablePay ?? null,
     },
     {
       key: 'location',
@@ -1007,7 +1021,8 @@ function RoleView({ role }: { role: Role }) {
               { label: 'View masked role links', icon: <Eye />, onSelect: () => setTab('masked-links') },
               { label: `Generate masked for ${role.company}…`, icon: <Sparkles />, onSelect: () => setBulkMaskCandIds(shortlisted.map(m => m.candidateId)) },
               { separator: true, label: '' },
-              { label: 'Add / update requirements with AI', icon: <Sparkles />, onSelect: () => setAddAskOpen(true) },
+              { label: 'Add / update requirements with AI', icon: <Sparkles />, onSelect: () => setAddAskOpen('ai') },
+              { label: 'Add requirement / flag manually', icon: <Plus />, onSelect: () => setAddAskOpen('type') },
               { label: 'Mark candidate not interested…', icon: <UserX />, onSelect: () => setNotInterestedCandId(focusedOrSelectedCandidateId) },
               { separator: true, label: '' },
               { label: 'Force rerun', icon: <RefreshCw />, onSelect: () => setRerunOpen('force') },
@@ -1051,7 +1066,7 @@ function RoleView({ role }: { role: Role }) {
           onGoMatches={() => setTab('matches')} />
       )}
       {tab === 'masked-links' && <RoleMaskedLinksSection roleId={id} embedded />}
-      {tab === 'details' && <DetailsTab role={role} versions={versions} onCompare={() => setCompareOpen(true)} onAddAsk={() => setAddAskOpen(true)} />}
+      {tab === 'details' && <DetailsTab role={role} versions={versions} onCompare={() => setCompareOpen(true)} onAddAsk={m => setAddAskOpen(m ?? 'ai')} />}
       {tab === 'history' && <HistoryTab roleId={id} />}
 
       {/* Overlays */}
@@ -1110,7 +1125,7 @@ function RoleView({ role }: { role: Role }) {
         onConfirm={opts => startRun('rerun', opts)}
       />
 
-      <AddRequirementDialog open={addAskOpen} onClose={() => setAddAskOpen(false)} roleId={id} />
+      <AddRequirementDialog open={!!addAskOpen} onClose={() => setAddAskOpen(null)} roleId={id} initialMode={addAskOpen ?? 'ai'} />
 
       <BulkMaskForRoleDialog
         open={bulkMaskCandIds !== null}
@@ -1531,40 +1546,43 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onOpenEmail
 
       {!isClient && <InfoNote>Prospect role: masked resumes are the only output here, so identities never reach a prospect by mistake.</InfoNote>}
 
-      <ol className="overflow-hidden rounded-xl border border-border bg-card" aria-label="Shortlist order">
-        <li className="hidden h-9 items-center gap-4 border-b border-border bg-secondary/70 px-4 sm:flex" aria-hidden>
+      <ol className="rounded-xl border border-border bg-card" aria-label="Shortlist order">
+        <li className="hidden h-9 items-center gap-3 rounded-t-xl border-b border-border bg-secondary/70 px-4 lg:flex" aria-hidden>
           <Checkbox
             aria-label="Select all shortlisted"
             checked={allSelected}
             onChange={v => (v ? sel.selectAll() : sel.clear())}
           />
-          <span className="eyebrow w-12 text-[10px] text-gray-1000">Order</span>
-          <span className="eyebrow flex-1 text-[10px] text-gray-1000">Candidate &amp; alignment</span>
-          <span className="eyebrow w-[240px] text-[10px] text-gray-1000">Outputs</span>
-          <span className="w-[220px]" />
+          <span className="eyebrow w-11 text-[10px] text-gray-1000">Order</span>
+          <span className="eyebrow min-w-0 flex-1 text-[10px] text-gray-1000">Candidate &amp; alignment</span>
+          <span className="eyebrow w-[136px] text-[10px] text-gray-1000">Shortlisted / Updated</span>
+          <span className="eyebrow w-[200px] text-[10px] text-gray-1000">Outputs</span>
+          <span className="eyebrow w-[204px] text-right text-[10px] text-gray-1000">Actions</span>
         </li>
         {items.map((m, i) => {
           const c = app.candidate(m.candidateId)
           if (!c) return null
           const resumes = app.resumesFor(c.id)
           const selectedResumeId = sourceResumeByCandidate[c.id] ?? m.scoredOnResumeId ?? resumes.find(r => r.isPrimary)?.id ?? resumes[0]?.id ?? ''
+          const alignAt = m.alignment?.at ?? 'Today'
+          const alignBy = m.alignment?.updatedBy ?? 'Vandit D.'
           return (
             <li key={m.id} draggable
               onDragStart={e => { setDrag(i); e.dataTransfer.effectAllowed = 'move' }}
               onDragOver={e => { e.preventDefault(); setOver(i) }}
               onDrop={e => { e.preventDefault(); if (drag !== null) move(drag, i); setDrag(null); setOver(null) }}
               onDragEnd={() => { setDrag(null); setOver(null) }}
-              className={cn('flex flex-wrap items-center gap-4 border-b border-border px-4 py-3.5 transition-colors last:border-0',
+              className={cn('flex flex-wrap items-center gap-3 border-b border-border px-4 py-3.5 transition-colors last:rounded-b-xl last:border-0',
                 sel.isSelected(m.id) && 'bg-secondary/60',
                 drag === i && 'opacity-50', over === i && drag !== null && drag !== i && 'bg-muted')}>
               <span onClickCapture={e => { if (e.shiftKey) { e.stopPropagation(); e.preventDefault(); sel.toggle(m.id, true) } }}>
                 <Checkbox aria-label={`Select ${c.name}`} checked={sel.isSelected(m.id)} onChange={() => sel.toggle(m.id, false)} />
               </span>
-              <div className="flex w-12 items-center gap-1.5">
+              <div className="flex w-11 shrink-0 items-center gap-1.5">
                 <GripVertical className="size-4 cursor-grab text-gray-800" aria-hidden />
                 <span className="font-mono text-xs text-gray-1000 tnum">{i + 1}</span>
               </div>
-              <div className="min-w-0 flex-1 space-y-2">
+              <div className="min-w-[220px] flex-1 space-y-2">
                 <div className="flex flex-wrap items-center gap-3">
                   <Avatar initials={c.initials} size={32} />
                   <div className="min-w-0 flex-1">
@@ -1596,7 +1614,11 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onOpenEmail
                   onMarkNotInterested={() => onMarkNotInterested(m.candidateId)}
                 />
               </div>
-              <div className="flex w-[240px] flex-wrap items-center gap-1.5">
+              <div className="w-[136px] shrink-0 space-y-0.5">
+                <div className="font-mono text-xs font-medium whitespace-nowrap text-foreground tnum">{alignAt}</div>
+                <div className="truncate text-[11px] text-muted-foreground">by {alignBy}</div>
+              </div>
+              <div className="flex w-[200px] shrink-0 flex-wrap items-center gap-1.5">
                 {types.map(t => {
                   const o = outFor(c.id, t)
                   const handlePillClick = () => {
@@ -1616,7 +1638,7 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onOpenEmail
                       onClick={handlePillClick}
                       title={o ? `Open ${t.toLowerCase()} resume (${o.template} · ${o.created})` : `Click to generate ${t.toLowerCase()} resume for ${c.name}`}
                       className={cn(
-                        'inline-flex h-6 items-center gap-1 rounded-md border px-2 text-xs transition-colors cursor-pointer',
+                        'inline-flex h-6 items-center gap-1 rounded-md border px-2 text-xs whitespace-nowrap transition-colors cursor-pointer',
                         o?.stale
                           ? 'border-dashed border-warning text-[#b45309] hover:bg-warning/10'
                           : o
@@ -1636,7 +1658,7 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onOpenEmail
                   )
                 })}
               </div>
-              <div className="flex w-[220px] items-center justify-end gap-1">
+              <div className="flex w-[204px] shrink-0 items-center justify-end gap-1">
                 <Button variant="ghost" size="sm" icon={<Wand2 />} onClick={() => navigate('/resumes/masked?candidates=' + m.candidateId + '&role=' + role.id)}>
                   Refine
                 </Button>
@@ -1662,27 +1684,48 @@ function ShortlistTab({ role, items, onReorder, onRemove, onPreview, onOpenEmail
 }
 
 /* ---------- Details tab (§7.1, T7, T9) ---------- */
-function DetailsTab({ role, versions, onCompare, onAddAsk }: { role: Role; versions: { v: string; who: string; when: string }[]; onCompare: () => void; onAddAsk: () => void }) {
+function DetailsTab({ role, versions, onCompare, onAddAsk }: { role: Role; versions: { v: string; who: string; when: string }[]; onCompare: () => void; onAddAsk: (mode?: 'type' | 'ai') => void }) {
   const app = useApp()
   const navigate = useNavigate()
   const [openDiff, setOpenDiff] = useState<Record<string, boolean>>({})
+  const [reqFilter, setReqFilter] = useState<'all' | 'eliminates' | 'improves' | 'red-flag'>('all')
 
   const reqs = app.requirementsFor(role.id)
+  const elimCount = reqs.filter(r => r.effect === 'eliminates').length
+  const greenCount = reqs.filter(r => r.effect === 'improves').length
+  const redCount = reqs.filter(r => r.effect === 'red-flag').length
+  const filteredReqs = reqFilter === 'all' ? reqs : reqs.filter(r => r.effect === reqFilter)
+
   const roleActivity = app.activity.filter(e => e.recordHref === `/roles/${role.id}`)
   const recentEntries = [...roleActivity, ...app.activity.filter(e => e.recordHref !== `/roles/${role.id}`)].slice(0, 5)
 
   const yn = (v: 'Yes' | 'No' | 'Unknown') => (v === 'Unknown' ? <span className="text-muted-foreground">Unknown</span> : v)
   const Text = ({ v }: { v?: string }) => (v ? <p className="text-sm leading-relaxed whitespace-pre-wrap">{v}</p> : <NotCaptured />)
   const initials = (who: string) => who.split(/\s+/).map(s => s[0]).join('').replace(/[^A-Z]/gi, '').slice(0, 2).toUpperCase()
+  const maxYears = role.maxYears ?? role.minYears + 4
+  const flex = role.yearsFlexibility ?? 'Flexible'
 
   return (
     <div className="space-y-6">
       <div className="grid gap-6 xl:grid-cols-2">
         <div className="space-y-6">
-          <BezelCard title="Company">
+          <BezelCard title="Company &amp; Industry">
             <div className="grid grid-cols-2 gap-4">
               <Fact label="Company">{role.company}</Fact>
               <Fact label="Type"><CompanyTypeTag type={role.companyType} /></Fact>
+              <Fact label="Company industry">
+                <span className="inline-flex flex-wrap items-center gap-1.5">
+                  <span>{role.industry ?? 'Payments / Fintech'}</span>
+                  <span className={cn(
+                    'rounded-sm border px-1.5 py-0.5 font-mono text-[9.5px] uppercase',
+                    role.industryRule === 'eliminates'
+                      ? 'border-gray-1100 bg-primary text-primary-foreground'
+                      : 'border-success/40 bg-success/10 text-success',
+                  )}>
+                    {role.industryRule === 'eliminates' ? 'Requirement (rules out)' : 'Green flag (default)'}
+                  </span>
+                </span>
+              </Fact>
               <Fact label="Source">{role.companySource}</Fact>
               <Fact label="Posting">{role.postingUrl ? <a href={role.postingUrl} target="_blank" rel="noreferrer" className="underline-offset-4 hover:underline">{role.postingUrl.replace(/^https?:\/\//, '')}</a> : <span className="text-muted-foreground">—</span>}</Fact>
               <Fact label="Hiring contact">
@@ -1699,71 +1742,131 @@ function DetailsTab({ role, versions, onCompare, onAddAsk }: { role: Role; versi
           </BezelCard>
 
           <BezelCard
-            title={<span className="flex items-center gap-2">Requirements <span className="font-mono text-xs font-normal text-muted-foreground tnum">({reqs.length})</span></span>}
-            action={<Button variant="chroma" size="sm" icon={<Sparkles />} onClick={onAddAsk}>+ Add / update with AI</Button>}
-            description="Unified requirements from the JD, calls, emails, and manual edits. Toggle Eliminator (Stage 1) vs Nice to have (Stage 2)."
+            title={<span className="flex items-center gap-2">Requirements, Green flags &amp; Red flags <span className="font-mono text-xs font-normal text-muted-foreground tnum">({reqs.length})</span></span>}
+            action={
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Button variant="outline" size="sm" icon={<Plus />} onClick={() => onAddAsk('type')}>
+                  Add manually
+                </Button>
+                <Button variant="chroma" size="sm" icon={<Sparkles />} onClick={() => onAddAsk('ai')}>
+                  Update with AI
+                </Button>
+              </div>
+            }
+            description="Requirements rule a candidate out. Green flags raise the score. Red flags lower the score — but never rule a candidate out on their own, because strong requirements and green flags can outweigh a red flag."
           >
-            {reqs.length > 0 ? (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-secondary/35 px-3 py-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {(
+                  [
+                    { id: 'all', label: `All (${reqs.length})` },
+                    { id: 'eliminates', label: `Requirements (${elimCount})` },
+                    { id: 'improves', label: `Green flags (${greenCount})` },
+                    { id: 'red-flag', label: `Red flags (${redCount})` },
+                  ] as const
+                ).map(tab => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setReqFilter(tab.id)}
+                    className={cn(
+                      'inline-flex h-6 items-center rounded-lg border px-2 font-mono text-[10px] font-medium transition-colors cursor-pointer tnum',
+                      reqFilter === tab.id
+                        ? 'border-gray-1100 bg-card text-foreground shadow-2xs'
+                        : 'border-transparent text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              <span className="text-[11px] text-muted-foreground">Click Edit on any row to edit text directly</span>
+            </div>
+
+            {filteredReqs.length > 0 ? (
               <div className="space-y-2">
-                {reqs.map(req => (
+                {filteredReqs.map(req => (
                   <RequirementRow
                     key={req.id}
                     req={req}
                     onToggleEffect={eff => app.toggleRequirementEffect(role.id, req.id, eff)}
+                    onEdit={patch => app.updateRequirement(role.id, req.id, patch)}
                     onRemove={() => app.removeRequirement(role.id, req.id)}
                   />
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No requirements captured yet.</p>
+              <p className="text-sm text-muted-foreground">No items in this category yet.</p>
             )}
 
             <div className="mt-4 grid grid-cols-2 gap-4 rounded-xl border border-border bg-secondary/40 p-3">
-              <Fact label="Minimum years"><span className="flex items-center gap-2"><span className="tnum">{role.minYears}+ yrs</span><SourceBadge kind="JD" /></span></Fact>
-              <Fact label="Location"><span className="flex items-center gap-2">{role.location || <NotCaptured />}<SourceBadge kind="JD" /></span></Fact>
-              <Fact label="Work mode"><span className="flex items-center gap-2">{role.workMode}<SourceBadge kind="JD" /></span></Fact>
-              <Fact label="Relocation accepted">{role.relocationAccepted === null ? <NotCaptured /> : role.relocationAccepted ? 'Yes' : 'No'}</Fact>
-              <Fact label="Sponsorship offered">{yn(role.sponsorship)}</Fact>
-              <Fact label="Visa transfer supported">{yn(role.transfer)}</Fact>
-            </div>
-
-            {(role.mustSkills.length > 0 || role.niceSkills.length > 0) && (
-              <div className="mt-4 grid gap-3 rounded-xl border border-border bg-secondary/40 p-3 sm:grid-cols-2">
-                <Fact label="Must-have skills">
-                  {role.mustSkills.length ? (
+              <Fact label="Years of experience">
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <span className="font-mono tnum">{role.minYears}–{maxYears} yrs</span>
+                  <span className="rounded-sm border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-gray-1100">
+                    {flex === 'Flexible' ? `Flexible (±1 yr → ${Math.max(0, role.minYears - 1)}–${maxYears + 1} yrs)` : 'Rigid (exact)'}
+                  </span>
+                </span>
+              </Fact>
+              <Fact label="Location &amp; work mode">
+                <span className="flex items-center gap-2">
+                  <span>{role.location || <NotCaptured />} · {role.workMode}</span>
+                  <SourceBadge kind="JD" />
+                </span>
+              </Fact>
+              <Fact label="Relocation supported">
+                {yn(role.relocationSupported ?? (role.relocationAccepted === true ? 'Yes' : role.relocationAccepted === false ? 'No' : 'Unknown'))}
+              </Fact>
+              <Fact label="Transfer / sponsorship support">
+                {role.visaSupport ?? (role.sponsorship === 'Yes' ? 'Transfer & sponsorship' : role.transfer === 'Yes' ? 'Transfer only' : 'None')}
+              </Fact>
+              <div className="col-span-2">
+                <Fact label="Visa types accepted">
+                  {role.acceptedVisas && role.acceptedVisas.length > 0 ? (
                     <div className="mt-1 flex flex-wrap gap-1.5">
-                      {role.mustSkills.map(s => (
-                        <span key={s} className="inline-flex h-6 items-center rounded-md border border-border bg-background px-2 text-xs">{s}</span>
+                      {role.acceptedVisas.map(v => (
+                        <span key={v} className="inline-flex h-6 items-center rounded-md border border-border bg-background px-2 font-mono text-xs">{v}</span>
                       ))}
                     </div>
-                  ) : <span className="text-muted-foreground">None</span>}
-                </Fact>
-                <Fact label="Nice-to-have skills">
-                  {role.niceSkills.length ? (
-                    <div className="mt-1 flex flex-wrap gap-1.5">
-                      {role.niceSkills.map(s => (
-                        <span key={s} className="inline-flex h-6 items-center rounded-md border border-border bg-background px-2 text-xs">{s}</span>
-                      ))}
-                    </div>
-                  ) : <span className="text-muted-foreground">None</span>}
+                  ) : (
+                    <span className="text-xs text-muted-foreground">None (US citizen / Green card only)</span>
+                  )}
                 </Fact>
               </div>
-            )}
+            </div>
           </BezelCard>
 
-          <BezelCard title="Pay">
-            <div className="grid grid-cols-2 gap-4">
-              <Fact label="Range">{role.pay && role.pay !== '—' ? <span className="tnum">{role.pay}</span> : <NotCaptured />}</Fact>
+          <BezelCard title="Pay range (Numeric — filterable)">
+            <div className="grid grid-cols-3 gap-4">
+              <Fact label="Fixed (min–max)">
+                {role.fixedPayMin != null && role.fixedPayMax != null ? (
+                  <span className="font-mono font-semibold tnum">${role.fixedPayMin}k–${role.fixedPayMax}k</span>
+                ) : (
+                  <span className="tnum">{role.pay}</span>
+                )}
+              </Fact>
+              <Fact label="Variable (US: OTE)">
+                {role.variablePay != null ? (
+                  <span className="font-mono font-semibold tnum">${role.variablePay}k</span>
+                ) : (
+                  <span className="text-muted-foreground">$0k</span>
+                )}
+              </Fact>
               <Fact label="Seniority">{role.seniority}</Fact>
             </div>
           </BezelCard>
         </div>
 
         <div className="space-y-6">
-          <BezelCard title="Context">
+          <BezelCard title="What good looks like &amp; context">
             <div className="space-y-4">
               <Fact label="What good looks like · past hires"><Text v={role.whatGood} /></Fact>
-              <Fact label="Interview process"><Text v={role.interview} /></Fact>
+              <Fact label="Interview process · Context only">
+                <div className="space-y-1">
+                  <span className="eyebrow inline-block rounded border border-border bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">Context only · not used in scoring</span>
+                  <div><Text v={role.interview} /></div>
+                </div>
+              </Fact>
             </div>
           </BezelCard>
 

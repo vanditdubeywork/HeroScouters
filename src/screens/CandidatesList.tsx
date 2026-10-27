@@ -83,6 +83,7 @@ const COLUMN_OPTIONS: ColumnOption[] = [
   { key: 'cat', label: 'Function & Seniority' },
   { key: 'loc', label: 'Location & Work Auth' },
   { key: 'skills', label: 'Skills & ◇ AI Graph' },
+  { key: 'lastRun', label: 'Last run' },
   { key: 'comp', label: 'Profile & Take' },
   { key: 'years', label: 'Exp · Pay (separate)' },
   { key: 'auth', label: 'Work Auth (separate)' },
@@ -92,7 +93,7 @@ const COLUMN_OPTIONS: ColumnOption[] = [
   { key: 'availability', label: 'Availability' },
   { key: 'source', label: 'Source' },
 ]
-const DEFAULT_COLUMNS = ['name', 'cat', 'loc', 'skills']
+const DEFAULT_COLUMNS = ['name', 'cat', 'loc', 'lastRun', 'skills']
 
 const COLUMN_FILTER: Record<string, string | undefined> = {
   cat: 'category',
@@ -100,6 +101,7 @@ const COLUMN_FILTER: Record<string, string | undefined> = {
   loc: 'metro',
   auth: 'auth',
   skills: 'skills',
+  lastRun: 'lastRun',
   comp: 'completeness',
   domain: 'domain',
   resumes: 'resumeLabel',
@@ -146,6 +148,27 @@ function parsePayFloorK(pay: string | null): number | null {
   if (!pay) return null
   const m = pay.match(/\$?(\d+(?:\.\d+)?)\s*k/i)
   return m ? Number(m[1]) : null
+}
+
+function lastRunBucket(c: Candidate): string {
+  const s = (c.lastRun ?? c.updated ?? 'Today').toLowerCase()
+  if (s.includes('today') || s.includes('just now') || s.includes('min') || /\dh\b/.test(s) || s.includes('hour')) return 'Today'
+  if (s.includes('yesterday') || s.includes('1 day')) return 'Yesterday'
+  if (s.includes('2 day') || s.includes('3 day') || s.includes('4 day') || s.includes('5 day') || s.includes('6 day') || s.includes('week')) return 'This week'
+  return 'Older'
+}
+
+function lastRunMinutes(s: string): number {
+  const t = s.toLowerCase()
+  if (t.includes('just now')) return 0
+  const n = parseInt(t, 10) || 1
+  if (t.includes('m ago') || t.includes('min')) return n
+  if (t.includes('h ago') || t.includes('hour')) return n * 60
+  if (t.includes('today')) return 90
+  if (t.includes('yesterday')) return 1440
+  if (t.includes('day')) return n * 1440
+  if (t.includes('week')) return n * 10080
+  return 999999
 }
 
 function authValue(c: Candidate): string | null {
@@ -520,12 +543,13 @@ export function CandidatesList() {
   const [sheetsFilters, setSheetsFilters] = useState<FilterState>({})
   const [colFilter, setColFilter] = useState<string | null>(null)
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null)
-  const { visible, setVisible, reset } = useColumnPrefs('candidates-v4-saas-4col', DEFAULT_COLUMNS)
+  const { visible, setVisible, reset } = useColumnPrefs('candidates-v6-lastrun', DEFAULT_COLUMNS)
   const barRef = useRef<HTMLDivElement>(null)
 
   /* ---------- V03/V04 Sheets Filter Fields (§7.3, C8: repeated column = OR) ---------- */
   const fields = useMemo<FilterField<Candidate>[]>(() => [
     { key: 'category', label: 'Category', kind: 'values', pinned: true, options: CATEGORIES, get: c => c.category },
+    { key: 'lastRun', label: 'Last run', kind: 'values', pinned: true, options: ['Today', 'Yesterday', 'This week', 'Older'], get: lastRunBucket },
     { key: 'subcategory', label: 'Sub-category', kind: 'values', get: c => c.subcategory },
     { key: 'domain', label: 'Domain', kind: 'multi', options: app.domains, get: c => c.domains },
     { key: 'years', label: 'Experience', kind: 'number', unit: 'yrs', num: c => c.years },
@@ -535,7 +559,9 @@ export function CandidatesList() {
     { key: 'auth', label: 'Visa', kind: 'values', options: ['US citizen', 'Green card', 'H-1B', 'OPT', 'STEM OPT', 'Other'], get: authValue },
     { key: 'sponsorship', label: 'Needs sponsorship', kind: 'values', options: ['Yes', 'No'], get: c => yesNo(c, 'needsSponsorship') },
     { key: 'transfer', label: 'Needs transfer', kind: 'values', options: ['Yes', 'No'], get: c => yesNo(c, 'needsTransfer') },
-    { key: 'pay', label: 'Pay expectation', kind: 'number', unit: '$k', num: c => parsePayFloorK(c.pay) },
+    { key: 'fixedPay', label: 'Fixed pay ($k)', kind: 'number', unit: '$k', num: c => c.fixedPayMin ?? parsePayFloorK(c.pay) },
+    { key: 'variablePay', label: 'Variable pay ($k)', kind: 'number', unit: '$k', num: c => c.variablePay ?? null },
+    { key: 'pay', label: 'Pay expectation', kind: 'number', unit: '$k', num: c => c.fixedPayMin ?? parsePayFloorK(c.pay) },
     { key: 'availability', label: 'Availability', kind: 'values', get: c => c.availability },
     { key: 'search', label: 'Search status', kind: 'values', options: ['Active', 'Passive'], get: c => c.searchStatus },
     { key: 'skills', label: 'Skills', kind: 'multi', get: c => more.includePredicted ? [...c.skills, ...c.predicted.map(p => p.name)] : c.skills },
@@ -971,6 +997,7 @@ export function CandidatesList() {
     skills: c => c.skills.length,
     comp: c => c.completeness,
     domain: c => c.domains?.join(', ') ?? '~',
+    lastRun: c => lastRunMinutes(c.lastRun ?? c.updated ?? 'Today'),
     resumes: c => app.resumesFor(c.id).length,
     take: c => app.takeFor(c.id)?.status ?? '~',
     availability: c => c.availability ?? '~',
@@ -1110,7 +1137,7 @@ export function CandidatesList() {
                   </button>
                 )}
               </div>
-              <div className="max-w-[190px] truncate text-[11px] text-muted-foreground">
+              <div className="max-w-[148px] truncate text-[11px] text-muted-foreground">
                 {c.companies[0] ? `${c.companies[0].title} · ${c.companies[0].name}` : c.headline}
               </div>
             </div>
@@ -1184,13 +1211,13 @@ export function CandidatesList() {
       },
     },
     skills: {
-      key: 'skills', header: 'Skills & ◇ AI Graph',
+      key: 'skills', header: 'Skills & ◇ AI',
       render: c => (
-        <div className="flex max-w-[175px] flex-wrap items-center gap-1">
-          {c.skills.slice(0, 2).map(sk => (
+        <div className="flex max-w-[135px] flex-wrap items-center gap-1">
+          {c.skills.slice(0, 1).map(sk => (
             <span
               key={sk}
-              className="inline-flex h-5 items-center rounded-xs border border-border bg-secondary px-1.5 text-[10.5px] text-gray-1100 whitespace-nowrap"
+              className="inline-flex h-5 max-w-[78px] items-center truncate rounded-xs border border-border bg-secondary px-1.5 text-[10.5px] text-gray-1100 whitespace-nowrap"
             >
               {sk}
             </span>
@@ -1199,14 +1226,33 @@ export function CandidatesList() {
             <span
               key={p.name}
               title={`Predicted skill: ${p.basis}`}
-              className="inline-flex h-5 items-center gap-0.5 rounded-xs border border-dashed border-border bg-secondary/50 px-1.5 text-[10.5px] text-gray-1000 whitespace-nowrap"
+              className="inline-flex h-5 max-w-[78px] items-center gap-0.5 truncate rounded-xs border border-dashed border-border bg-secondary/50 px-1.5 text-[10.5px] text-gray-1000 whitespace-nowrap"
             >
               <span>◇</span>
-              <span>{p.name}</span>
+              <span className="truncate">{p.name}</span>
             </span>
           ))}
         </div>
       ),
+    },
+    lastRun: {
+      key: 'lastRun',
+      header: 'Last run',
+      sortable: true,
+      sortValue: sortValues.lastRun,
+      render: c => {
+        const label = c.lastRun ?? `Updated ${c.updated}`
+        const bucket = lastRunBucket(c)
+        return (
+          <div className="flex flex-col gap-0.5 whitespace-nowrap">
+            <span className="inline-flex items-center gap-1 font-mono text-[11px] text-foreground tnum">
+              <Clock className="size-3 text-muted-foreground" />
+              <span>{label}</span>
+            </span>
+            <span className="font-mono text-[10px] text-muted-foreground">{bucket}</span>
+          </div>
+        )
+      },
     },
     comp: {
       key: 'comp', header: 'Profile & Take', sortable: true, sortValue: c => c.completeness,
@@ -1355,6 +1401,16 @@ export function CandidatesList() {
             </span>
           ))}
         </div>
+      ),
+    },
+    {
+      ...allColumnsMap.lastRun,
+      header: 'Last run',
+      render: c => (
+        <span className="inline-flex items-center gap-1 font-mono text-[10.5px] text-muted-foreground whitespace-nowrap tnum">
+          <Clock className="size-2.5 text-muted-foreground" />
+          <span>{c.lastRun ?? c.updated}</span>
+        </span>
       ),
     },
   ]
@@ -2240,19 +2296,6 @@ export function CandidatesList() {
 
                   {/* Right Action Slot: Pushed to the right (ml-auto justify-end) */}
                   <div className="ml-auto flex shrink-0 items-center justify-end gap-2">
-                    {aiActionMode !== 'create' && (
-                      <Button
-                        variant="outline"
-                        icon={<UserPlus />}
-                        onClick={() => {
-                          setAiActionMode('create')
-                          setTimeout(() => document.getElementById('ai-fathom-link-input')?.focus(), 40)
-                        }}
-                      >
-                        Create candidate
-                      </Button>
-                    )}
-
                     <Button
                       variant="chroma"
                       icon={<Sparkles />}

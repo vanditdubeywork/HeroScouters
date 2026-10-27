@@ -162,9 +162,10 @@ interface AppApi extends AppState {
   setDomains: (d: string[]) => void
 
   /* ---------- v0.4 ---------- */
-  /** §7.1 Unified role requirements */
+  /** §7.1 Unified role requirements (Requirements, Green flags & Red flags) */
   requirementsFor: (roleId: string) => RoleRequirement[]
   addRequirement: (roleId: string, req: Omit<RoleRequirement, 'id' | 'roleId' | 'addedBy'>) => void
+  updateRequirement: (roleId: string, reqId: string, patch: Partial<RoleRequirement>) => void
   toggleRequirementEffect: (roleId: string, reqId: string, effect: RequirementEffect) => void
   removeRequirement: (roleId: string, reqId: string) => void
   setAutoSuggestCount: (n: number) => void
@@ -509,7 +510,8 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       addClientAsk: a => {
         const r = role(a.roleId)
         const affects = a.type !== 'context'
-        const reqEffect: RequirementEffect = a.type === 'must-column' ? 'eliminates' : 'improves'
+        const reqEffect: RequirementEffect = a.type === 'must-column' ? 'eliminates' : a.type === 'red-flag' ? 'red-flag' : 'improves'
+        const effectLabel = reqEffect === 'eliminates' ? 'Requirement' : reqEffect === 'red-flag' ? 'Red flag' : 'Green flag'
         const newReq: RoleRequirement = {
           id: `req-${idSeq++}`,
           roleId: a.roleId,
@@ -527,12 +529,12 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
           roles: s.roles.map(x => x.id === a.roleId ? {
             ...x,
             requirements: [...(x.requirements ?? []), newReq],
-            ...(affects && x.scoredCount > 0 ? { matchStatus: 'out-of-date' as const, outOfDateReason: `Requirement added: “${a.text}”.` } : {}),
-            latestUpdate: { text: `Requirement added: ${a.text}`, who: currentUser.displayName.split(' ')[0], when: 'Just now' },
+            ...(affects && x.scoredCount > 0 ? { matchStatus: 'out-of-date' as const, outOfDateReason: `${effectLabel} added: “${a.text}”.` } : {}),
+            latestUpdate: { text: `${effectLabel} added: ${a.text}`, who: currentUser.displayName.split(' ')[0], when: 'Just now' },
           } : x),
         }))
-        log({ what: `Added requirement · ${a.text}${a.saidBy ? ` (${a.source} · ${a.saidBy})` : ''}`, record: `${r?.title} — ${r?.company}`, recordHref: `/roles/${a.roleId}`, kind: 'Roles' })
-        toast(affects && (r?.scoredCount ?? 0) > 0 ? 'Requirement added · scores flagged out of date' : 'Requirement added')
+        log({ what: `Added ${effectLabel.toLowerCase()} · ${a.text}${a.saidBy ? ` (${a.source} · ${a.saidBy})` : ''}`, record: `${r?.title} — ${r?.company}`, recordHref: `/roles/${a.roleId}`, kind: 'Roles' })
+        toast(affects && (r?.scoredCount ?? 0) > 0 ? `${effectLabel} added · scores flagged out of date` : `${effectLabel} added`)
       },
       removeClientAsk: id => setState(s => ({ ...s, clientAsks: s.clientAsks.filter(a => a.id !== id) })),
 
@@ -598,6 +600,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       requirementsFor,
       addRequirement: (roleId, req) => {
         const r = role(roleId)
+        const effectLabel = req.effect === 'eliminates' ? 'Requirement' : req.effect === 'red-flag' ? 'Red flag' : 'Green flag'
         const newReq: RoleRequirement = { ...req, id: `req-${idSeq++}`, roleId, addedBy: currentUser.displayName, when: req.when ?? 'Just now' }
         setState(s => ({
           ...s,
@@ -605,27 +608,50 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
             ...x,
             requirements: [...(x.requirements ?? []), newReq],
             ...(req.effect === 'eliminates' ? { passCount: Math.max(8, x.passCount - 4) } : {}),
-            ...(x.scoredCount > 0 ? { matchStatus: 'out-of-date' as const, outOfDateReason: `Requirement added (${req.effect === 'eliminates' ? 'Eliminates' : 'Improves score'}): “${req.text}”.` } : {}),
-            latestUpdate: { text: `Requirement added: ${req.text}`, who: currentUser.displayName.split(' ')[0], when: 'Just now' },
+            ...(x.scoredCount > 0 ? { matchStatus: 'out-of-date' as const, outOfDateReason: `${effectLabel} added: “${req.text}”.` } : {}),
+            latestUpdate: { text: `${effectLabel} added: ${req.text}`, who: currentUser.displayName.split(' ')[0], when: 'Just now' },
           } : x),
         }))
-        log({ what: `Added requirement (${req.effect === 'eliminates' ? 'Eliminates' : 'Improves score'}) · ${req.text}`, record: `${r?.title} — ${r?.company}`, recordHref: `/roles/${roleId}`, kind: 'Roles' })
-        toast(req.effect === 'eliminates' ? 'Requirement added · Stage 1 re-ran for free' : 'Requirement added · checked during scoring')
+        log({ what: `Added ${effectLabel.toLowerCase()} · ${req.text}`, record: `${r?.title} — ${r?.company}`, recordHref: `/roles/${roleId}`, kind: 'Roles' })
+        toast(req.effect === 'eliminates' ? 'Requirement added · Stage 1 re-ran for free' : `${effectLabel} added · checked during scoring`)
       },
-      toggleRequirementEffect: (roleId, reqId, effect) => {
+      updateRequirement: (roleId, reqId, patch) => {
         const r = role(roleId)
         const target = r?.requirements?.find(q => q.id === reqId)
         setState(s => ({
           ...s,
           roles: s.roles.map(x => x.id === roleId ? {
             ...x,
-            requirements: (x.requirements ?? []).map(q => q.id === reqId ? { ...q, effect } : q),
-            passCount: effect === 'eliminates' ? Math.max(8, x.passCount - 5) : x.passCount + 5,
-            ...(x.scoredCount > 0 ? { matchStatus: 'out-of-date' as const, outOfDateReason: `Changed “${target?.text ?? 'requirement'}” to ${effect === 'eliminates' ? 'Eliminates' : 'Improves score'}.` } : {}),
-            latestUpdate: { text: `${target?.text ?? 'Requirement'} → ${effect === 'eliminates' ? 'Eliminates' : 'Improves score'}`, who: currentUser.displayName.split(' ')[0], when: 'Just now' },
+            requirements: (x.requirements ?? []).map(q => q.id === reqId ? { ...q, ...patch, when: 'Edited just now' } : q),
+            ...(x.scoredCount > 0 ? { matchStatus: 'out-of-date' as const, outOfDateReason: `Edited criteria: “${patch.text ?? target?.text ?? ''}”.` } : {}),
+            latestUpdate: { text: `Edited criteria: ${patch.text ?? target?.text ?? ''}`, who: currentUser.displayName.split(' ')[0], when: 'Just now' },
           } : x),
         }))
-        toast(`Set to ${effect === 'eliminates' ? 'Eliminates (stage 1 re-ran)' : 'Improves score'}`)
+        log({
+          what: `Edited criteria · ${patch.text ?? target?.text ?? ''}`,
+          record: `${r?.title} — ${r?.company}`,
+          recordHref: `/roles/${roleId}`,
+          kind: 'Roles',
+          before: target?.text,
+          after: patch.text ?? target?.text,
+        })
+        toast('Updated criteria')
+      },
+      toggleRequirementEffect: (roleId, reqId, effect) => {
+        const r = role(roleId)
+        const target = r?.requirements?.find(q => q.id === reqId)
+        const effectLabel = effect === 'eliminates' ? 'Requirement (rules out)' : effect === 'red-flag' ? 'Red flag (lowers score)' : 'Green flag (raises score)'
+        setState(s => ({
+          ...s,
+          roles: s.roles.map(x => x.id === roleId ? {
+            ...x,
+            requirements: (x.requirements ?? []).map(q => q.id === reqId ? { ...q, effect } : q),
+            passCount: effect === 'eliminates' ? Math.max(8, x.passCount - 5) : target?.effect === 'eliminates' ? x.passCount + 5 : x.passCount,
+            ...(x.scoredCount > 0 ? { matchStatus: 'out-of-date' as const, outOfDateReason: `Changed “${target?.text ?? 'item'}” to ${effectLabel}.` } : {}),
+            latestUpdate: { text: `${target?.text ?? 'Item'} → ${effectLabel}`, who: currentUser.displayName.split(' ')[0], when: 'Just now' },
+          } : x),
+        }))
+        toast(`Set to ${effectLabel}`)
       },
       removeRequirement: (roleId, reqId) => {
         setState(s => ({
@@ -635,7 +661,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
             requirements: (x.requirements ?? []).filter(q => q.id !== reqId),
           } : x),
         }))
-        toast('Requirement removed')
+        toast('Removed from role criteria')
       },
       setAutoSuggestCount: n => setState(s => ({ ...s, autoSuggestCount: n })),
 

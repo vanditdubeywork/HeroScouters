@@ -5,14 +5,17 @@ import {
 } from 'lucide-react'
 import { SplitPane, useTopBar } from '../shell/AppShell'
 import {
-  BezelCard, Button, EmptyState, ExampleMark, Field, Input, Kbd, Segmented, Select, Switch, Textarea, cn,
+  BezelCard, Button, Checkbox, EmptyState, ExampleMark, Field, Input, Kbd, Segmented, Select, Textarea, cn,
 } from '../components/ui'
 import { AIStepper, Banner, InfoNote, NotCaptured, SourceBadge, useStepper } from '../components/hs'
 import { RequirementRow } from '../components/v3'
 import { AddRequirementDialog, LeaveDialog, ProposedChangesDialog } from './Dialogs'
 import { useApp, useWireframeState } from '../store/AppStore'
 import { POOL_SIZE, jdChangesNorthwind, roles as mockRoles } from '../data/mock'
-import { CATEGORIES, SUBCATEGORIES, type Category, type ProposedChange, type Role, type SourceKind, type WorkMode } from '../data/types'
+import {
+  CATEGORIES, SUBCATEGORIES, ROLE_VISA_TYPES, COMPANY_INDUSTRIES,
+  type Category, type ProposedChange, type Role, type SourceKind, type WorkMode, type VisaSupportPolicy,
+} from '../data/types'
 
 /* ==========================================================================
    S-03 · New / edit role (split pane)
@@ -26,18 +29,28 @@ type Phase = 'empty' | 'extracting' | 'extracted'
 interface SkillTag { name: string; must: boolean }
 interface Draft {
   title: string
+  industry: string
+  industryRule: 'improves' | 'eliminates'
   category: Category | ''
   subcategory: string
   seniority: string
   categoryConfirmed: boolean
   minYears: number | null
+  maxYears: number | null
+  yearsFlexibility: 'Flexible' | 'Rigid'
   location: string
   workMode: WorkMode | ''
   relocation: boolean | null
+  relocationSupported: YesNo
   sponsorship: YesNo
   transfer: YesNo
+  acceptedVisas: string[]
+  visaSupport: VisaSupportPolicy
   skills: SkillTag[]
   pay: string
+  fixedPayMin: number | null
+  fixedPayMax: number | null
+  variablePay: number | null
   whatGood: string
   research: string
   interview: string
@@ -125,12 +138,17 @@ function extractDraft(src: SourceState): { draft: Draft; sources: Sources } {
   if (src.tab === 'url' && !src.jdText) {
     return {
       draft: {
-        title: 'Full-stack Engineer', category: 'Engineering', subcategory: 'Full-stack', seniority: 'Mid–Senior', categoryConfirmed: false,
-        minYears: 4, location: 'Remote (US)', workMode: 'Remote', relocation: null, sponsorship: 'Yes', transfer: 'Unknown',
+        title: 'Full-stack Engineer', industry: 'AI / ML', industryRule: 'improves',
+        category: 'Engineering', subcategory: 'Full-stack', seniority: 'Mid–Senior', categoryConfirmed: false,
+        minYears: 4, maxYears: 8, yearsFlexibility: 'Flexible',
+        location: 'Remote (US)', workMode: 'Remote', relocation: null, relocationSupported: 'Unknown',
+        sponsorship: 'Yes', transfer: 'Unknown',
+        acceptedVisas: ['H-1B', 'STEM OPT', 'F-1 / OPT', 'TN', 'O-1'], visaSupport: 'Transfer & sponsorship',
         skills: [{ name: 'React', must: true }, { name: 'Node.js', must: true }, { name: 'TypeScript', must: false }, { name: 'PostgreSQL', must: false }],
-        pay: '$150k–$180k', whatGood: '', research: src.research, interview: '',
+        pay: '$150k–$180k', fixedPayMin: 150, fixedPayMax: 180, variablePay: 15,
+        whatGood: '', research: src.research, interview: '',
       },
-      sources: { title: 'JD', category: 'JD', subcategory: 'JD', seniority: 'JD', minYears: 'JD', location: 'JD', workMode: 'JD', sponsorship: 'JD', skills: 'JD', pay: 'JD', research: src.research ? 'RESEARCH' : undefined },
+      sources: { title: 'JD', industry: 'JD', category: 'JD', subcategory: 'JD', seniority: 'JD', minYears: 'JD', maxYears: 'JD', location: 'JD', workMode: 'JD', sponsorship: 'JD', skills: 'JD', pay: 'JD', research: src.research ? 'RESEARCH' : undefined },
     }
   }
   const text = src.tab === 'none' ? `${src.noJdTitle}\n${src.noJdLines}` : src.jdText
@@ -146,16 +164,40 @@ function extractDraft(src: SourceState): { draft: Draft; sources: Sources } {
   sources.seniority = 'JD'
   const yrs = text.match(/(\d+)\+?\s*(?:years|yrs)/i)
   const minYears = yrs ? Number(yrs[1]) : null
-  if (minYears !== null) sources.minYears = 'JD'
+  const maxYears = minYears !== null ? minYears + 4 : null
+  if (minYears !== null) { sources.minYears = 'JD'; sources.maxYears = 'JD' }
   const workMode: WorkMode | '' = /remote/i.test(text) ? 'Remote' : /hybrid/i.test(text) ? 'Hybrid' : /onsite|on-site|in office/i.test(text) ? 'Onsite' : ''
   if (workMode) sources.workMode = 'JD'
   const city = KNOWN_CITIES.find(c => text.toLowerCase().includes(c.split(',')[0].toLowerCase()))
   const location = city ?? (workMode === 'Remote' ? 'Remote (US)' : '')
   if (location) sources.location = 'JD'
   const relocation = /relocation/i.test(text) ? true : null
-  if (relocation !== null) sources.relocation = 'JD'
+  const relocationSupported: YesNo = /no relocation/i.test(text) ? 'No' : /relocation/i.test(text) ? 'Yes' : 'Unknown'
+  if (relocation !== null) { sources.relocation = 'JD'; sources.relocationSupported = 'JD' }
   const sponsorship: YesNo = /(no|unable to|cannot|can't) sponsor/i.test(text) ? 'No' : /sponsor/i.test(text) ? 'Yes' : 'Unknown'
   if (sponsorship !== 'Unknown') sources.sponsorship = 'JD'
+  const transfer: YesNo = /transfer/i.test(text) ? 'Yes' : sponsorship === 'Yes' ? 'Yes' : 'Unknown'
+  const acceptedVisas = sponsorship === 'No' && transfer === 'Yes'
+    ? ['H-1B', 'TN', 'O-1', 'E-3']
+    : sponsorship === 'Yes'
+      ? ['H-1B', 'STEM OPT', 'F-1 / OPT', 'TN', 'O-1', 'L-1', 'E-3']
+      : ['H-1B', 'STEM OPT', 'TN', 'O-1']
+  const visaSupport: VisaSupportPolicy = sponsorship === 'Yes'
+    ? 'Transfer & sponsorship'
+    : transfer === 'Yes'
+      ? 'Transfer only'
+      : sponsorship === 'No'
+        ? 'None'
+        : 'Unknown'
+  const industry = /payments|fintech|payout|ledger|treasury/i.test(text)
+    ? 'Payments / Fintech'
+    : /health/i.test(text)
+      ? 'Healthtech'
+      : /gov|defense/i.test(text)
+        ? 'Government / Defense'
+        : 'B2B SaaS'
+  const industryRule: 'improves' | 'eliminates' = industry === 'Government / Defense' ? 'eliminates' : 'improves'
+  sources.industry = 'JD'
   const [mustPart, nicePart = ''] = text.split(/nice to have/i)
   const skills: SkillTag[] = []
   KNOWN_SKILLS.forEach(s => {
@@ -164,7 +206,11 @@ function extractDraft(src: SourceState): { draft: Draft; sources: Sources } {
   })
   if (skills.length) sources.skills = 'JD'
   const pay = text.match(/\$\d+k\s*[–-]\s*\$\d+k/i)?.[0] ?? ''
-  if (pay) sources.pay = 'JD'
+  const payNums = (pay.match(/\d+/g) ?? []).map(Number)
+  const fixedPayMin = payNums[0] ?? (minYears ? 170 : null)
+  const fixedPayMax = payNums[1] ?? (fixedPayMin ? fixedPayMin + 20 : null)
+  const variablePay = fixedPayMin ? 25 : null
+  if (pay) { sources.pay = 'JD'; sources.fixedPayMin = 'JD'; sources.fixedPayMax = 'JD'; sources.variablePay = 'JD' }
   const interviewLine = text.split('\n').find(l => l.includes('→')) ?? ''
   const interview = interviewLine.replace(/^interview process:\s*/i, '').trim()
   if (interview) sources.interview = 'JD'
@@ -172,24 +218,51 @@ function extractDraft(src: SourceState): { draft: Draft; sources: Sources } {
   if (src.callLink) sources.whatGood = 'CALL'
   if (src.research) sources.research = 'RESEARCH'
   return {
-    draft: { title, category, subcategory, seniority, categoryConfirmed: false, minYears, location, workMode, relocation, sponsorship, transfer: 'Unknown', skills, pay, whatGood, research: src.research, interview },
+    draft: {
+      title, industry, industryRule, category, subcategory, seniority, categoryConfirmed: false,
+      minYears, maxYears, yearsFlexibility: 'Flexible',
+      location, workMode, relocation, relocationSupported,
+      sponsorship, transfer, acceptedVisas, visaSupport,
+      skills, pay, fixedPayMin, fixedPayMax, variablePay,
+      whatGood, research: src.research, interview,
+    },
     sources,
   }
 }
 
 function draftFromRole(r: Role): { draft: Draft; sources: Sources } {
+  const payNums = (r.pay.match(/\d+/g) ?? []).map(Number)
+  const fixedMin = r.fixedPayMin ?? payNums[0] ?? 160
+  const fixedMax = r.fixedPayMax ?? payNums[1] ?? fixedMin + 20
+  const varPay = r.variablePay ?? 20
+  const relocSup: YesNo = r.relocationSupported ?? (r.relocationAccepted === true ? 'Yes' : r.relocationAccepted === false ? 'No' : 'Unknown')
   return {
     draft: {
-      title: r.title, category: r.category, subcategory: r.subcategory, seniority: r.seniority, categoryConfirmed: true,
-      minYears: r.minYears, location: r.location, workMode: r.workMode, relocation: r.relocationAccepted,
+      title: r.title,
+      industry: r.industry ?? 'Payments / Fintech',
+      industryRule: r.industryRule ?? 'improves',
+      category: r.category, subcategory: r.subcategory, seniority: r.seniority, categoryConfirmed: true,
+      minYears: r.minYears,
+      maxYears: r.maxYears ?? r.minYears + 4,
+      yearsFlexibility: r.yearsFlexibility ?? 'Flexible',
+      location: r.location, workMode: r.workMode,
+      relocation: relocSup === 'Yes' ? true : relocSup === 'No' ? false : null,
+      relocationSupported: relocSup,
       sponsorship: r.sponsorship, transfer: r.transfer,
+      acceptedVisas: r.acceptedVisas ?? (r.transfer === 'Yes' || r.sponsorship === 'Yes' ? ['H-1B', 'TN', 'O-1', 'E-3'] : []),
+      visaSupport: r.visaSupport ?? (r.sponsorship === 'Yes' ? 'Transfer & sponsorship' : r.transfer === 'Yes' ? 'Transfer only' : r.sponsorship === 'No' ? 'None' : 'Unknown'),
       skills: [...r.mustSkills.map(name => ({ name, must: true })), ...r.niceSkills.map(name => ({ name, must: false }))],
-      pay: r.pay === '—' ? '' : r.pay, whatGood: r.whatGood ?? '', research: r.research ?? '', interview: r.interview ?? '',
+      pay: r.pay === '—' ? '' : r.pay,
+      fixedPayMin: fixedMin,
+      fixedPayMax: fixedMax,
+      variablePay: varPay,
+      whatGood: r.whatGood ?? '', research: r.research ?? '', interview: r.interview ?? '',
     },
     sources: {
-      title: 'JD', category: 'EDITED', subcategory: 'EDITED', seniority: 'JD', minYears: 'JD', location: 'JD', workMode: 'JD',
-      relocation: r.relocationAccepted === null ? undefined : 'CALL', sponsorship: r.sponsorship === 'Unknown' ? undefined : 'CALL',
-      transfer: r.transfer === 'Unknown' ? undefined : 'CALL', skills: 'JD', pay: 'JD',
+      title: 'JD', industry: 'JD', category: 'EDITED', subcategory: 'EDITED', seniority: 'JD', minYears: 'JD', maxYears: 'JD', location: 'JD', workMode: 'JD',
+      relocation: r.relocationAccepted === null ? undefined : 'CALL', relocationSupported: 'CALL',
+      sponsorship: r.sponsorship === 'Unknown' ? undefined : 'CALL',
+      transfer: r.transfer === 'Unknown' ? undefined : 'CALL', skills: 'JD', pay: 'JD', fixedPayMin: 'JD', fixedPayMax: 'JD', variablePay: 'CALL',
       whatGood: r.whatGood ? 'CALL' : undefined, research: r.research ? 'RESEARCH' : undefined, interview: r.interview ? 'JD' : undefined,
     },
   }
@@ -210,9 +283,14 @@ function passFactor(d: Draft, elimCount = 0) {
   let f = 1
   if (d.subcategory) f *= 0.6
   else if (d.category) f *= 0.8
-  if (d.minYears !== null) f *= Math.max(0, 1 - Math.max(0, d.minYears - 2) * 0.09)
-  if (d.location && d.workMode !== 'Remote') f *= d.relocation ? 0.62 : 0.4
-  if (d.sponsorship === 'No') f *= 0.88
+  if (d.minYears !== null) {
+    const effectiveMin = d.yearsFlexibility === 'Flexible' ? Math.max(0, d.minYears - 1) : d.minYears
+    f *= Math.max(0, 1 - Math.max(0, effectiveMin - 2) * 0.09)
+  }
+  if (d.location && d.workMode !== 'Remote') f *= d.relocationSupported === 'Yes' ? 0.62 : 0.4
+  if (d.visaSupport === 'None') f *= 0.82
+  else if (d.visaSupport === 'Transfer only') f *= 0.9
+  if (d.industryRule === 'eliminates') f *= 0.68
   f *= Math.max(0, 1 - 0.14 * Math.max(d.skills.filter(s => s.must).length, elimCount))
   return f
 }
@@ -336,12 +414,16 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
   const [dirty, setDirty] = useState(false)
   const [leaveOpen, setLeaveOpen] = useState(false)
   const [revisedOpen, setRevisedOpen] = useState(false)
-  const [askDialog, setAskDialog] = useState<'type' | 'transcript' | null>(() =>
-    hasDialogParam ? 'type' : null,
+  const [askDialog, setAskDialog] = useState<'type' | 'transcript' | 'ai' | null>(() =>
+    hasDialogParam ? 'ai' : null,
   )
+  const [reqFilter, setReqFilter] = useState<'all' | 'eliminates' | 'improves' | 'red-flag'>('all')
   const askRoleId = role?.id ?? 'northwind-spm'
   const reqs = app.requirementsFor(askRoleId)
   const elimCount = reqs.filter(r => r.effect === 'eliminates').length
+  const greenCount = reqs.filter(r => r.effect === 'improves').length
+  const redCount = reqs.filter(r => r.effect === 'red-flag').length
+  const filteredReqs = reqFilter === 'all' ? reqs : reqs.filter(r => r.effect === reqFilter)
   const locationRef = useRef<HTMLInputElement>(null)
 
   useTopBar(
@@ -499,14 +581,40 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
     ? { name: src.contactName.trim() || src.contactEmail.trim(), email: src.contactEmail.trim() || `hiring@${(src.company || 'company').toLowerCase().replace(/[^a-z0-9]/g, '')}.com` }
     : undefined
 
-  const fields = (d: Draft) => ({
-    title: d.title || 'Untitled role', category: (d.category || 'Product') as Category, subcategory: d.subcategory, seniority: d.seniority,
-    minYears: d.minYears ?? 0, location: d.location, workMode: (d.workMode || 'Hybrid') as WorkMode, relocationAccepted: d.relocation,
-    sponsorship: d.sponsorship, transfer: d.transfer, mustSkills: d.skills.filter(s => s.must).map(s => s.name),
-    niceSkills: d.skills.filter(s => !s.must).map(s => s.name), pay: d.pay || '—',
-    whatGood: d.whatGood || undefined, research: d.research || undefined, interview: d.interview || undefined,
-    hiringContact,
-  })
+  const fields = (d: Draft) => {
+    const formattedPay = d.fixedPayMin != null && d.fixedPayMax != null
+      ? `$${d.fixedPayMin}k–$${d.fixedPayMax}k${d.variablePay ? ` + $${d.variablePay}k var` : ''}`
+      : (d.pay || '—')
+    return {
+      title: d.title || 'Untitled role',
+      industry: d.industry || 'B2B SaaS',
+      industryRule: d.industryRule,
+      category: (d.category || 'Product') as Category,
+      subcategory: d.subcategory,
+      seniority: d.seniority,
+      minYears: d.minYears ?? 0,
+      maxYears: d.maxYears ?? null,
+      yearsFlexibility: d.yearsFlexibility,
+      location: d.location,
+      workMode: (d.workMode || 'Hybrid') as WorkMode,
+      relocationAccepted: d.relocationSupported === 'Yes' ? true : d.relocationSupported === 'No' ? false : null,
+      relocationSupported: d.relocationSupported,
+      sponsorship: (d.visaSupport === 'Transfer & sponsorship' || d.visaSupport === 'Sponsorship offered' ? 'Yes' : d.visaSupport === 'None' || d.visaSupport === 'Transfer only' ? 'No' : 'Unknown') as YesNo,
+      transfer: (d.visaSupport === 'Transfer & sponsorship' || d.visaSupport === 'Transfer only' ? 'Yes' : d.visaSupport === 'None' ? 'No' : 'Unknown') as YesNo,
+      acceptedVisas: d.acceptedVisas,
+      visaSupport: d.visaSupport,
+      mustSkills: d.skills.filter(s => s.must).map(s => s.name),
+      niceSkills: d.skills.filter(s => !s.must).map(s => s.name),
+      pay: formattedPay,
+      fixedPayMin: d.fixedPayMin,
+      fixedPayMax: d.fixedPayMax,
+      variablePay: d.variablePay,
+      whatGood: d.whatGood || undefined,
+      research: d.research || undefined,
+      interview: d.interview || undefined,
+      hiringContact,
+    }
+  }
 
   const mustChanges = (r: Role, d: Draft): string[] => {
     const f = fields(d); const parts: string[] = []
@@ -614,6 +722,8 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
   const isNewCompany = !!src.company.trim() && !companies.some(c => c.toLowerCase() === src.company.trim().toLowerCase())
 
   /* ---------- Left pane: Source ---------- */
+  const d = draft
+
   const left = (
     <>
       <BezelCard icon={<Building2 />} title="Company">
@@ -627,6 +737,32 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
               <Segmented aria-label="Company type" value={src.companyType} onChange={v => editSrc({ companyType: v })} options={['Client', 'Prospect']} />
             </Field>
           </div>
+          {d && (
+            <div className="grid gap-3 border-t border-border pt-3 sm:grid-cols-[1fr_auto] sm:items-start">
+              <Field label={<Lbl src={sources.industry}>Company industry</Lbl>} hint="Same industry is a Green flag by default, or a Requirement in strict cases (e.g. government contracts).">
+                <Select
+                  aria-label="Company industry"
+                  className="w-full"
+                  size="lg"
+                  value={d.industry}
+                  onChange={v => set('industry', v)}
+                  options={COMPANY_INDUSTRIES.map(ind => ({ value: ind, label: ind }))}
+                />
+              </Field>
+              <Field label="Same-industry rule">
+                <Segmented
+                  size="sm"
+                  aria-label="Same-industry rule"
+                  value={d.industryRule}
+                  onChange={v => set('industryRule', v)}
+                  options={[
+                    { value: 'improves', label: 'Green flag (default)' },
+                    { value: 'eliminates', label: 'Requirement (rules out)' },
+                  ]}
+                />
+              </Field>
+            </div>
+          )}
           <div className="grid gap-3 border-t border-border pt-3 sm:grid-cols-2">
             <Field label="Contact name (optional)">
               <Input placeholder="e.g. Sean Ellis" value={src.contactName} onChange={e => editSrc({ contactName: e.target.value })} />
@@ -725,8 +861,6 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
   )
 
   /* ---------- Right pane: Role details ---------- */
-  const d = draft
-
   const right = phase === 'extracting' ? (
     <AIStepper title="Extracting role details" steps={STEPS} current={wf === 'extracting' ? 2 : stepper.step} />
   ) : !d ? (
@@ -802,27 +936,62 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
 
       {mode === 'edit' && <InfoNote>Changing requirements marks this role's matches out of date.</InfoNote>}
 
-      {/* v0.4 · §7.1 / N22 Unified Requirements card (replaces separate Must-haves, Client asks, and Nice-to-haves) */}
+      {/* v0.4 · §7.1 / N22 Unified Requirements, Green flags & Red flags card */}
       <BezelCard
         icon={<ListChecks />}
-        title={`Requirements (${reqs.length})`}
-        description="Each requirement is marked Eliminates (Stage 1 hard filter on years, visa, location, or category) or Improves score (AI checks and cites evidence)."
+        title={`Requirements, Green flags & Red flags (${reqs.length})`}
+        description="Requirements rule a candidate out. Green flags raise the score. Red flags lower the score — but never rule a candidate out on their own, because strong requirements and green flags can outweigh a red flag."
         action={
-          <Button variant="chroma" size="sm" icon={<Sparkles />} onClick={() => setAskDialog('type')}>
-            + Add / update with AI
-          </Button>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button variant="outline" size="sm" icon={<Plus />} onClick={() => setAskDialog('type')}>
+              Add manually
+            </Button>
+            <Button variant="chroma" size="sm" icon={<Sparkles />} onClick={() => setAskDialog('ai')}>
+              Update with AI
+            </Button>
+          </div>
         }
       >
         <div className="space-y-4">
-          {reqs.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No requirements yet. Add requirements from the JD or client intake call.</p>
+          {/* Category filter & summary bar */}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-secondary/35 px-3 py-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(
+                [
+                  { id: 'all', label: `All (${reqs.length})` },
+                  { id: 'eliminates', label: `Requirements · rules out (${elimCount})` },
+                  { id: 'improves', label: `Green flags · raises score (${greenCount})` },
+                  { id: 'red-flag', label: `Red flags · lowers score (${redCount})` },
+                ] as const
+              ).map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setReqFilter(tab.id)}
+                  className={cn(
+                    'inline-flex h-6 items-center rounded-lg border px-2.5 font-mono text-[10.5px] font-medium transition-colors cursor-pointer tnum',
+                    reqFilter === tab.id
+                      ? 'border-gray-1100 bg-card text-foreground shadow-2xs'
+                      : 'border-transparent text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <span className="text-[11px] text-muted-foreground">Click Edit on any row to edit text directly</span>
+          </div>
+
+          {filteredReqs.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No items in this category yet. Click Add manually or Update with AI above.</p>
           ) : (
             <div className="space-y-2">
-              {reqs.map(req => (
+              {filteredReqs.map(req => (
                 <RequirementRow
                   key={req.id}
                   req={req}
                   onToggleEffect={eff => { app.toggleRequirementEffect(askRoleId, req.id, eff); setDirty(true) }}
+                  onEdit={patch => { app.updateRequirement(askRoleId, req.id, patch); setDirty(true) }}
                   onRemove={() => { app.removeRequirement(askRoleId, req.id); setDirty(true) }}
                 />
               ))}
@@ -832,13 +1001,13 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
           {/* Stage 1 baseline fields sub-well so the live pass counter remains interactive */}
           <div className="space-y-4 rounded-xl border border-border bg-secondary/40 p-3.5">
             <div className="flex items-center justify-between gap-2">
-              <span className="eyebrow text-[10px] text-gray-1000">Stage 1 baseline fields</span>
+              <span className="eyebrow text-[10px] text-gray-1000">Stage 1 baseline fields &amp; role criteria</span>
               <span className="font-mono text-[11px] text-muted-foreground tnum">
                 ~{pass ?? 0} of {POOL_SIZE} pass Stage 1
               </span>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-4">
               <Field label={<Lbl src={sources.category}>Category</Lbl>} right={!d.categoryConfirmed && d.category ? <SuggestedBadge /> : undefined}>
                 <Select aria-label="Category" className="w-full" size="lg" value={d.category}
                   onChange={v => { setDraft(x => (x ? { ...x, category: v as Category, subcategory: v ? SUBCATEGORIES[v as Category][0] : '', categoryConfirmed: true } : x)); setSources(s => ({ ...s, category: 'EDITED', subcategory: 'EDITED' })); setDirty(true) }}
@@ -854,64 +1023,252 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
                 <Select aria-label="Seniority" className="w-full" size="lg" value={d.seniority} onChange={v => set('seniority', v)}
                   options={['Junior', 'Mid', 'Mid–Senior', 'Senior', 'Lead', 'Manager']} />
               </Field>
+              <Field label={<Lbl src={sources.industry}>Company industry</Lbl>}>
+                <Select aria-label="Company industry" className="w-full" size="lg" value={d.industry} onChange={v => set('industry', v)}
+                  options={COMPANY_INDUSTRIES.map(ind => ({ value: ind, label: ind }))} />
+              </Field>
+            </div>
+
+            {/* Same-industry rule */}
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs">
+              <div className="space-y-0.5">
+                <span className="font-medium text-foreground">Same-industry rule ({d.industry})</span>
+                <p className="text-[11px] text-muted-foreground">
+                  Same industry is a Green flag by default (raises score), or a Requirement when mandatory (e.g. government contracts).
+                </p>
+              </div>
+              <Segmented
+                size="sm"
+                aria-label="Same-industry rule"
+                value={d.industryRule}
+                onChange={v => set('industryRule', v)}
+                options={[
+                  { value: 'improves', label: 'Green flag (default)' },
+                  { value: 'eliminates', label: 'Requirement (rules out)' },
+                ]}
+              />
             </div>
 
             {!d.categoryConfirmed && d.category && (
               <div className="flex items-center justify-between gap-2 rounded-lg border border-info/30 bg-info/5 px-3 py-2">
-                <span className="text-xs text-foreground">Category and sub-category are suggested from the JD. Stage 1 uses Category as an eliminator.</span>
+                <span className="text-xs text-foreground">Category and sub-category are suggested from the JD. Stage 1 uses Category as a Requirement.</span>
                 <Button size="sm" onClick={() => { setDraft(x => (x ? { ...x, categoryConfirmed: true } : x)); setDirty(true) }}>Confirm</Button>
               </div>
             )}
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label={<Lbl src={sources.minYears}>Minimum years</Lbl>}>
-                <Input type="number" min={0} max={30} suffix="years" value={d.minYears ?? ''} onChange={e => set('minYears', e.target.value === '' ? null : Number(e.target.value))} />
-                {d.minYears === null && <NotCaptured />}
-              </Field>
+            {/* Years of experience: Min, Max + Flexible / Rigid toggle */}
+            <div className="rounded-xl border border-border bg-card p-3 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-foreground">Years of experience</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[10.5px] text-muted-foreground">Cushion:</span>
+                  <Segmented
+                    size="sm"
+                    aria-label="Years of experience flexibility"
+                    value={d.yearsFlexibility}
+                    onChange={v => set('yearsFlexibility', v)}
+                    options={[
+                      { value: 'Flexible', label: 'Flexible (±1 yr)' },
+                      { value: 'Rigid', label: 'Rigid (exact)' },
+                    ]}
+                  />
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label={<Lbl src={sources.minYears}>Min years</Lbl>}>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={30}
+                    suffix="yrs"
+                    value={d.minYears ?? ''}
+                    onChange={e => set('minYears', e.target.value === '' ? null : Number(e.target.value))}
+                  />
+                  {d.minYears === null && <NotCaptured />}
+                </Field>
+                <Field label={<Lbl src={sources.maxYears}>Max years</Lbl>}>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={40}
+                    suffix="yrs"
+                    value={d.maxYears ?? ''}
+                    onChange={e => set('maxYears', e.target.value === '' ? null : Number(e.target.value))}
+                  />
+                </Field>
+              </div>
+              <p className="font-mono text-[11px] text-muted-foreground tnum">
+                {d.yearsFlexibility === 'Flexible'
+                  ? `Flexible adds 1 year of cushion at the top and bottom → passes ${Math.max(0, (d.minYears ?? 0) - 1)}–${(d.maxYears ?? (d.minYears ?? 0) + 4) + 1} yrs.`
+                  : `Rigid enforces the exact range → passes ${d.minYears ?? 0}–${d.maxYears ?? (d.minYears ?? 0) + 4} yrs.`}
+              </p>
+            </div>
+
+            {/* Location, Work mode & Relocation supported */}
+            <div className="grid gap-4 sm:grid-cols-3">
               <Field label={<Lbl src={sources.location}>Location</Lbl>}>
                 <Input ref={locationRef} list="hs-cities" placeholder="City or Remote (US)" value={d.location} onChange={e => set('location', e.target.value)} />
                 <datalist id="hs-cities">{[...KNOWN_CITIES, 'Remote (US)'].map(c => <option key={c} value={c} />)}</datalist>
                 {!d.location && <NotCaptured />}
               </Field>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
               <Field label={<Lbl src={sources.workMode}>Work mode</Lbl>}>
-                <div><Segmented aria-label="Work mode" value={d.workMode} onChange={v => set('workMode', v)} options={['Remote', 'Hybrid', 'Onsite'] as (WorkMode | '')[]} /></div>
+                <div><Segmented aria-label="Work mode" size="sm" value={d.workMode} onChange={v => set('workMode', v)} options={['Remote', 'Hybrid', 'Onsite'] as (WorkMode | '')[]} /></div>
                 {!d.workMode && <NotCaptured />}
               </Field>
-              <Field label={<Lbl src={sources.relocation}>Relocation</Lbl>}>
-                <div className="flex h-8 items-center"><Switch checked={d.relocation === true} onChange={v => set('relocation', v)} label="Relocation accepted" /></div>
-                {d.relocation === null && <NotCaptured />}
+              <Field label={<Lbl src={sources.relocationSupported}>Relocation supported</Lbl>}>
+                <div>
+                  <Segmented
+                    aria-label="Relocation supported"
+                    size="sm"
+                    value={d.relocationSupported}
+                    onChange={v => {
+                      set('relocationSupported', v)
+                      set('relocation', v === 'Yes' ? true : v === 'No' ? false : null)
+                    }}
+                    options={['Yes', 'No', 'Unknown'] as YesNo[]}
+                  />
+                </div>
               </Field>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label={<Lbl src={sources.sponsorship}>Sponsorship offered</Lbl>}>
-                <div><Segmented aria-label="Sponsorship offered" size="sm" value={d.sponsorship} onChange={v => set('sponsorship', v)} options={['Yes', 'No', 'Unknown'] as YesNo[]} /></div>
-              </Field>
-              <Field label={<Lbl src={sources.transfer}>Visa transfer supported</Lbl>}>
-                <div><Segmented aria-label="Visa transfer supported" size="sm" value={d.transfer} onChange={v => set('transfer', v)} options={['Yes', 'No', 'Unknown'] as YesNo[]} /></div>
+            {/* Visa checkbox list + Select all + Transfer/sponsorship support field */}
+            <div className="rounded-xl border border-border bg-card p-3 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span className="text-xs font-semibold text-foreground">Visa types accepted</span>
+                  <p className="text-[11px] text-muted-foreground">Select which visa types the company accepts, plus whether transfer or sponsorship is supported.</p>
+                </div>
+                <label className="inline-flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-2.5 py-1 text-xs font-medium text-foreground cursor-pointer">
+                  <Checkbox
+                    aria-label="Select all visa types"
+                    checked={d.acceptedVisas.length === ROLE_VISA_TYPES.length}
+                    onChange={checked => set('acceptedVisas', checked ? [...ROLE_VISA_TYPES] : [])}
+                  />
+                  <span>Select all ({ROLE_VISA_TYPES.length})</span>
+                </label>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {ROLE_VISA_TYPES.map(visa => {
+                  const checked = d.acceptedVisas.includes(visa)
+                  return (
+                    <label
+                      key={visa}
+                      className={cn(
+                        'inline-flex h-8 items-center gap-2 rounded-xl border px-3 text-xs font-medium transition-colors cursor-pointer',
+                        checked
+                          ? 'border-gray-1100 bg-secondary text-foreground'
+                          : 'border-border bg-background text-muted-foreground hover:text-foreground',
+                      )}
+                    >
+                      <Checkbox
+                        aria-label={visa}
+                        checked={checked}
+                        onChange={on => {
+                          const next = on
+                            ? Array.from(new Set([...d.acceptedVisas, visa]))
+                            : d.acceptedVisas.filter(v => v !== visa)
+                          set('acceptedVisas', next)
+                        }}
+                      />
+                      <span>{visa}</span>
+                    </label>
+                  )
+                })}
+              </div>
+
+              <Field
+                label={<Lbl src={sources.sponsorship}>Transfer or sponsorship support for selected visas</Lbl>}
+                hint="Defines whether the company supports visa transfer, new sponsorship, or both for the selected visa types."
+              >
+                <Segmented
+                  size="sm"
+                  aria-label="Transfer or sponsorship support for selected visas"
+                  value={d.visaSupport}
+                  onChange={v => set('visaSupport', v)}
+                  options={[
+                    { value: 'Transfer & sponsorship', label: 'Transfer & sponsorship' },
+                    { value: 'Transfer only', label: 'Transfer only' },
+                    { value: 'Sponsorship offered', label: 'Sponsorship offered' },
+                    { value: 'None', label: 'No support (US citizen / GC only)' },
+                    { value: 'Unknown', label: 'Unknown' },
+                  ]}
+                />
               </Field>
             </div>
           </div>
         </div>
       </BezelCard>
 
-      <BezelCard title="Pay">
-        <Field label={<Lbl src={sources.pay}>Range</Lbl>}>
-          <Input placeholder="$170k–$190k" value={d.pay} onChange={e => set('pay', e.target.value)} />
-          {!d.pay && <NotCaptured />}
-        </Field>
+      <BezelCard
+        title="Pay range"
+        description="Split into Fixed (min–max) and Variable. Stored as numbers (in $k) so they can be used directly as filters. US roles call variable OTE, but the label stays Variable."
+      >
+        <div className="space-y-3">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label={<Lbl src={sources.fixedPayMin}>Fixed min ($k)</Lbl>}>
+              <Input
+                type="number"
+                min={0}
+                max={1000}
+                suffix="k"
+                placeholder="170"
+                value={d.fixedPayMin ?? ''}
+                onChange={e => set('fixedPayMin', e.target.value === '' ? null : Number(e.target.value))}
+              />
+              {d.fixedPayMin === null && <NotCaptured />}
+            </Field>
+            <Field label={<Lbl src={sources.fixedPayMax}>Fixed max ($k)</Lbl>}>
+              <Input
+                type="number"
+                min={0}
+                max={1000}
+                suffix="k"
+                placeholder="190"
+                value={d.fixedPayMax ?? ''}
+                onChange={e => set('fixedPayMax', e.target.value === '' ? null : Number(e.target.value))}
+              />
+              {d.fixedPayMax === null && <NotCaptured />}
+            </Field>
+            <Field label={<Lbl src={sources.variablePay}>Variable ($k)</Lbl>} hint="US roles call variable OTE; label stays Variable">
+              <Input
+                type="number"
+                min={0}
+                max={1000}
+                suffix="k"
+                placeholder="25"
+                value={d.variablePay ?? ''}
+                onChange={e => set('variablePay', e.target.value === '' ? null : Number(e.target.value))}
+              />
+            </Field>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-secondary/40 px-3 py-2 font-mono text-xs tnum">
+            <span className="text-muted-foreground">Formatted compensation summary:</span>
+            <span className="font-semibold text-foreground">
+              Fixed: {d.fixedPayMin != null && d.fixedPayMax != null ? `$${d.fixedPayMin}k–$${d.fixedPayMax}k` : 'Not captured'}
+              {' · '}
+              Variable: {d.variablePay != null ? `$${d.variablePay}k` : '$0k'}
+              {d.fixedPayMax != null && d.variablePay != null && ` (Total target up to $${d.fixedPayMax + d.variablePay}k)`}
+            </span>
+          </div>
+        </div>
       </BezelCard>
 
-      <BezelCard title="Context">
+      <BezelCard title="What good looks like &amp; context">
         <div className="space-y-4">
           <Field label={<Lbl src={sources.whatGood}>What good looks like · past good and bad hires</Lbl>}>
             <Textarea placeholder="From the client call…" value={d.whatGood} onChange={e => set('whatGood', e.target.value)} />
             {!d.whatGood && <NotCaptured />}
           </Field>
-          <Field label={<Lbl src={sources.interview}>Interview process</Lbl>}>
+          <Field
+            label={
+              <span className="inline-flex flex-wrap items-center gap-2">
+                <Lbl src={sources.interview}>Interview process</Lbl>
+                <span className="eyebrow rounded border border-border bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">Context only</span>
+              </span>
+            }
+            hint="Kept for recruiter & candidate prep context only — never rules out or changes a score."
+          >
             <Textarea placeholder="Recruiter screen → HM → …" value={d.interview} onChange={e => set('interview', e.target.value)} />
             {!d.interview && <NotCaptured />}
           </Field>
@@ -1308,7 +1665,7 @@ export function RoleEditor({ mode }: { mode: 'new' | 'edit' }) {
         <div className="min-h-0 flex-1 overflow-hidden">
           <SplitPane
             leftTitle={<span className="flex items-center gap-2">Source <ExampleMark /></span>}
-            rightTitle={<span className="flex items-center gap-2">Role details{phase === 'extracted' && d && <span className="font-mono text-[10px] text-gray-1000">{elimCount} eliminator{elimCount === 1 ? '' : 's'} · {reqs.length - elimCount} signal{reqs.length - elimCount === 1 ? '' : 's'}</span>}</span>}
+            rightTitle={<span className="flex items-center gap-2">Role details{phase === 'extracted' && d && <span className="font-mono text-[10px] text-gray-1000">{elimCount} req · {greenCount} green · {redCount} red</span>}</span>}
             left={left}
             right={right}
             footer={footer}

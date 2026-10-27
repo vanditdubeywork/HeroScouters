@@ -143,7 +143,7 @@ export function ConfirmDialog({ open, onClose, title, body, confirmLabel, cancel
   )
 }
 
-/** D-06 · Confirm assumed requirements before a bulk shortlist (PRD v0.4 §7.3). */
+/** D-06 · Confirm unconfirmed requirements before a bulk shortlist (PRD v0.4 §7.3). */
 export function ConfirmAssumedDialog({ open, onClose, total, assumed, fieldCounts, outOfDate, onShortlistVerified, onShortlistAll, onAddQuestions }: {
   open: boolean; onClose: () => void
   total: number
@@ -157,17 +157,17 @@ export function ConfirmAssumedDialog({ open, onClose, total, assumed, fieldCount
   const [asked, setAsked] = useState(false)
   useEffect(() => { if (open) setAsked(false) }, [open])
   return (
-    <Dialog open={open} onClose={onClose} width={500}
-      title={assumed ? `Shortlist ${total} with assumed requirements?` : `Shortlist ${total} from an out-of-date run?`}
+    <Dialog open={open} onClose={onClose} width={520}
+      title={assumed ? `Shortlist ${total} with unconfirmed resume items (confirm on call)?` : `Shortlist ${total} from an out-of-date run?`}
       description={assumed
-        ? <><span className="font-mono text-foreground tnum">{assumed}</span> of <span className="font-mono text-foreground tnum">{total}</span> have assumed requirements ({fields}). Assumed means the value is missing and was treated as a pass.</>
+        ? <><span className="font-mono text-foreground tnum">{assumed}</span> of <span className="font-mono text-foreground tnum">{total}</span> are missing info on their resume ({fields}) — kept in the pool so you can confirm on a call instead of ruling them out.</>
         : 'Requirements changed since these were scored. Their recommendations may change after re-scoring.'}
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         {assumed > 0 && verified > 0 ? (
           <>
             <Button variant="outline" onClick={() => { onShortlistAll(); onClose() }}>Shortlist all {total}</Button>
-            <Button variant="primary" data-autofocus icon={<Check />} onClick={() => { onShortlistVerified(); onClose() }}>Shortlist the {verified} verified</Button>
+            <Button variant="primary" data-autofocus icon={<Check />} onClick={() => { onShortlistVerified(); onClose() }}>Shortlist the {verified} confirmed</Button>
           </>
         ) : (
           <Button variant="primary" data-autofocus icon={<Check />} onClick={() => { onShortlistAll(); onClose() }}>Shortlist all {total}</Button>
@@ -181,7 +181,7 @@ export function ConfirmAssumedDialog({ open, onClose, total, assumed, fieldCount
           <div className="flex flex-wrap items-center gap-1.5">
             {Object.entries(fieldCounts).map(([f, n]) => (
               <span key={f} className="inline-flex h-6 items-center gap-1 rounded-md border border-dashed border-warning bg-warning/[0.06] px-1.5 text-xs text-[#b45309]">
-                <HelpCircle className="size-3" />{f}<span className="font-mono text-[10px] tnum">×{n}</span>
+                <HelpCircle className="size-3" />Unconfirmed: {f}<span className="font-mono text-[10px] tnum">×{n}</span>
               </span>
             ))}
           </div>
@@ -189,7 +189,7 @@ export function ConfirmAssumedDialog({ open, onClose, total, assumed, fieldCount
         {assumed > 0 && onAddQuestions && (
           asked
             ? <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><Check className="size-3.5" />Added {assumed} question{assumed === 1 ? '' : 's'} to the ask list</p>
-            : <Button variant="link" className="text-xs" icon={<ListPlus />} onClick={() => { onAddQuestions(); setAsked(true) }}>Add {assumed} question{assumed === 1 ? '' : 's'} to the ask list</Button>
+            : <Button variant="link" className="text-xs" icon={<ListPlus />} onClick={() => { onAddQuestions(); setAsked(true) }}>Add {assumed} question{assumed === 1 ? '' : 's'} to the ask list for the call</Button>
         )}
         {!assumed && <InfoNote>Shortlisting now is fine if you know these people. Re-score first if you want updated recommendations.</InfoNote>}
       </div>
@@ -197,12 +197,13 @@ export function ConfirmAssumedDialog({ open, onClose, total, assumed, fieldCount
   )
 }
 
-/* ---------- D-08 · Add requirement (v0.4 §7.1: unified Requirements list with Eliminates vs Improves score) ---------- */
+/* ---------- D-08 · Add / update Requirement, Green flag, or Red flag ---------- */
 export const ASK_COLUMNS: RequirementColumn[] = [
   'Minimum years',
   'Work authorization',
   'Location',
   'Category',
+  'Company industry',
   'Sub-category',
   'Domain',
   'Skills',
@@ -216,6 +217,7 @@ export function suggestAskColumn(text: string): RequirementColumn | null {
   if (/\b(nyc|new york|sf|san francisco|bay area|seattle|austin|boston|chicago|la|los angeles|location|based in|relocat\w*|city|metro|remote|onsite|hybrid)\b/.test(t)) return 'Location'
   if (/\d+\+?\s*(years|yrs)\b|\byears of\b/.test(t)) return 'Minimum years'
   if (/\b(engineer\w*|product|marketing|design|data|sales|ops)\b/.test(t) && /\b(category|function|role)\b/.test(t)) return 'Category'
+  if (/\b(industry|gov|government|defense|clearance)\b/.test(t)) return 'Company industry'
   if (/\b(fintech|payments|b2b|saas|healthtech|marketplace|devtools|ai|ml|domain)\b/.test(t)) return 'Domain'
   if (/\b(sql|python|react|node|go|kafka|figma|braze|linkedin ads|dbt)\b/.test(t)) return 'Skills'
   return null
@@ -250,13 +252,14 @@ export function useAskDraft(roleId: string) {
   const setText = (text: string) => setD(x => {
     const s = suggestAskColumn(text)
     if (x.typeTouched) return { ...x, text }
+    const isRed = /\b(avoid|red flag|no big-tech|job hop\w*|consultanc\w* only|agency only)\b/i.test(text)
     const canElim = !!s && ELIMINATOR_COLUMNS.includes(s)
     return {
       ...x,
       text,
       column: s ?? '',
-      effect: canElim ? 'eliminates' : 'improves',
-      type: canElim ? 'must-column' : 'must-signal',
+      effect: isRed ? 'red-flag' : canElim ? 'eliminates' : 'improves',
+      type: isRed ? 'red-flag' : canElim ? 'must-column' : 'must-signal',
     }
   })
   const valid = d.text.trim().length > 2
@@ -264,7 +267,7 @@ export function useAskDraft(roleId: string) {
     if (!valid) return false
     const col = d.column || undefined
     const canElim = !!col && ELIMINATOR_COLUMNS.includes(col)
-    const finalEffect: RequirementEffect = canElim && d.effect === 'eliminates' ? 'eliminates' : 'improves'
+    const finalEffect: RequirementEffect = d.effect === 'red-flag' ? 'red-flag' : (canElim && d.effect === 'eliminates') ? 'eliminates' : 'improves'
     app.addRequirement(roleId, {
       text: d.text.trim(),
       source: d.source,
@@ -280,72 +283,78 @@ export function useAskDraft(roleId: string) {
 
 export function AskFields({ draft, compact }: { draft: ReturnType<typeof useAskDraft>; compact?: boolean }) {
   const { d, setD, setText, suggestion } = draft
-  const canEliminate = !!d.column && ELIMINATOR_COLUMNS.includes(d.column)
+  const canEliminate = !d.column || ELIMINATOR_COLUMNS.includes(d.column)
 
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <label className="text-sm font-medium" htmlFor="ask-text">Requirement (in our words)</label>
-        <Input id="ask-text" autoFocus={!compact} data-autofocus placeholder="e.g. “6+ years in PM”, “No sponsorship — transfer is fine”, or “Has led a team of 5+”" value={d.text} onChange={e => setText(e.target.value)} />
+        <label className="text-sm font-medium" htmlFor="ask-text">Criteria text (Requirement, Green flag, or Red flag)</label>
+        <Input id="ask-text" autoFocus={!compact} data-autofocus placeholder="e.g. “6+ years in PM”, “Hands-on payments”, or “Only big-tech consumer background”" value={d.text} onChange={e => setText(e.target.value)} />
         {suggestion && !d.typeTouched && (
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Sparkles className="size-3.5" />
-            Maps to column <span className="font-medium text-foreground">{suggestion}</span> · default effect:{' '}
-            <span className="font-medium text-foreground">{ELIMINATOR_COLUMNS.includes(suggestion) ? 'Eliminates (hard filter)' : 'Improves score'}</span>
+            Maps to column <span className="font-medium text-foreground">{suggestion}</span> · default category:{' '}
+            <span className="font-medium text-foreground">{ELIMINATOR_COLUMNS.includes(suggestion) ? 'Requirement (rules a candidate out)' : 'Green flag (raises score)'}</span>
           </p>
         )}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-2">
-          <span className="text-sm font-medium">Stored column (if any)</span>
+          <span className="text-sm font-medium">Category</span>
+          <div>
+            <Segmented
+              aria-label="Criteria category"
+              size="sm"
+              value={d.effect}
+              onChange={eff => {
+                if (eff === 'eliminates' && !canEliminate) return
+                setD(x => ({
+                  ...x,
+                  effect: eff,
+                  typeTouched: true,
+                  type: eff === 'eliminates' ? 'must-column' : eff === 'red-flag' ? 'red-flag' : 'must-signal',
+                }))
+              }}
+              options={[
+                { value: 'eliminates', label: 'Requirement (rules out)', disabled: !canEliminate },
+                { value: 'improves', label: 'Green flag (raises score)' },
+                { value: 'red-flag', label: 'Red flag (lowers score)' },
+              ]}
+            />
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            {d.effect === 'eliminates'
+              ? 'Requirement: rules a candidate out in Stage 1 (unconfirmed resume values still stay in so you can confirm on a call).'
+              : d.effect === 'red-flag'
+                ? 'Red flag: lowers the score during AI scoring, but never rules a candidate out on its own.'
+                : 'Green flag: raises the score during AI scoring when evidence is found.'}
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <span className="text-sm font-medium">Stored column (optional)</span>
           <Select
             aria-label="Stored column"
             value={d.column || 'none'}
             onChange={v => {
               const col = v === 'none' ? '' : (v as RequirementColumn)
-              const allowElim = !!col && ELIMINATOR_COLUMNS.includes(col)
+              const allowElim = !col || ELIMINATOR_COLUMNS.includes(col)
               setD(x => ({
                 ...x,
                 column: col,
                 typeTouched: true,
-                effect: allowElim ? x.effect : 'improves',
+                effect: allowElim ? x.effect : (x.effect === 'eliminates' ? 'improves' : x.effect),
               }))
             }}
             options={[
-              { value: 'none', label: 'No column (free-text signal only)' },
+              { value: 'none', label: 'No column (free-text signal)' },
               ...ASK_COLUMNS.map(c => ({
                 value: c,
-                label: `${c}${ELIMINATOR_COLUMNS.includes(c) ? ' (can eliminate)' : ' (improves score)'}`,
+                label: `${c}${ELIMINATOR_COLUMNS.includes(c) ? ' (can rule out)' : ' (raises/lowers score)'}`,
               })),
             ]}
           />
-        </div>
-
-        <div className="space-y-2">
-          <span className="text-sm font-medium">Effect on pipeline</span>
-          <div>
-            <Segmented
-              aria-label="Requirement effect"
-              size="sm"
-              value={canEliminate ? d.effect : 'improves'}
-              onChange={eff => {
-                if (eff === 'eliminates' && !canEliminate) return
-                setD(x => ({ ...x, effect: eff, typeTouched: true, type: eff === 'eliminates' ? 'must-column' : 'must-signal' }))
-              }}
-              options={[
-                { value: 'eliminates', label: 'Eliminates (Stage 1)', disabled: !canEliminate },
-                { value: 'improves', label: 'Improves score (Stage 2)' },
-              ]}
-            />
-          </div>
-          <p className="text-[11px] text-muted-foreground">
-            {canEliminate
-              ? d.effect === 'eliminates'
-                ? 'Hard filter on stored column. Re-runs Stage 1 for free; missing data still passes as Assumed.'
-                : 'Checked during AI scoring instead of eliminating.'
-              : 'Only Minimum years, Work authorization, Location and Category can eliminate.'}
-          </p>
         </div>
       </div>
 
@@ -480,22 +489,31 @@ function parseAiContextForRequirements(
   return { adds, removeIds: Array.from(removeIds) }
 }
 
-/** D-08 · Update / add requirements with AI (also exported as AddClientAskDialog & AddRequirementDialog). */
-export function AddClientAskDialog({ open, onClose, roleId }: {
+/** D-08 · Add or update Requirements, Green flags & Red flags (Manually or with AI). */
+export function AddClientAskDialog({ open, onClose, roleId, initialMode = 'ai' }: {
   open: boolean; onClose: () => void; roleId: string; initialMode?: 'type' | 'transcript' | 'ai'
 }) {
   const app = useApp()
   const existingReqs = app.requirementsFor(roleId)
+  const [mode, setMode] = useState<'ai' | 'manual'>(initialMode === 'type' ? 'manual' : 'ai')
   const [prompt, setPrompt] = useState('')
+  const manualDraft = useAskDraft(roleId)
 
   useEffect(() => {
     if (open) {
       setPrompt('')
+      setMode(initialMode === 'type' ? 'manual' : 'ai')
+      manualDraft.reset()
     }
-  }, [open, roleId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, roleId, initialMode])
 
   const applyAiChanges = (e?: React.FormEvent) => {
     e?.preventDefault()
+    if (mode === 'manual') {
+      if (manualDraft.save()) onClose()
+      return
+    }
     const textToRun = prompt.trim() || AI_REQUIREMENT_PRESETS[1].prompt
     const { adds, removeIds } = parseAiContextForRequirements(textToRun, existingReqs)
 
@@ -516,13 +534,14 @@ export function AddClientAskDialog({ open, onClose, roleId }: {
       })
     } else if (removeIds.length === 0 && textToRun) {
       const col = suggestAskColumn(textToRun) ?? undefined
+      const isRed = /\b(red flag|avoid|no big-tech|job hop\w*|consultanc\w* only)\b/i.test(textToRun)
       const canElim = !!col && ELIMINATOR_COLUMNS.includes(col)
       app.addRequirement(roleId, {
         text: textToRun,
         source: 'Chat',
         saidBy: 'AI context',
         when: 'Just now',
-        effect: canElim ? 'eliminates' : 'improves',
+        effect: isRed ? 'red-flag' : canElim ? 'eliminates' : 'improves',
         column: col,
       })
     }
@@ -531,7 +550,7 @@ export function AddClientAskDialog({ open, onClose, roleId }: {
     const parts: string[] = []
     if (addedCount) parts.push(`+${addedCount} added`)
     if (removeIds.length) parts.push(`−${removeIds.length} removed`)
-    app.toast(`AI updated requirements (${parts.join(', ')})`)
+    app.toast(`AI updated criteria (${parts.join(', ')})`)
     onClose()
   }
 
@@ -539,44 +558,74 @@ export function AddClientAskDialog({ open, onClose, roleId }: {
     <Dialog
       open={open}
       onClose={onClose}
-      width={540}
-      title="Update requirements with AI"
-      description="Tell AI what to add or remove — it updates the role’s requirements for you."
+      width={560}
+      title={mode === 'manual' ? 'Add Requirement, Green flag, or Red flag' : 'Update criteria with AI'}
+      description={
+        mode === 'manual'
+          ? 'Add a Requirement (rules out), Green flag (raises score), or Red flag (lowers score, never rules out) directly.'
+          : 'Tell AI what to add or remove — or switch to Add manually to write it yourself.'
+      }
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button
-            variant="chroma"
-            icon={<Sparkles />}
-            onClick={() => applyAiChanges()}
-          >
-            Update with AI
-          </Button>
+          {mode === 'manual' ? (
+            <Button
+              variant="primary"
+              disabled={!manualDraft.valid}
+              onClick={() => { if (manualDraft.save()) onClose() }}
+            >
+              Add to role
+            </Button>
+          ) : (
+            <Button
+              variant="chroma"
+              icon={<Sparkles />}
+              onClick={() => applyAiChanges()}
+            >
+              Update with AI
+            </Button>
+          )}
         </>
       }
     >
-      <form onSubmit={applyAiChanges}>
-        <label className="sr-only" htmlFor="ai-req-context">
-          Tell AI what requirements to add or remove
-        </label>
-        <Textarea
-          id="ai-req-context"
-          name="aiPrompt"
-          autoFocus
-          data-autofocus
-          rows={4}
-          placeholder='Tell AI what to add or remove — e.g. "Remove 6+ years requirement and add 4+ years in B2B Product Management as a hard filter"…'
-          value={prompt}
-          onChange={e => setPrompt(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault()
-              applyAiChanges()
-            }
-          }}
-          className="min-h-[116px] text-[13px] leading-relaxed"
+      <div className="space-y-4">
+        <Segmented
+          size="sm"
+          aria-label="Entry mode"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: 'manual', label: 'Add manually' },
+            { value: 'ai', label: 'Update with AI' },
+          ]}
         />
-      </form>
+        {mode === 'manual' ? (
+          <AskFields draft={manualDraft} />
+        ) : (
+          <form onSubmit={applyAiChanges}>
+            <label className="sr-only" htmlFor="ai-req-context">
+              Tell AI what requirements, green flags, or red flags to add or remove
+            </label>
+            <Textarea
+              id="ai-req-context"
+              name="aiPrompt"
+              autoFocus
+              data-autofocus
+              rows={4}
+              placeholder='Tell AI what to add or remove — e.g. "Remove 6+ years requirement, add 4+ years in B2B PM as a requirement, and add job-hopping as a red flag"…'
+              value={prompt}
+              onChange={e => setPrompt(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault()
+                  applyAiChanges()
+                }
+              }}
+              className="min-h-[116px] text-[13px] leading-relaxed"
+            />
+          </form>
+        )}
+      </div>
     </Dialog>
   )
 }

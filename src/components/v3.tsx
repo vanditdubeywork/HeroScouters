@@ -3,7 +3,7 @@ import {
   Plus, X, Search, Columns3, GripVertical, ChevronDown, Sparkles, Keyboard, Check, PenLine, BadgeCheck, Lock, RotateCcw, Info,
   AlertTriangle, Diamond, HelpCircle, ChevronRight, Link2, FileText, Copy, Handshake, Mail,
 } from 'lucide-react'
-import { Button, Checkbox, Kbd, Menu, Popover, Segmented, Switch, Textarea, cn, type ButtonProps } from './ui'
+import { Button, Checkbox, Input, Kbd, Menu, Popover, Segmented, Switch, Textarea, cn, type ButtonProps } from './ui'
 import { Dialog, SourceBadge } from './hs'
 import { useApp, whoCanText, SCORE_OPTIONS, SCORE_AUTO_THRESHOLD, SCORE_RUN_CAP } from '../store/AppStore'
 import {
@@ -581,20 +581,106 @@ export function ShortcutHint({ onOpen }: { onOpen: () => void }) {
   return <Button variant="ghost" size="sm" icon={<Keyboard />} onClick={onOpen} aria-label="Keyboard shortcuts">?</Button>
 }
 
-/* ---------- N22 · Requirement row (v0.4 §7.1: one unified Requirements list with Eliminates / Improves score switch) ---------- */
-export function RequirementRow({ req, onToggleEffect, onRemove, readOnly }: {
+/* ---------- N22 · Requirement row (Requirements, Green flags & Red flags + inline Edit button) ---------- */
+export function RequirementRow({ req, onToggleEffect, onEdit, onRemove, readOnly }: {
   req: RoleRequirement
   onToggleEffect?: (effect: RequirementEffect) => void
+  onEdit?: (patch: { text: string; effect?: RequirementEffect }) => void
   onRemove?: () => void
   readOnly?: boolean
 }) {
+  const [editing, setEditing] = useState(false)
+  const [draftText, setDraftText] = useState(req.text)
+  const [draftEffect, setDraftEffect] = useState<RequirementEffect>(req.effect)
+
+  useEffect(() => {
+    setDraftText(req.text)
+    setDraftEffect(req.effect)
+  }, [req.text, req.effect])
+
   const canEliminate = !!req.column && ELIMINATOR_COLUMNS.includes(req.column)
   const sourceBadgeKind: SourceKind = req.source === 'JD' ? 'JD' : req.source === 'Call' ? 'CALL' : 'EDITED'
+
+  const categoryMeta: Record<RequirementEffect, { label: string; desc: string; badgeCls: string }> = {
+    eliminates: {
+      label: 'Requirement',
+      desc: 'Rules out',
+      badgeCls: 'border-gray-1100 bg-primary text-primary-foreground',
+    },
+    improves: {
+      label: 'Green flag',
+      desc: 'Raises score',
+      badgeCls: 'border-success/40 bg-success/10 text-success',
+    },
+    'red-flag': {
+      label: 'Red flag',
+      desc: 'Lowers score · never rules out',
+      badgeCls: 'border-warning/50 bg-warning/10 text-[#b45309]',
+    },
+  }
+
+  const meta = categoryMeta[req.effect] ?? categoryMeta.improves
+
+  const saveEdit = () => {
+    const clean = draftText.trim()
+    if (!clean) return
+    onEdit?.({ text: clean, effect: draftEffect })
+    if (draftEffect !== req.effect && onToggleEffect) {
+      onToggleEffect(draftEffect)
+    }
+    setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <div className="space-y-2.5 rounded-xl border border-gray-800 bg-secondary/50 p-3 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="eyebrow text-[10px] text-gray-1000">Edit criteria directly</span>
+          <Segmented
+            size="sm"
+            aria-label="Category"
+            value={draftEffect}
+            onChange={v => {
+              if (v === 'eliminates' && !canEliminate && req.column) return
+              setDraftEffect(v)
+            }}
+            options={[
+              { value: 'eliminates', label: 'Requirement (rules out)' },
+              { value: 'improves', label: 'Green flag (raises score)' },
+              { value: 'red-flag', label: 'Red flag (lowers score)' },
+            ]}
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="min-w-[240px] flex-1">
+            <Input
+              aria-label="Criteria text"
+              value={draftText}
+              onChange={e => setDraftText(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { e.preventDefault(); saveEdit() }
+                if (e.key === 'Escape') setEditing(false)
+              }}
+            />
+          </div>
+          <Button variant="primary" size="sm" onClick={saveEdit} disabled={!draftText.trim()}>
+            Save
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => { setDraftText(req.text); setDraftEffect(req.effect); setEditing(false) }}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-border bg-card px-3 py-2.5 text-sm">
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex flex-wrap items-center gap-2">
+          <span className={cn('inline-flex h-5 items-center rounded-sm border px-1.5 font-mono text-[9.5px] font-semibold uppercase tracking-wider', meta.badgeCls)}>
+            {meta.label}
+          </span>
           <span className="font-medium text-foreground">{req.text}</span>
           <SourceBadge kind={sourceBadgeKind} />
           {req.saidBy && <span className="text-xs text-muted-foreground">{req.source} · {req.saidBy}</span>}
@@ -604,45 +690,55 @@ export function RequirementRow({ req, onToggleEffect, onRemove, readOnly }: {
             </span>
           ) : (
             <span className="rounded-sm border border-dashed border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-              No column · signal only
+              {req.effect === 'red-flag' ? 'Lowers score · never rules out' : 'Raises score · signal'}
             </span>
           )}
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 items-center gap-1.5">
         {readOnly || !onToggleEffect ? (
           <span className={cn(
             'inline-flex h-6 items-center rounded-md border px-2 font-mono text-[10px] font-medium uppercase tracking-wider',
-            req.effect === 'eliminates'
-              ? 'border-gray-1100 bg-primary text-primary-foreground'
-              : 'border-border bg-secondary text-gray-1100',
+            meta.badgeCls,
           )}>
-            {req.effect === 'eliminates' ? 'Eliminates' : 'Improves score'}
+            {meta.label} · {meta.desc}
           </span>
         ) : (
-          <span title={!canEliminate ? 'Only requirements that map to a hard column (Years, Work auth, Location, Category) can eliminate' : undefined}>
+          <span title={!canEliminate ? 'Requirements that map to a hard column (Years, Work auth, Location, Category, Industry) rule candidates out in Stage 1; Red flags lower the score but never rule a candidate out on their own.' : 'Switch between Requirement (rules out), Green flag (raises score), and Red flag (lowers score, never rules out)'}>
             <Segmented
               size="sm"
-              aria-label={`Effect for ${req.text}`}
+              aria-label={`Category for ${req.text}`}
               value={req.effect}
               onChange={v => {
                 if (v === 'eliminates' && !canEliminate) return
                 onToggleEffect(v)
               }}
               options={[
-                { value: 'eliminates', label: 'Eliminates', disabled: !canEliminate },
-                { value: 'improves', label: 'Improves score' },
+                { value: 'eliminates', label: 'Requirement', disabled: !canEliminate },
+                { value: 'improves', label: 'Green flag' },
+                { value: 'red-flag', label: 'Red flag' },
               ]}
             />
           </span>
         )}
+        {!readOnly && (onEdit || onToggleEffect) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<PenLine />}
+            aria-label={`Edit ${req.text}`}
+            onClick={() => setEditing(true)}
+          >
+            Edit
+          </Button>
+        )}
         {onRemove && !readOnly && (
           <button
             type="button"
-            aria-label={`Remove requirement ${req.text}`}
+            aria-label={`Remove ${req.text}`}
             onClick={onRemove}
-            className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
           >
             <X className="size-3.5" />
           </button>
@@ -706,11 +802,12 @@ export function RecommendationBlock({
             type="button"
             onClick={e => { e.stopPropagation(); setExpanded(x => !x) }}
             aria-expanded={expanded}
+            title={assumedCount > 0 ? `${assumedCount} requirement(s) not stated on resume — kept in so you can confirm on a call` : undefined}
             className="inline-flex h-6 items-center gap-1 rounded-md border border-gray-900 bg-secondary px-2 font-mono text-[11px] font-medium text-foreground transition-colors hover:border-foreground cursor-pointer"
           >
             <ChevronRight className={cn('size-3 transition-transform', expanded && 'rotate-90')} />
             <span className="tnum">{metCount}/{total} requirements</span>
-            {assumedCount > 0 && <span className="text-warning">· {assumedCount} assumed</span>}
+            {assumedCount > 0 && <span className="text-warning">· {assumedCount} unconfirmed on resume (confirm on call)</span>}
           </button>
         )}
 
@@ -739,7 +836,7 @@ export function RecommendationBlock({
               const cfg = {
                 met: { icon: <Check className="size-3.5 text-success shrink-0" />, tag: 'Met', cls: 'text-foreground' },
                 predicted: { icon: <Diamond className="size-3.5 text-info shrink-0" />, tag: 'Predicted', cls: 'text-foreground' },
-                assumed: { icon: <HelpCircle className="size-3.5 text-warning shrink-0" />, tag: 'Assumed', cls: 'text-warning' },
+                assumed: { icon: <HelpCircle className="size-3.5 text-warning shrink-0" />, tag: 'Unconfirmed on resume · confirm on call', cls: 'text-warning' },
                 'not-met': { icon: <X className="size-3.5 text-destructive shrink-0" />, tag: 'Not met', cls: 'text-muted-foreground' },
               }[item.result]
               return (

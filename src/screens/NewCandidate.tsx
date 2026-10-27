@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Upload, FileText, X, ClipboardPaste, Sparkles, UserPlus, MessageSquareText, Link2, Table2, ExternalLink, Check,
-  Layers, Video, Plus, FolderUp,
+  Layers, Video, Plus, FolderUp, Download,
 } from 'lucide-react'
 import { SplitPane, useTopBar } from '../shell/AppShell'
 import { BezelCard, Button, ExampleMark, Field, Input, Segmented, Select, Tag, Textarea, cn } from '../components/ui'
@@ -168,7 +168,11 @@ function draftNew(opts: { source: SourceKindOpt; role: string; notes: string; li
     locationsOpen: opts.fathomUrl?.trim() ? ['Seattle', 'SF'] : [],
     companyPrefs: [],
     workAuth: { status: opts.fathomUrl?.trim() ? 'US citizen' : null },
-    pay: opts.fathomUrl?.trim() ? '$185k–$205k' : null,
+    pay: opts.fathomUrl?.trim() ? '$185k–$205k + $25k var' : null,
+    fixedPayMin: opts.fathomUrl?.trim() ? 185 : null,
+    fixedPayMax: opts.fathomUrl?.trim() ? 205 : null,
+    variablePay: opts.fathomUrl?.trim() ? 25 : null,
+    lastRun: 'Just now',
     availability: opts.fathomUrl?.trim() ? '2 weeks' : null,
     searchStatus: 'Active',
     skills: ['Payments', 'API products', 'Roadmapping', 'Pricing', 'B2B SaaS'],
@@ -780,8 +784,71 @@ export function NewCandidate() {
             </div>
           </div>
         ) : (
-          /* Bulk Mode 2: Add a sheet (Google Sheet link, CSV/XLSX upload, or paste rows) */
+          /* Bulk Mode 2: Add a sheet in a set format (like Smartlead — Google Sheet link, CSV/XLSX upload, or paste rows) */
           <div className="anim-fade space-y-4">
+            <div className="rounded-xl border border-border bg-secondary/40 p-3.5 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span className="eyebrow">Smartlead-style set sheet format</span>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    Upload or link a sheet using our standardized column header format (auto-mapped like Smartlead).
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={<Download />}
+                  onClick={() => {
+                    const cols = ['Full Name', 'Email', 'Headline', 'Category', 'Years', 'Location', 'Work Auth / Visa', 'Fixed Pay Min ($k)', 'Fixed Pay Max ($k)', 'Variable Pay ($k)', 'Resume Link (Drive/Dropbox)', 'LinkedIn URL', 'Fathom Call Link']
+                    const sample = ['Karan V.', 'karan.v@example.com', 'Senior Backend Engineer · Go & Postgres', 'Engineering', '6', 'San Francisco, CA', 'H-1B (Transfer)', '175', '195', '25', 'https://drive.google.com/file/d/18aKaranResume/view', 'https://linkedin.com/in/karan-v', 'https://fathom.video/share/karan-intake']
+                    const csv = `${cols.map(c => `"${c}"`).join(',')}\n${sample.map(v => `"${v}"`).join(',')}\n`
+                    try {
+                      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = 'heroscouter-candidates-smartlead-template.csv'
+                      a.click()
+                      URL.revokeObjectURL(url)
+                    } catch {
+                      /* ignore in headless */
+                    }
+                    app.toast('Downloaded heroscouter-candidates-smartlead-template.csv')
+                  }}
+                >
+                  Download CSV template
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { label: 'Full Name', req: true },
+                  { label: 'Email', req: true },
+                  { label: 'Resume Link (Drive / Dropbox)', req: true },
+                  { label: 'LinkedIn URL', req: false },
+                  { label: 'Category', req: true },
+                  { label: 'Years', req: false },
+                  { label: 'Location', req: false },
+                  { label: 'Work Auth / Visa', req: false },
+                  { label: 'Fixed Pay ($k)', req: false },
+                  { label: 'Variable Pay ($k)', req: false },
+                  { label: 'Fathom Call Link', req: false },
+                ].map(col => (
+                  <span
+                    key={col.label}
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px]',
+                      col.req
+                        ? 'border-foreground/25 bg-background font-medium text-foreground'
+                        : 'border-border bg-background/60 text-muted-foreground',
+                    )}
+                  >
+                    <span>{col.label}</span>
+                    {col.req && <span className="font-mono text-[9px] text-emerald-400">req</span>}
+                  </span>
+                ))}
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
               <Field label="Google Sheet URL or upload CSV / XLSX" hint="Connect a live outreach sheet or upload a spreadsheet of candidates.">
                 <Input

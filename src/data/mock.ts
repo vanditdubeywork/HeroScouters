@@ -202,11 +202,55 @@ const CALLS_BY_ID: Record<string, Candidate['calls']> = {
   jordant: [{ id: 'call-jordan-1', label: 'Screen (Fathom)', when: '4 days ago', by: 'Purvesh N.' }],
 }
 
-export const candidates: Candidate[] = [...named, ...supporting].map(c => ({
-  ...c,
-  domains: c.domains !== undefined ? c.domains : (DOMAIN_BY_ID[c.id] ?? null),
-  calls: c.calls ?? CALLS_BY_ID[c.id] ?? [],
-}))
+const LAST_RUN_BY_ID: Record<string, string> = {
+  priya: 'Today · 14m ago',
+  marcus: 'Today · 35m ago',
+  ana: 'Today · 1h ago',
+  dev: 'Yesterday',
+  sara: 'Today · 20m ago',
+  jordant: 'Today · 20m ago',
+  ravip: 'Today · 20m ago',
+  elenav: 'Today · 20m ago',
+  chloew: 'Today · 35m ago',
+  omarh: 'Today · 35m ago',
+  hannahb: 'Yesterday',
+  leog: '3 days ago',
+  meic: 'Today · 35m ago',
+  tomasa: 'Today · 1h ago',
+  ninaf: 'Today · 1h ago',
+  kwameo: 'Today · 1h ago',
+  ishan: 'Today · 1h ago',
+  benr: 'Yesterday',
+  fatimaz: 'Today · 20m ago',
+  arjunm: 'Today · 10m ago',
+  gracel: 'Today · 10m ago',
+  diegos: 'Today · 10m ago',
+  paulk: 'Today · 10m ago',
+  yukit: 'Today · 20m ago',
+  samd: 'Today · 1h ago',
+}
+
+function parsePayRange(pay: string | null): { fixedPayMin: number | null; fixedPayMax: number | null; variablePay: number | null } {
+  if (!pay) return { fixedPayMin: null, fixedPayMax: null, variablePay: null }
+  const nums = (pay.match(/\d+/g) ?? []).map(Number)
+  const min = nums[0] ?? null
+  const max = nums[1] ?? min
+  const variable = min ? Math.round((min * 0.12) / 5) * 5 : null
+  return { fixedPayMin: min, fixedPayMax: max, variablePay: variable }
+}
+
+export const candidates: Candidate[] = [...named, ...supporting].map((c, idx) => {
+  const parsedPay = parsePayRange(c.pay)
+  return {
+    ...c,
+    fixedPayMin: c.fixedPayMin !== undefined ? c.fixedPayMin : parsedPay.fixedPayMin,
+    fixedPayMax: c.fixedPayMax !== undefined ? c.fixedPayMax : parsedPay.fixedPayMax,
+    variablePay: c.variablePay !== undefined ? c.variablePay : parsedPay.variablePay,
+    lastRun: c.lastRun ?? LAST_RUN_BY_ID[c.id] ?? (['Today · 10m ago', 'Yesterday', '3 days ago', 'This week'][idx % 4]),
+    domains: c.domains !== undefined ? c.domains : (DOMAIN_BY_ID[c.id] ?? null),
+    calls: c.calls ?? CALLS_BY_ID[c.id] ?? [],
+  }
+})
 export const candidateById = (id: string) => candidates.find(c => c.id === id)
 
 /* ---------- v0.4 · §7.4 Outreach sheet rows for bulk candidate import (US-50) ---------- */
@@ -216,32 +260,38 @@ export const outreachSheetCandidates = [
   { id: 'sheet-3', name: 'priya', nameLabel: 'Priya S. (duplicate email)', headline: 'Senior Product Manager · payments & B2B SaaS', category: 'Product' as const, years: 7, metro: 'SF Bay Area', link: 'https://drive.google.com/file/d/1x9kPriyaPMOct/view', status: 'Duplicate in pool' },
 ]
 
-/* ---------- v0.4 · §7.1 Unified Role Requirements ---------- */
+/* ---------- v0.4 · §7.1 Unified Role Requirements (Requirements, Green flags & Red flags) ---------- */
 export const roleRequirementsByRole: Record<string, RoleRequirement[]> = {
   'northwind-spm': [
-    { id: 'req-nw-1', roleId: 'northwind-spm', text: '6+ years in Product Management', source: 'JD', effect: 'eliminates', column: 'Minimum years', addedBy: 'Purvesh N.', when: '20 min ago' },
+    { id: 'req-nw-1', roleId: 'northwind-spm', text: '6–10 years in Product Management (Flexible ±1 yr)', source: 'JD', effect: 'eliminates', column: 'Minimum years', addedBy: 'Purvesh N.', when: '20 min ago' },
     { id: 'req-nw-2', roleId: 'northwind-spm', text: 'San Francisco hybrid (3 days/wk) or open to relocate', source: 'JD', effect: 'eliminates', column: 'Location', addedBy: 'Purvesh N.', when: '3 days ago' },
-    { id: 'req-nw-3', roleId: 'northwind-spm', text: 'No sponsorship — H-1B transfer is fine', source: 'Call', saidBy: 'Sean (VP Product)', effect: 'eliminates', column: 'Work authorization', addedBy: 'Purvesh N.', when: 'Yesterday' },
+    { id: 'req-nw-3', roleId: 'northwind-spm', text: 'No new sponsorship — H-1B / TN / O-1 / E-3 transfer supported', source: 'Call', saidBy: 'Sean (VP Product)', effect: 'eliminates', column: 'Work authorization', addedBy: 'Purvesh N.', when: 'Yesterday' },
     { id: 'req-nw-4', roleId: 'northwind-spm', text: 'Hands-on payments experience (payouts, ledgers or billing)', source: 'JD', effect: 'improves', column: 'Skills', addedBy: 'Purvesh N.', when: '3 days ago' },
     { id: 'req-nw-5', roleId: 'northwind-spm', text: 'SQL fluency to answer own data questions', source: 'JD', effect: 'improves', column: 'Skills', addedBy: 'Purvesh N.', when: '20 min ago' },
     { id: 'req-nw-6', roleId: 'northwind-spm', text: 'Has led a cross-functional team of 5+ engineers', source: 'Call', saidBy: 'Sean (VP Product)', effect: 'improves', addedBy: 'Purvesh N.', when: 'Yesterday', evidence: { priya: 'found', jordant: 'found', sara: 'found', elenav: 'not-found', ravip: 'not-found' } },
+    { id: 'req-nw-7', roleId: 'northwind-spm', text: 'Same company industry: Payments / Fintech', source: 'JD', effect: 'improves', column: 'Company industry', addedBy: 'Purvesh N.', when: '3 days ago' },
+    { id: 'req-nw-8', roleId: 'northwind-spm', text: 'Only big-tech consumer PM background with no startup or B2B speed', source: 'Call', saidBy: 'Dana K. (VP Product)', effect: 'red-flag', addedBy: 'Purvesh N.', when: 'Yesterday' },
+    { id: 'req-nw-9', roleId: 'northwind-spm', text: 'Frequent job changes (<12 months per stint across last 3 roles)', source: 'Manual', effect: 'red-flag', addedBy: 'Vandit D.', when: '2 days ago' },
   ],
   'lumen-fse': [
-    { id: 'req-lu-1', roleId: 'lumen-fse', text: '4+ years full-stack engineering', source: 'JD', effect: 'eliminates', column: 'Minimum years', addedBy: 'Vandit D.', when: '2 days ago' },
-    { id: 'req-lu-2', roleId: 'lumen-fse', text: 'US remote (sponsorship & transfer supported)', source: 'JD', effect: 'eliminates', column: 'Location', addedBy: 'Vandit D.', when: '2 days ago' },
+    { id: 'req-lu-1', roleId: 'lumen-fse', text: '4–8 years full-stack engineering (Flexible ±1 yr)', source: 'JD', effect: 'eliminates', column: 'Minimum years', addedBy: 'Vandit D.', when: '2 days ago' },
+    { id: 'req-lu-2', roleId: 'lumen-fse', text: 'US remote (transfer & sponsorship supported for H-1B, STEM OPT, F-1)', source: 'JD', effect: 'eliminates', column: 'Location', addedBy: 'Vandit D.', when: '2 days ago' },
     { id: 'req-lu-3', roleId: 'lumen-fse', text: 'Production React + Node.js', source: 'JD', effect: 'improves', column: 'Skills', addedBy: 'Vandit D.', when: '2 days ago' },
     { id: 'req-lu-4', roleId: 'lumen-fse', text: 'TypeScript & PostgreSQL experience', source: 'JD', effect: 'improves', column: 'Skills', addedBy: 'Vandit D.', when: '2 days ago' },
+    { id: 'req-lu-5', roleId: 'lumen-fse', text: 'Consultancy-only background with no product-company ownership', source: 'JD', effect: 'red-flag', addedBy: 'Vandit D.', when: '2 days ago' },
   ],
   'brightdesk-gmm': [
-    { id: 'req-bd-1', roleId: 'brightdesk-gmm', text: '5+ years in Growth or Performance Marketing', source: 'JD', effect: 'eliminates', column: 'Minimum years', addedBy: 'Vandit D.', when: '35 min ago' },
-    { id: 'req-bd-2', roleId: 'brightdesk-gmm', text: 'NYC onsite (no relocation)', source: 'JD', effect: 'eliminates', column: 'Location', addedBy: 'Vandit D.', when: '35 min ago' },
+    { id: 'req-bd-1', roleId: 'brightdesk-gmm', text: '5–8 years in Growth or Performance Marketing (Rigid)', source: 'JD', effect: 'eliminates', column: 'Minimum years', addedBy: 'Vandit D.', when: '35 min ago' },
+    { id: 'req-bd-2', roleId: 'brightdesk-gmm', text: 'NYC onsite (relocation not supported)', source: 'JD', effect: 'eliminates', column: 'Location', addedBy: 'Vandit D.', when: '35 min ago' },
     { id: 'req-bd-3', roleId: 'brightdesk-gmm', text: 'Authorized to work in US without sponsorship or transfer', source: 'JD', effect: 'eliminates', column: 'Work authorization', addedBy: 'Vandit D.', when: '35 min ago' },
     { id: 'req-bd-4', roleId: 'brightdesk-gmm', text: 'LinkedIn Ads at scale + B2B demand gen', source: 'JD', effect: 'improves', column: 'Skills', addedBy: 'Vandit D.', when: '35 min ago' },
+    { id: 'req-bd-5', roleId: 'brightdesk-gmm', text: 'B2C e-commerce paid social only (no B2B pipeline attribution)', source: 'JD', effect: 'red-flag', addedBy: 'Vandit D.', when: '35 min ago' },
   ],
   'cobalt-ds': [
-    { id: 'req-cb-1', roleId: 'cobalt-ds', text: '3+ years in Data Science or Analytics', source: 'JD', effect: 'eliminates', column: 'Minimum years', addedBy: 'Vandit D.', when: '10 min ago' },
+    { id: 'req-cb-1', roleId: 'cobalt-ds', text: '3–7 years in Data Science or Analytics (Flexible ±1 yr)', source: 'JD', effect: 'eliminates', column: 'Minimum years', addedBy: 'Vandit D.', when: '10 min ago' },
     { id: 'req-cb-2', roleId: 'cobalt-ds', text: 'Boston hybrid or open to relocate', source: 'JD', effect: 'eliminates', column: 'Location', addedBy: 'Vandit D.', when: '10 min ago' },
     { id: 'req-cb-3', roleId: 'cobalt-ds', text: 'Experimentation & causal inference in Python', source: 'Call', saidBy: 'Hiring manager', effect: 'improves', column: 'Skills', addedBy: 'Vandit D.', when: '10 min ago' },
+    { id: 'req-cb-4', roleId: 'cobalt-ds', text: 'BI dashboarding only with no causal inference or experimentation', source: 'Call', saidBy: 'Hiring manager', effect: 'red-flag', addedBy: 'Vandit D.', when: '10 min ago' },
   ],
 }
 
@@ -329,32 +379,127 @@ const rawRoles: RawRole[] = [
   },
 ]
 
-/** v0.4 · C5 Auto-scan + T9 latest update */
-const ROLE_V4: Record<string, Pick<Role, 'scoredCount' | 'aiScoresUsed' | 'suggestedCount' | 'latestUpdate'>> = {
-  'northwind-spm': { scoredCount: 7, suggestedCount: 5, aiScoresUsed: 17, latestUpdate: { text: 'JD v3: requirements changed', who: 'Purvesh', when: '20 min ago' } },
-  'cobalt-ds': { scoredCount: 5, suggestedCount: 5, aiScoresUsed: 5, latestUpdate: { text: 'Scan done · 5 suggested · 22 not scored', who: 'Auto-scan', when: '10 min ago' } },
-  'brightdesk-gmm': { scoredCount: 0, suggestedCount: 0, aiScoresUsed: 0, latestUpdate: { text: '22 not scored · ready to prune or score', who: 'Vandit', when: '35 min ago' } },
-  'lumen-fse': { scoredCount: 5, suggestedCount: 5, aiScoresUsed: 10, latestUpdate: { text: 'Shortlist ready (2) · 1 pitched', who: 'Vandit', when: '1h ago' } },
-  'harbor-be': { scoredCount: 10, suggestedCount: 5, aiScoresUsed: 20, latestUpdate: { text: '2 aligned · waiting on 2 candidates', who: 'Purvesh', when: '2 days ago' } },
-  'quill-pmm': { scoredCount: 5, suggestedCount: 5, aiScoresUsed: 5, latestUpdate: { text: '1 shortlisted · ready to pitch', who: 'Purvesh', when: '3 days ago' } },
-  'atlas-pd': { scoredCount: 10, suggestedCount: 5, aiScoresUsed: 10, latestUpdate: { text: 'Work mode changed: Onsite → Hybrid', who: 'Vandit', when: '5h ago' } },
-  'pine-ae': { scoredCount: 10, suggestedCount: 5, aiScoresUsed: 10, latestUpdate: { text: 'Shortlist sent (3)', who: 'Purvesh', when: '1 week ago' } },
-  'vela-fe': { scoredCount: 10, suggestedCount: 5, aiScoresUsed: 10, latestUpdate: { text: 'Put on hold', who: 'Purvesh', when: '2 weeks ago' } },
-  'orbit-lc': { scoredCount: 12, suggestedCount: 5, aiScoresUsed: 12, latestUpdate: { text: 'Role closed · 5 sent', who: 'Purvesh', when: '1 month ago' } },
+/** v0.4 · C5 Auto-scan + T9 latest update + Purvesh transcript feedback fields */
+const ROLE_V4: Record<string, Partial<Role> & Pick<Role, 'scoredCount' | 'aiScoresUsed' | 'suggestedCount' | 'latestUpdate'>> = {
+  'northwind-spm': {
+    scoredCount: 7, suggestedCount: 5, aiScoresUsed: 17,
+    latestUpdate: { text: 'JD v3: requirements changed', who: 'Purvesh', when: '20 min ago' },
+    industry: 'Payments / Fintech', industryRule: 'improves',
+    maxYears: 10, yearsFlexibility: 'Flexible',
+    relocationSupported: 'Yes',
+    acceptedVisas: ['H-1B', 'TN', 'O-1', 'E-3'], visaSupport: 'Transfer only',
+    fixedPayMin: 170, fixedPayMax: 190, variablePay: 25,
+  },
+  'cobalt-ds': {
+    scoredCount: 5, suggestedCount: 5, aiScoresUsed: 5,
+    latestUpdate: { text: 'Scan done · 5 suggested · 22 not scored', who: 'Auto-scan', when: '10 min ago' },
+    industry: 'AI / ML', industryRule: 'improves',
+    maxYears: 7, yearsFlexibility: 'Flexible',
+    relocationSupported: 'Yes',
+    acceptedVisas: ['H-1B', 'STEM OPT', 'F-1 / OPT', 'TN', 'O-1', 'L-1', 'E-3'], visaSupport: 'Transfer & sponsorship',
+    fixedPayMin: 155, fixedPayMax: 175, variablePay: 15,
+  },
+  'brightdesk-gmm': {
+    scoredCount: 0, suggestedCount: 0, aiScoresUsed: 0,
+    latestUpdate: { text: '22 not scored · ready to prune or score', who: 'Vandit', when: '35 min ago' },
+    industry: 'B2B SaaS', industryRule: 'improves',
+    maxYears: 8, yearsFlexibility: 'Rigid',
+    relocationSupported: 'No',
+    acceptedVisas: [], visaSupport: 'None',
+    fixedPayMin: 140, fixedPayMax: 160, variablePay: 20,
+  },
+  'lumen-fse': {
+    scoredCount: 5, suggestedCount: 5, aiScoresUsed: 10,
+    latestUpdate: { text: 'Shortlist ready (2) · 1 pitched', who: 'Vandit', when: '1h ago' },
+    industry: 'AI / ML', industryRule: 'improves',
+    maxYears: 8, yearsFlexibility: 'Flexible',
+    relocationSupported: 'Unknown',
+    acceptedVisas: ['H-1B', 'STEM OPT', 'F-1 / OPT', 'TN', 'O-1'], visaSupport: 'Transfer & sponsorship',
+    fixedPayMin: 150, fixedPayMax: 180, variablePay: 15,
+  },
+  'harbor-be': {
+    scoredCount: 10, suggestedCount: 5, aiScoresUsed: 20,
+    latestUpdate: { text: '2 aligned · waiting on 2 candidates', who: 'Purvesh', when: '2 days ago' },
+    industry: 'Healthtech', industryRule: 'eliminates',
+    maxYears: 9, yearsFlexibility: 'Rigid',
+    relocationSupported: 'No',
+    acceptedVisas: ['H-1B', 'TN'], visaSupport: 'Transfer only',
+    fixedPayMin: 170, fixedPayMax: 200, variablePay: 20,
+  },
+  'quill-pmm': {
+    scoredCount: 5, suggestedCount: 5, aiScoresUsed: 5,
+    latestUpdate: { text: '1 shortlisted · ready to pitch', who: 'Purvesh', when: '3 days ago' },
+    industry: 'DevTools / Infrastructure', industryRule: 'improves',
+    maxYears: 9, yearsFlexibility: 'Flexible',
+    relocationSupported: 'Yes',
+    acceptedVisas: ['H-1B', 'TN', 'O-1'], visaSupport: 'Unknown',
+    fixedPayMin: 150, fixedPayMax: 175, variablePay: 20,
+  },
+  'atlas-pd': {
+    scoredCount: 10, suggestedCount: 5, aiScoresUsed: 10,
+    latestUpdate: { text: 'Work mode changed: Onsite → Hybrid', who: 'Vandit', when: '5h ago' },
+    industry: 'Logistics / Supply Chain', industryRule: 'improves',
+    maxYears: 7, yearsFlexibility: 'Flexible',
+    relocationSupported: 'No',
+    acceptedVisas: ['H-1B', 'STEM OPT', 'F-1 / OPT', 'TN', 'O-1'], visaSupport: 'Transfer & sponsorship',
+    fixedPayMin: 140, fixedPayMax: 165, variablePay: 15,
+  },
+  'pine-ae': {
+    scoredCount: 10, suggestedCount: 5, aiScoresUsed: 10,
+    latestUpdate: { text: 'Shortlist sent (3)', who: 'Purvesh', when: '1 week ago' },
+    industry: 'B2B SaaS', industryRule: 'improves',
+    maxYears: 8, yearsFlexibility: 'Flexible',
+    relocationSupported: 'No',
+    acceptedVisas: [], visaSupport: 'None',
+    fixedPayMin: 90, fixedPayMax: 110, variablePay: 90,
+  },
+  'vela-fe': {
+    scoredCount: 10, suggestedCount: 5, aiScoresUsed: 10,
+    latestUpdate: { text: 'Put on hold', who: 'Purvesh', when: '2 weeks ago' },
+    industry: 'B2B SaaS', industryRule: 'improves',
+    maxYears: 8, yearsFlexibility: 'Flexible',
+    relocationSupported: 'Unknown',
+    acceptedVisas: ['H-1B', 'STEM OPT', 'F-1 / OPT', 'TN'], visaSupport: 'Transfer & sponsorship',
+    fixedPayMin: 160, fixedPayMax: 185, variablePay: 15,
+  },
+  'orbit-lc': {
+    scoredCount: 12, suggestedCount: 5, aiScoresUsed: 12,
+    latestUpdate: { text: 'Role closed · 5 sent', who: 'Purvesh', when: '1 month ago' },
+    industry: 'B2B SaaS', industryRule: 'improves',
+    maxYears: 9, yearsFlexibility: 'Rigid',
+    relocationSupported: 'No',
+    acceptedVisas: [], visaSupport: 'None',
+    fixedPayMin: 160, fixedPayMax: 180, variablePay: 20,
+  },
 }
 
-export const roles: Role[] = rawRoles.map(r => ({
-  ...r,
-  scoredCount: r.scoredCount ?? ROLE_V4[r.id]?.scoredCount ?? 0,
-  suggestedCount: r.suggestedCount ?? ROLE_V4[r.id]?.suggestedCount ?? 0,
-  aiScoresUsed: r.aiScoresUsed ?? ROLE_V4[r.id]?.aiScoresUsed ?? 0,
-  latestUpdate: r.latestUpdate ?? ROLE_V4[r.id]?.latestUpdate,
-  requirements: r.requirements ?? roleRequirementsByRole[r.id] ?? [
-    { id: `req-${r.id}-1`, roleId: r.id, text: `${r.minYears}+ years in ${r.category}`, source: 'JD', effect: 'eliminates', column: 'Minimum years', addedBy: 'System', when: r.updated },
-    { id: `req-${r.id}-2`, roleId: r.id, text: `${r.location} (${r.workMode})`, source: 'JD', effect: 'eliminates', column: 'Location', addedBy: 'System', when: r.updated },
-    ...r.mustSkills.map((sk, idx) => ({ id: `req-${r.id}-sk-${idx}`, roleId: r.id, text: sk, source: 'JD' as const, effect: 'improves' as const, column: 'Skills' as const, addedBy: 'System', when: r.updated })),
-  ],
-}))
+export const roles: Role[] = rawRoles.map(r => {
+  const extra = ROLE_V4[r.id]
+  const parsedPay = parsePayRange(r.pay)
+  return {
+    ...r,
+    ...extra,
+    industry: r.industry ?? extra?.industry ?? 'B2B SaaS',
+    industryRule: r.industryRule ?? extra?.industryRule ?? 'improves',
+    maxYears: r.maxYears !== undefined ? r.maxYears : (extra?.maxYears ?? r.minYears + 3),
+    yearsFlexibility: r.yearsFlexibility ?? extra?.yearsFlexibility ?? 'Flexible',
+    relocationSupported: r.relocationSupported ?? extra?.relocationSupported ?? (r.relocationAccepted === true ? 'Yes' : r.relocationAccepted === false ? 'No' : 'Unknown'),
+    acceptedVisas: r.acceptedVisas ?? extra?.acceptedVisas ?? (r.transfer === 'Yes' || r.sponsorship === 'Yes' ? ['H-1B', 'STEM OPT', 'TN', 'O-1'] : []),
+    visaSupport: r.visaSupport ?? extra?.visaSupport ?? (r.sponsorship === 'Yes' && r.transfer === 'Yes' ? 'Transfer & sponsorship' : r.transfer === 'Yes' ? 'Transfer only' : r.sponsorship === 'Yes' ? 'Sponsorship offered' : r.sponsorship === 'No' ? 'None' : 'Unknown'),
+    fixedPayMin: r.fixedPayMin !== undefined ? r.fixedPayMin : (extra?.fixedPayMin ?? parsedPay.fixedPayMin),
+    fixedPayMax: r.fixedPayMax !== undefined ? r.fixedPayMax : (extra?.fixedPayMax ?? parsedPay.fixedPayMax),
+    variablePay: r.variablePay !== undefined ? r.variablePay : (extra?.variablePay ?? parsedPay.variablePay),
+    scoredCount: r.scoredCount ?? extra?.scoredCount ?? 0,
+    suggestedCount: r.suggestedCount ?? extra?.suggestedCount ?? 0,
+    aiScoresUsed: r.aiScoresUsed ?? extra?.aiScoresUsed ?? 0,
+    latestUpdate: r.latestUpdate ?? extra?.latestUpdate,
+    requirements: r.requirements ?? roleRequirementsByRole[r.id] ?? [
+      { id: `req-${r.id}-1`, roleId: r.id, text: `${r.minYears}+ years in ${r.category}`, source: 'JD', effect: 'eliminates', column: 'Minimum years', addedBy: 'System', when: r.updated },
+      { id: `req-${r.id}-2`, roleId: r.id, text: `${r.location} (${r.workMode})`, source: 'JD', effect: 'eliminates', column: 'Location', addedBy: 'System', when: r.updated },
+      ...r.mustSkills.map((sk, idx) => ({ id: `req-${r.id}-sk-${idx}`, roleId: r.id, text: sk, source: 'JD' as const, effect: 'improves' as const, column: 'Skills' as const, addedBy: 'System', when: r.updated })),
+    ],
+  }
+})
 export const roleById = (id: string) => roles.find(r => r.id === id)
 
 /* ---------- Matches (role → candidates) ---------- */

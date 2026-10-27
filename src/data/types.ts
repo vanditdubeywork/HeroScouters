@@ -62,6 +62,13 @@ export interface Candidate {
   companyPrefs?: string[]
   workAuth: WorkAuth
   pay: string | null
+  /** Numeric Fixed compensation range in $k (e.g. 185 = $185k) for numeric filtering */
+  fixedPayMin?: number | null
+  fixedPayMax?: number | null
+  /** Numeric Variable / OTE compensation in $k (e.g. 20 = $20k) for numeric filtering */
+  variablePay?: number | null
+  /** Timestamp of when the candidate was last run / evaluated across roles */
+  lastRun?: string
   availability: string | null
   searchStatus: 'Active' | 'Passive' | null
   skills: string[]
@@ -95,32 +102,62 @@ export interface Candidate {
 export type MatchStatusFlag = 'up-to-date' | 'out-of-date' | 'not-run'
 export type RoleStatus = 'Open' | 'On hold' | 'Closed'
 
-/* ---------- v0.4 · §7.1 Unified Role Requirements (replaces separate must/nice/client-asks) ---------- */
-export type RequirementEffect = 'eliminates' | 'improves'
+/* ---------- v0.4 · §7.1 Unified Role Requirements (Requirements, Green flags & Red flags) ---------- */
+/**
+ * - 'eliminates' → Requirement (rules a candidate out in Stage 1)
+ * - 'improves' → Green flag (raises the score in Stage 2)
+ * - 'red-flag' → Red flag (lowers the score in Stage 2, never rules a candidate out on its own)
+ */
+export type RequirementEffect = 'eliminates' | 'improves' | 'red-flag'
 export type RequirementColumn =
   | 'Minimum years'
   | 'Work authorization'
   | 'Location'
   | 'Category'
   | 'Sub-category'
+  | 'Company industry'
   | 'Domain'
   | 'Skills'
   | 'Pay'
   | 'Availability'
 
-/** Only these 4 columns can eliminate in Stage 1 (§7.1 table) */
+/** Columns that can act as Stage 1 Requirements (rule a candidate out) */
 export const ELIMINATOR_COLUMNS: RequirementColumn[] = [
   'Minimum years',
   'Work authorization',
   'Location',
   'Category',
+  'Company industry',
 ]
+
+export const ROLE_VISA_TYPES = ['H-1B', 'STEM OPT', 'F-1 / OPT', 'TN', 'O-1', 'L-1', 'E-3'] as const
+export type RoleVisaType = (typeof ROLE_VISA_TYPES)[number]
+
+export type VisaSupportPolicy =
+  | 'Transfer & sponsorship'
+  | 'Transfer only'
+  | 'Sponsorship offered'
+  | 'None'
+  | 'Unknown'
+
+export const COMPANY_INDUSTRIES = [
+  'Payments / Fintech',
+  'B2B SaaS',
+  'Healthtech',
+  'Marketplace / Consumer',
+  'AI / ML',
+  'DevTools / Infrastructure',
+  'Logistics / Supply Chain',
+  'Government / Defense',
+  'Edtech',
+  'Enterprise Software',
+] as const
 
 export interface RoleRequirement {
   id: string
   roleId: string
   text: string
-  source: 'JD' | 'Call' | 'Email' | 'Chat'
+  source: 'JD' | 'Call' | 'Email' | 'Chat' | 'Manual'
   saidBy?: string // e.g. "Sean (VP Product)"
   when?: string
   effect: RequirementEffect
@@ -142,18 +179,36 @@ export interface Role {
   company: string
   companyType: 'Client' | 'Prospect'
   companySource: 'Client JD' | 'Public posting URL' | 'Intake call' | 'No JD'
+  /** Company industry — same industry is a Green flag by default, or a Requirement (e.g. gov contracts) */
+  industry?: string
+  industryRule?: 'improves' | 'eliminates'
   category: Category
   subcategory: string
   seniority: string
   minYears: number
+  /** Upper bound on years of experience */
+  maxYears?: number | null
+  /** Flexible adds 1 year of cushion at the top and bottom (min - 1 to max + 1) */
+  yearsFlexibility?: 'Flexible' | 'Rigid'
   location: string
   workMode: WorkMode
   relocationAccepted: boolean | null
+  /** Single field replacing "Relocation accepted": Yes / No / Unknown */
+  relocationSupported?: 'Yes' | 'No' | 'Unknown'
   sponsorship: 'Yes' | 'No' | 'Unknown'
   transfer: 'Yes' | 'No' | 'Unknown'
+  /** Checkbox list of accepted visa types (H-1B, STEM OPT, F-1 / OPT, etc.) */
+  acceptedVisas?: string[]
+  /** Whether the company supports transfer or sponsorship for the selected visas */
+  visaSupport?: VisaSupportPolicy
   mustSkills: string[]
   niceSkills: string[]
   pay: string
+  /** Numeric Fixed compensation range in $k (stored as numbers for filtering) */
+  fixedPayMin?: number | null
+  fixedPayMax?: number | null
+  /** Numeric Variable compensation in $k (stored as number; US roles call variable OTE, label stays Variable) */
+  variablePay?: number | null
   whatGood?: string
   research?: string
   interview?: string
@@ -362,11 +417,11 @@ export interface Resume {
 }
 
 /** T7 · client asks (backward compatible with v0.3; unified into RoleRequirement in v0.4) */
-export type ClientAskType = 'must-column' | 'must-signal' | 'nice' | 'context'
+export type ClientAskType = 'must-column' | 'must-signal' | 'nice' | 'red-flag' | 'context'
 export const CLIENT_ASK_TYPES: { value: ClientAskType; label: string; effect: string }[] = [
-  { value: 'must-column', label: 'Eliminates (column)', effect: 'Hard filter on a stored column. Re-runs stage 1 for free.' },
-  { value: 'must-signal', label: 'Improves score (signal)', effect: 'Checked during AI scoring with an evidence line.' },
-  { value: 'nice', label: 'Improves score (nice-to-have)', effect: 'A ranking signal during AI scoring.' },
+  { value: 'must-column', label: 'Requirement (rules out)', effect: 'Rules a candidate out on a stored column. Re-runs stage 1 for free.' },
+  { value: 'must-signal', label: 'Green flag (raises score)', effect: 'Raises the score during AI scoring with an evidence line.' },
+  { value: 'red-flag', label: 'Red flag (lowers score)', effect: 'Lowers the score during AI scoring, but never rules a candidate out on its own.' },
   { value: 'context', label: 'Context', effect: 'Shown on the role and passed to the email and take prompts.' },
 ]
 export interface ClientAsk {

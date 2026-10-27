@@ -24,9 +24,9 @@ export function SourceBadge({ kind, className }: { kind: SourceKind; className?:
     PREDICTED: 'border-info/50 text-[#0e7490] bg-info/5',
   }
   return (
-    <span title={kind === 'ASSUMED' ? 'Missing, treated as a pass' : `Source: ${kind.toLowerCase()}`}
+    <span title={kind === 'ASSUMED' ? 'Unconfirmed on resume: missing from resume, kept in so you can confirm on a call' : `Source: ${kind.toLowerCase()}`}
       className={cn('inline-flex h-4 items-center rounded-xs border px-1 font-mono text-[9px] leading-none tracking-[0.1em] uppercase', tone[kind], className)}>
-      {kind}
+      {kind === 'ASSUMED' ? 'CONFIRM ON CALL' : kind}
     </span>
   )
 }
@@ -60,7 +60,7 @@ export function MatchChipView({ chip, onAddToAsk }: { chip: MatchChip; onAddToAs
   const map = {
     evidence: { icon: <Check />, cls: 'border-border bg-background text-foreground', title: 'Evidence: met on record' },
     predicted: { icon: <Diamond />, cls: 'border-info/40 bg-info/[0.06] text-[#0e7490]', title: `Predicted skill${chip.detail ? ` · ${chip.detail}` : ''}` },
-    assumed: { icon: <HelpCircle />, cls: 'border-dashed border-warning bg-warning/[0.06] text-[#b45309]', title: 'Assumed: missing, treated as a pass' },
+    assumed: { icon: <HelpCircle />, cls: 'border-dashed border-warning bg-warning/[0.06] text-[#b45309]', title: 'Unconfirmed on resume: missing from resume, kept in to confirm on call' },
     gap: { icon: <AlertTriangle />, cls: 'border-destructive/40 bg-background text-destructive', title: 'Gap: a soft mismatch worth knowing' },
   }[chip.kind]
   return (
@@ -691,7 +691,7 @@ export function MatchRow({
               </span>
               <span className="font-mono font-semibold text-foreground tnum">
                 {reqTotal > 0
-                  ? `${reqMet}/${reqTotal} met${reqAssumed > 0 ? ` · ${reqAssumed} assumed` : ''}`
+                  ? `${reqMet}/${reqTotal} met${reqAssumed > 0 ? ` · ${reqAssumed} to confirm` : ''}`
                   : candidate
                     ? `${candidate.completeness}% complete`
                     : 'Verified'}
